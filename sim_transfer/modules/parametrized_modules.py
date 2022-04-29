@@ -5,14 +5,7 @@ from typing import Callable, Optional, List, Dict, Union
 from collections import OrderedDict
 from functools import partial, cached_property
 
-class RngKeyMixin:
-
-    def __init__(self, rng_key: jax.random.PRNGKey):
-        self._rng_key = rng_key
-
-    def _next_rng_key(self) -> jax.random.PRNGKey:
-        new_key, self._rng_key = jax.random.split(self._rng_key)
-        return new_key
+from .util import RngKeyMixin
 
 
 class ParametrizedModule:
@@ -94,9 +87,9 @@ class ParametrizedModule:
         # creates a pure function for splitting the parameter vector into the params pytree
         split_indices = list(map(int, jnp.cumsum(jnp.array([0, *self._param_sizes]))))
         def _vec_to_params(vector: jnp.ndarray) -> Union[List, Dict]:
-            params_split = [vector[l_idx:u_idx] for l_idx, u_idx in zip(split_indices[:-1], split_indices[1:])]
-            params_dict = {param_name: flat_param.reshape(param.shape)
-                           for flat_param, (param_name, param) in zip(params_split, self.params.items())}
+            params_split = [vector[...,l_idx:u_idx] for l_idx, u_idx in zip(split_indices[:-1], split_indices[1:])]
+            params_dict = OrderedDict([(param_name, flat_param.reshape(param.shape))
+                           for flat_param, (param_name, param) in zip(params_split, self.params.items())])
             return params_dict
         self._vec_to_params_pure = _vec_to_params
 
@@ -265,11 +258,15 @@ class SequentialModule(ParametrizedModule):
         assert init_param_vec.shape == self.param_vector_shape
         return init_param_vec
 
+    def _vec_to_params(self, vector: jnp.ndarray) -> Union[List, Dict]:
+        return [module._vec_to_params(module_vec) for module, module_vec in
+                zip(self.submodules_parametrized, self._vec_to_submodule_vecs(vector))]
+
     def _create_pure_vec_to_submodule_vecs_fn(self):
         # creates a pure function for splitting the parameter vector into of parameters for each submodule
         split_indices = list(map(int, jnp.cumsum(jnp.array([0, *self._submodule_vec_sizes]))))
         def _vec_to_submodule_vecs(vector: jnp.ndarray) -> Union[List, Dict]:
-            return [vector[l_idx:u_idx] for l_idx, u_idx in zip(split_indices[:-1], split_indices[1:])]
+            return [vector[..., l_idx:u_idx] for l_idx, u_idx in zip(split_indices[:-1], split_indices[1:])]
         self._vec_to_submodule_vecs = _vec_to_submodule_vecs
 
     def __str__(self) -> str:

@@ -4,7 +4,8 @@ import jax.numpy as jnp
 from typing import  Optional, List, Dict, Union
 from functools import partial, cached_property
 
-from .parametrized_modules import RngKeyMixin, MLP, ParametrizedModule
+from .parametrized_modules import MLP, ParametrizedModule
+from .util import RngKeyMixin, tree_stack, tree_unstack
 
 
 class BatchedModuleMixin(RngKeyMixin):
@@ -37,14 +38,18 @@ class BatchedModuleMixin(RngKeyMixin):
         return int(self.base_module.param_vector_shape[0])
 
     @property
-    def params(self) -> List[Union[List, Dict]]:
-        raise NotImplementedError('This is a batched module and only supports vectorized parameters. '
-                                  'Call param_vectors_stacked instead')
+    def params_stacked(self) -> Union[List, Dict]:
+        # stacks each parameter along the first dimension and returns them in the same pytree structure as the
+        # base model
+        return self._stacked_vecs_to_stacked_params(self.param_vectors_stacked)
 
-    @property
-    def param_vector(self) -> jnp.ndarray:
-        raise NotImplementedError('This is a BatchedModule, thus only a stack of parameter vectors can be obtained. '
-                                  'Call param_vectors_stacked instead')
+    @params_stacked.setter
+    def params_stacked(self, params_stacked: Union[List, Dict]):
+        pytree_list = tree_unstack(params_stacked)
+        assert len(pytree_list) == self.num_batched_modules
+        param_vecs_stacked = jnp.stack([jnp.concatenate(list(map(lambda p: p.reshape((-1,)), jax.tree_leaves(p_tree))))
+                                        for p_tree in pytree_list])
+        self.param_vectors_stacked = param_vecs_stacked
 
     @property
     def param_vectors_stacked(self) -> jnp.ndarray:
@@ -62,6 +67,11 @@ class BatchedModuleMixin(RngKeyMixin):
     def forward_vec(self, x: jnp.ndarray, param_vectors_stacked: jnp.array):
         assert x.shape[0] == self.num_batched_modules
         return self._forward_vec_vmap(x, param_vectors_stacked)
+
+    def _stacked_vecs_to_stacked_params(self, stacked_vecs: jnp.ndarray) -> Union[List, Dict]:
+        assert stacked_vecs.shape == (self.num_batched_modules, self.module_vector_size)
+        params_each = [self.base_module._vec_to_params(vec) for vec in stacked_vecs]
+        return tree_stack(params_each)
 
     def __call__(self, x: jnp.ndarray):
         return self.forward_vec(x, param_vectors_stacked=self.param_vectors_stacked)

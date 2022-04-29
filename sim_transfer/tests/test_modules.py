@@ -3,7 +3,7 @@ import jax
 import jax.numpy as jnp
 import optax
 from sim_transfer.modules import Dense, MLP, SequentialModule, BatchedMLP
-
+from sim_transfer.modules.util import tree_unstack, tree_stack
 
 class TestDenseParametrized(unittest.TestCase):
 
@@ -129,6 +129,11 @@ class TestSequential(unittest.TestCase):
         for i in range(2):
             assert jnp.allclose(self.model.submodules_parametrized[i].w, ws_initial[i])
 
+    def test_vec_to_params_bijection(self):
+        param_vec = self.model.param_vector
+        params = self.model._vec_to_params(param_vec)
+        assert all([jnp.allclose(p1, p2) for p1, p2, in
+                    zip(jax.tree_leaves(params), jax.tree_leaves(self.model.params))])
 
 class TestMLP(unittest.TestCase):
 
@@ -246,6 +251,31 @@ class TestBatchedMLP(unittest.TestCase):
         y_pred = model(x)
         assert jnp.allclose(y_pred_batched[0], y_pred)
         assert jnp.allclose(y_pred_batched[0], y_pred_batched[1])
+
+    def test_vec_to_params_consistency(self):
+        key_model, key_init = jax.random.split(jax.random.PRNGKey(345), 2)
+        num_modules = 2
+        model = BatchedMLP(4, 3, hidden_layer_sizes=[12, 12], num_batched_modules=num_modules,
+                           rng_key=key_model)
+        p_vec1 = model.param_vectors_stacked
+        params_stacked1 = model.params_stacked
+        model.param_vectors_stacked = 2 * model.param_vectors_stacked
+        model.params_stacked = params_stacked1
+        assert jnp.allclose(p_vec1, model.param_vectors_stacked)
+
+
+class TestUtil(unittest.TestCase):
+
+    def test_tree_stack_unstack_consistency(self):
+        key1, key2, key3, key4 = jax.random.split(jax.random.PRNGKey(7385), 4)
+        tree1 = [{'a': jax.random.normal(key1, (2, 4)), 'b': jax.random.normal(key2, (4,))},
+                 {'c': 1.0}]
+        tree2 = [{'a': jax.random.normal(key3, (2, 4)), 'b': jax.random.normal(key4, (4, ))},
+                 {'c': 2.0}]
+        stacked_tree = tree_stack([tree1, tree2])
+        tree1_after, tree2_after = tree_unstack(stacked_tree)
+        assert jnp.allclose(tree2[0]['a'], tree2_after[0]['a'])
+        assert jnp.allclose(tree1[1]['c'], tree1_after[1]['c'])
 
 
 if __name__ == '__main__':
