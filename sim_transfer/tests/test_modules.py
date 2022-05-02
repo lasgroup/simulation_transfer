@@ -4,9 +4,13 @@ import jax.numpy as jnp
 import optax
 import pytest
 
+from tensorflow_probability.substrates import jax as tfp
+
 from sim_transfer.modules import Dense, MLP, SequentialModule, BatchedMLP
 from sim_transfer.modules.util import tree_unstack, tree_stack
 from sim_transfer.modules.data_loader import DataLoader
+from sim_transfer.modules.distribution import AffineTransform
+
 
 class TestDenseParametrized(unittest.TestCase):
 
@@ -346,6 +350,22 @@ class TestDataLoader(unittest.TestCase):
         assert jnp.allclose(x_cat1[sorted_idx], y_cat1[sorted_idx])
         sorted_idx = jnp.argsort(x_cat2, axis=0).flatten()
         assert jnp.allclose(x_cat2[sorted_idx], y_cat2[sorted_idx])
+
+
+class TestAffineTransformedDist(unittest.TestCase):
+
+    def test_transformation(self):
+        mean = jnp.array([[1.0, 2.0], [-1.0, 1.0], [1.0, 1.0]])
+        std = jnp.array([[1.0, 1.4], [0.1, 4.2], [2., 0.5]])
+        dist = tfp.distributions.MultivariateNormalDiag(mean, std)
+
+        shift = jnp.array([15., -6])
+        scale = jnp.array([0.5, 3.])
+        dist_tansf = AffineTransform(shift, scale)(dist)
+
+        assert jnp.allclose(dist.mean() * scale + shift, dist_tansf.mean)
+        assert jnp.allclose(dist.stddev() * scale, dist_tansf.stddev)
+        assert jnp.allclose(dist.variance() * scale**2, dist_tansf.variance)
 
 
 if __name__ == '__main__':
