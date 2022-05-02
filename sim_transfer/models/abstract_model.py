@@ -115,6 +115,7 @@ class AbstactRegressionModel(RngKeyMixin):
         # prepare data and data loader
         x_train, y_train = self._preprocess_train_data(x_train, y_train)
         train_loader = self._create_data_loader(x_train, y_train, batch_size=self.data_batch_size)
+        num_train_points = x_train.shape[0]
 
         # initialize attributes to keep track of during training
         num_steps = self.num_steps if num_steps is None else num_steps
@@ -127,7 +128,7 @@ class AbstactRegressionModel(RngKeyMixin):
             samples_cum_period += x_batch.shape[0]
 
             # perform the train step
-            stats = self.step(x_batch, y_batch)
+            stats = self.step(x_batch, y_batch, num_train_points)
             stats_list.append(stats)
 
             if step % log_period == 0 or step == 1:
