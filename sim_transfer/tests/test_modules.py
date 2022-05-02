@@ -2,8 +2,11 @@ import unittest
 import jax
 import jax.numpy as jnp
 import optax
+import pytest
+
 from sim_transfer.modules import Dense, MLP, SequentialModule, BatchedMLP
 from sim_transfer.modules.util import tree_unstack, tree_stack
+from sim_transfer.modules.data_loader import DataLoader
 
 class TestDenseParametrized(unittest.TestCase):
 
@@ -134,6 +137,7 @@ class TestSequential(unittest.TestCase):
         params = self.model._vec_to_params(param_vec)
         assert all([jnp.allclose(p1, p2) for p1, p2, in
                     zip(jax.tree_leaves(params), jax.tree_leaves(self.model.params))])
+
 
 class TestMLP(unittest.TestCase):
 
@@ -278,5 +282,71 @@ class TestUtil(unittest.TestCase):
         assert jnp.allclose(tree1[1]['c'], tree1_after[1]['c'])
 
 
+class TestDataLoader(unittest.TestCase):
+
+    @pytest.mark.parametrize(['batch_size', 'shuffle'], [[3, True], [5, True], [3, False]])
+    @staticmethod
+    def test_goes_through_all_data(batch_size: int, shuffle: bool):
+        key = jax.random.PRNGKey(234)
+        num_data_points = 20
+        x_data = jnp.arange(num_data_points).reshape((-1, 1))
+        y_data = jnp.arange(num_data_points).reshape((-1, 1))
+
+        data_loader = DataLoader(x_data, y_data, rng_key=key, shuffle=shuffle, batch_size=batch_size, drop_last=False)
+        x_list = []
+        y_list = []
+        for i, (x, y) in enumerate(data_loader):
+            x_list.append(x)
+            y_list.append(x)
+            assert jnp.allclose(x, y)
+            assert (x.shape[0] == batch_size and y.shape[0] == batch_size) or \
+                   (num_data_points % batch_size > 0 and i == num_data_points // batch_size)
+        x_cat = jnp.concatenate(x_list, axis=0)
+        y_cat = jnp.concatenate(y_list, axis=0)
+        sorted_idx = jnp.argsort(x_cat, axis=0).flatten()
+        assert jnp.allclose(x_cat[sorted_idx], x_data)
+        assert jnp.allclose(y_cat[sorted_idx], y_data)
+
+    @pytest.mark.parametrize('drop_last', [True, False])
+    @staticmethod
+    def test_key_and_shape_consistency(drop_last: bool):
+        key1, key2, key3 = jax.random.split(jax.random.PRNGKey(234), 3)
+        x_data = jax.random.uniform(key1, (10, 8, 3))
+        y_data = jax.random.uniform(key2, (10, 4))
+
+        data_loader1 = DataLoader(x_data, y_data, rng_key=key3, shuffle=True, batch_size=4, drop_last=False)
+        data_loader2 = DataLoader(x_data, y_data, rng_key=key3, shuffle=True, batch_size=4, drop_last=False)
+
+        cum_batch_sizes = 0
+        for (x1, y1), (x2, y2) in zip(data_loader1, data_loader2):
+            assert jnp.allclose(x1, x2) and jnp.allclose(y1, y2)
+            assert x1.shape[1:] == (8, 3)
+            assert y2.shape[1:] == (4,)
+            assert x1.shape[0] == y1.shape[0] == x1.shape[0] == y2.shape[0]
+            cum_batch_sizes += x1.shape[0]
+
+        assert (drop_last and cum_batch_sizes == 8) or ((not drop_last) and cum_batch_sizes == 10)
+
+    def test_multiple_epochs(self):
+        key = jax.random.PRNGKey(234)
+        x_data = jnp.arange(20).reshape((-1, 1))
+        y_data = jnp.arange(20).reshape((-1, 1))
+
+        data_loader = DataLoader(x_data, y_data, rng_key=key, shuffle=True, batch_size=7, drop_last=False)
+
+        # epoch 1
+        x_cat1, y_cat1 = list(map(lambda l: jnp.concatenate(l), list(zip(*data_loader))))
+        #epoch 2
+        x_cat2, y_cat2 = list(map(lambda l: jnp.concatenate(l), list(zip(*data_loader))))
+
+        assert not jnp.allclose(x_cat1, x_cat2)
+        assert not jnp.allclose(y_cat1, y_cat2)
+
+        sorted_idx = jnp.argsort(x_cat1, axis=0).flatten()
+        assert jnp.allclose(x_cat1[sorted_idx], y_cat1[sorted_idx])
+        sorted_idx = jnp.argsort(x_cat2, axis=0).flatten()
+        assert jnp.allclose(x_cat2[sorted_idx], y_cat2[sorted_idx])
+
+
 if __name__ == '__main__':
-    unittest.main()
+    pytest.main()
