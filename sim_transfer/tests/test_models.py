@@ -32,6 +32,40 @@ class TestAbstractRegression(unittest.TestCase):
         assert jnp.linalg.norm(jnp.mean(y, axis=0)) < 1e-1
         assert jnp.linalg.norm(jnp.std(y, axis=0) - 1.0) < 1e-1
 
+    def test_data_loader_epoch(self):
+        key1, key2, key3 = jax.random.split(jax.random.PRNGKey(45645), 3)
+        x_data = jnp.arange(0, 30).reshape((-1, 1))
+        y_data = jnp.arange(0, 30).reshape((-1, 1))
+
+        model1 = AbstactRegressionModel(input_size=2, output_size=1, rng_key=key3)
+        data_loader1 = model1._create_data_loader(x_data, y_data, batch_size=7, shuffle=True, infinite=False)
+
+        model2 = AbstactRegressionModel(input_size=2, output_size=1, rng_key=key3)
+        data_loader2 = model2._create_data_loader(x_data, y_data, batch_size=7, shuffle=True, infinite=False)
+
+        x1_batch_list = []
+        for (x1, y1), (x2, y2) in zip(data_loader1, data_loader2):
+            assert jnp.allclose(x1, y2) and jnp.allclose(y1, y2)  # label consistency
+            assert jnp.allclose(x1, x2)  # seed consistency
+            x1_batch_list.append(x1)
+        x1_cat = jnp.sort(jnp.concatenate(x1_batch_list), axis=0)
+        assert jnp.allclose(x_data, x1_cat)  # check that it goes through all data points
+
+    def test_data_loader_infinite(self):
+        key1, key2, key3 = jax.random.split(jax.random.PRNGKey(45645), 3)
+        x_data = jnp.arange(0, 30).reshape((-1, 1))
+        y_data = jnp.arange(0, 30).reshape((-1, 1))
+        model = AbstactRegressionModel(input_size=2, output_size=1, rng_key=key3)
+        data_loader = model._create_data_loader(x_data, y_data, batch_size=7, shuffle=True, infinite=True)
+
+        x_batch_list = []
+        for x, y in data_loader:
+            assert jnp.allclose(x, x)
+            assert x.shape[0] == 7
+            x_batch_list.append(x)
+            if len(x_batch_list) >= 5:
+                break
+        assert set(jnp.concatenate(x_batch_list).flatten().tolist()) == set(x_data.flatten().tolist())
 
 
 if __name__ == '__main__':

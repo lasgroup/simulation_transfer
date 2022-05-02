@@ -1,21 +1,16 @@
-tensorflow
-tensorflow-addons
-tensorflow-probability
-tensorflow_datasets
 numpy
 matplotlib
 tqdm
-imageio
-pygifsicle
 pandas
+scipy
 jax
 optax
 dm-haiku
 
-ray[tune]
+#ray[tune]
 # ray[default]
 
 # mujoco-py==2.0.2.8
 # gym
-scipy
-Pillow
+
+#Pillow

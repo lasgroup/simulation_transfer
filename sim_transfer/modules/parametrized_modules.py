@@ -285,7 +285,7 @@ class MLP(SequentialModule):
                  initializer_b: Callable = jax.nn.initializers.constant(0.01)):
         self.input_size = input_size
         self.output_size = output_size
-        sizes = [input_size] + hidden_layer_sizes
+        sizes = [input_size] + list(hidden_layer_sizes)
         rng_keys = jax.random.split(rng_key, num=len(hidden_layer_sizes)+1)
         layers = [Dense(sizes[i], sizes[i+1], rng_key=rng_keys[i], activation=hidden_activation,
                         initializer_w=initializer_w, initializer_b=initializer_b)
