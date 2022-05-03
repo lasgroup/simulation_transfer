@@ -1,6 +1,6 @@
 import jax
 import jax.numpy as jnp
-from typing import Optional, Tuple, Callable, Dict
+from typing import Optional, Tuple, Callable, Dict, List
 
 
 import time
@@ -10,6 +10,7 @@ import logging
 
 from sim_transfer.modules.util import RngKeyMixin, aggregate_stats
 from sim_transfer.modules.distribution import AffineTransform
+from sim_transfer.modules import BatchedMLP
 
 import tensorflow as tf
 import tensorflow_datasets as tfds
@@ -106,52 +107,6 @@ class AbstactRegressionModel(RngKeyMixin):
         ds = tfds.as_numpy(ds)
         return ds
 
-    def fit(self, x_train: jnp.ndarray, y_train: jnp.ndarray, x_eval: Optional[jnp.ndarray] = None,
-            y_eval: Optional[jnp.ndarray] = None, num_steps: Optional[int] = None, log_period: int = 1000):
-        # check whether eval data has been passed
-        evaluate = x_eval is not None or y_eval is not None
-        assert not evaluate or x_eval.shape[0] == y_eval.shape[0]
-
-        # prepare data and data loader
-        x_train, y_train = self._preprocess_train_data(x_train, y_train)
-        train_loader = self._create_data_loader(x_train, y_train, batch_size=self.data_batch_size)
-        num_train_points = x_train.shape[0]
-
-        # initialize attributes to keep track of during training
-        num_steps = self.num_steps if num_steps is None else num_steps
-        samples_cum_period = 0.0
-        stats_list = []
-        t_start_period = time.time()
-
-        # training loop
-        for step, (x_batch, y_batch) in enumerate(train_loader, 1):
-            samples_cum_period += x_batch.shape[0]
-
-            # perform the train step
-            stats = self.step(x_batch, y_batch, num_train_points)
-            stats_list.append(stats)
-
-            if step % log_period == 0 or step == 1:
-                duration_sec = time.time() - t_start_period
-                duration_per_sample_ms = duration_sec / samples_cum_period * 1000
-                stats_agg = aggregate_stats(stats_list)
-
-                if evaluate:
-                    eval_stats = self.eval(x_eval, y_eval, prefix='eval_')
-                    stats_agg.update(eval_stats)
-                stats_msg = ' | '.join([f'{n}: {v:.4f}' for n, v in stats_agg.items()])
-                msg = (f'Step {step}/{num_steps} | {stats_msg} | Duration {duration_sec:.2f} sec | '
-                       f'Time per sample {duration_per_sample_ms:.2f} ms')
-                print(msg)
-
-                # reset the attributes we keep track of
-                stats_list = []
-                samples_cum_period = 0
-                t_start_period = time.time()
-
-            if step >= num_steps:
-                break
-
     @property
     def likelihood_std(self):
         return jax.nn.softplus(self._likelihood_std_raw)
@@ -218,3 +173,105 @@ class AbstactRegressionModel(RngKeyMixin):
             def filter(self, record):
                 return "check_types" not in record.getMessage()
         logger.addFilter(CheckTypesFilter())
+
+
+class BatchedNeuralNetworkModel(AbstactRegressionModel):
+
+    def __init__(self,
+                 *args,
+                 data_batch_size: int = 16,
+                 num_train_steps: int = 10000,
+                 hidden_layer_sizes: List[int] = (32, 32, 32),
+                 hidden_activation: Optional[Callable] = jax.nn.leaky_relu,
+                 last_activation: Optional[Callable] = None,
+                 num_batched_nns: int = 10,
+                 **kwargs):
+        super().__init__(*args, **kwargs)
+        self.data_batch_size = data_batch_size
+        self.num_train_steps = num_train_steps
+        self.num_batched_nns = num_batched_nns
+
+        # setup batched mlp
+        self.batched_model = BatchedMLP(input_size=self.input_size, output_size=self.output_size,
+                                        num_batched_modules=num_batched_nns,
+                                        hidden_layer_sizes=hidden_layer_sizes,
+                                        hidden_activation=hidden_activation,
+                                        last_activation=last_activation,
+                                        rng_key=self.rng_key)
+
+
+    def fit(self, x_train: jnp.ndarray, y_train: jnp.ndarray, x_eval: Optional[jnp.ndarray] = None,
+            y_eval: Optional[jnp.ndarray] = None, num_steps: Optional[int] = None, log_period: int = 1000):
+        # check whether eval data has been passed
+        evaluate = x_eval is not None or y_eval is not None
+        assert not evaluate or x_eval.shape[0] == y_eval.shape[0]
+
+        # prepare data and data loader
+        x_train, y_train = self._preprocess_train_data(x_train, y_train)
+        train_loader = self._create_data_loader(x_train, y_train, batch_size=self.data_batch_size)
+        num_train_points = x_train.shape[0]
+
+        # initialize attributes to keep track of during training
+        num_steps = self.num_train_steps if num_steps is None else num_steps
+        samples_cum_period = 0.0
+        stats_list = []
+        t_start_period = time.time()
+
+        # training loop
+        for step, (x_batch, y_batch) in enumerate(train_loader, 1):
+            samples_cum_period += x_batch.shape[0]
+
+            # perform the train step
+            stats = self.step(x_batch, y_batch, num_train_points)
+            stats_list.append(stats)
+
+            if step % log_period == 0 or step == 1:
+                duration_sec = time.time() - t_start_period
+                duration_per_sample_ms = duration_sec / samples_cum_period * 1000
+                stats_agg = aggregate_stats(stats_list)
+
+                if evaluate:
+                    eval_stats = self.eval(x_eval, y_eval, prefix='eval_')
+                    stats_agg.update(eval_stats)
+                stats_msg = ' | '.join([f'{n}: {v:.4f}' for n, v in stats_agg.items()])
+                msg = (f'Step {step}/{num_steps} | {stats_msg} | Duration {duration_sec:.2f} sec | '
+                       f'Time per sample {duration_per_sample_ms:.2f} ms')
+                print(msg)
+
+                # reset the attributes we keep track of
+                stats_list = []
+                samples_cum_period = 0
+                t_start_period = time.time()
+
+            if step >= num_steps:
+                break
+
+    def _construct_nn_param_prior(self, weight_prior_std: float, bias_prior_std: float) -> tfd.MultivariateNormalDiag:
+        prior_stds = []
+        params = self.batched_model.params_stacked
+        for layer_params in params:
+            for param_name, param_array in layer_params.items():
+                flat_shape = param_array[0].flatten().shape
+                if param_name == 'w':
+                    prior_stds.append(weight_prior_std * jnp.ones(flat_shape))
+                elif param_name == 'b':
+                    prior_stds.append(bias_prior_std * jnp.ones(flat_shape))
+                else:
+                    raise ValueError(f'Unknown parameter {param_name}')
+        prior_stds = jnp.concatenate(prior_stds)
+        prior_dist = tfd.MultivariateNormalDiag(jnp.zeros_like(prior_stds), prior_stds)
+        assert prior_dist.event_shape == self.batched_model.param_vectors_stacked.shape[-1:]
+        return prior_dist
+
+    def predict(self, x: jnp.ndarray, include_noise: bool = False) -> Tuple[jnp.ndarray, jnp.ndarray]:
+        """ Returns the mean and std of the predictive distribution.
+
+        Args:
+            x (jnp.ndarray): points in which to make predictions
+            include_noise (bool): whether to include alleatoric uncertainty in the predictive std. If False,
+                                  only return the epistemic std.
+
+        Returns: predictive mean and std
+        """
+        pred_dist = self.predict_dist(x=x, include_noise=include_noise)
+        return pred_dist.mean, pred_dist.stddev

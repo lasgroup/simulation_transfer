@@ -4,15 +4,15 @@ import optax
 
 from typing import List, Optional, Callable, Tuple, Dict, Union
 from collections import OrderedDict
-from sim_transfer.models.abstract_model import AbstactRegressionModel
-from sim_transfer.modules import BatchedMLP
+from sim_transfer.models.abstract_model import BatchedNeuralNetworkModel
+
 
 from functools import partial
 from tensorflow_probability.substrates import jax as tfp
 import tensorflow_probability.substrates.jax.distributions as tfd
 
 
-class BNN_SVGD(AbstactRegressionModel):
+class BNN_SVGD(BatchedNeuralNetworkModel):
 
     def __init__(self,
                  input_size: int,
@@ -22,36 +22,31 @@ class BNN_SVGD(AbstactRegressionModel):
                  num_particles: int = 10,
                  bandwidth_svgd: float = 10.0,
                  data_batch_size: int = 16,
-                 num_steps: int = 10000,
+                 num_train_steps: int = 10000,
                  lr = 1e-3,
                  normalize_data: bool = True,
                  hidden_layer_sizes: List[int] = (32, 32, 32),
                  hidden_activation: Optional[Callable] = jax.nn.leaky_relu,
                  last_activation: Optional[Callable] = None,
                  use_prior: bool = True,
-                 weight_prior_std: float = 1.0,
+                 weight_prior_std: float = 0.5,
                  bias_prior_std: float = 1e1):
         super().__init__(input_size=input_size, output_size=output_size, rng_key=rng_key,
+                         data_batch_size=data_batch_size, num_train_steps=num_train_steps,
+                         num_batched_nns=num_particles, hidden_layer_sizes=hidden_layer_sizes,
+                         hidden_activation=hidden_activation, last_activation=last_activation,
                          normalize_data=normalize_data)
         self.likelihood_std = likelihood_std * jnp.ones(output_size)
-        self.data_batch_size = data_batch_size
-        self.num_steps = num_steps
         self.num_particles = num_particles
         self.bandwidth_svgd = bandwidth_svgd
 
-        # initialize batched NN
-        self.batched_model = BatchedMLP(input_size=input_size, output_size=output_size,
-                                        num_batched_modules=num_particles,
-                                        hidden_layer_sizes=hidden_layer_sizes,
-                                        hidden_activation=hidden_activation,
-                                        last_activation=last_activation,
-                                        rng_key=self.rng_key)
+        # get batched NN params as a stack of vectors
         self.params_stack = self.batched_model.param_vectors_stacked
 
         # construct the neural network prior distribution
         self.use_prior = use_prior
         if use_prior:
-            self.prior_dist = self._construct_prior(weight_prior_std, bias_prior_std)
+            self.prior_dist = self._construct_nn_param_prior(weight_prior_std, bias_prior_std)
 
         # initialize optimizer
         self.optim = optax.adam(learning_rate=lr)
@@ -59,23 +54,6 @@ class BNN_SVGD(AbstactRegressionModel):
 
         # initialize kernel
         self.kernel = tfp.math.psd_kernels.ExponentiatedQuadratic(length_scale=self.bandwidth_svgd)
-
-    def _construct_prior(self, weight_prior_std: float, bias_prior_std: float) -> tfd.MultivariateNormalDiag:
-        prior_stds = []
-        params = self.batched_model.params_stacked
-        for layer_params in params:
-            for param_name, param_array in layer_params.items():
-                flat_shape = param_array[0].flatten().shape
-                if param_name == 'w':
-                    prior_stds.append(weight_prior_std * jnp.ones(flat_shape))
-                elif param_name == 'b':
-                    prior_stds.append(bias_prior_std * jnp.ones(flat_shape))
-                else:
-                    raise ValueError(f'Unknown parameter {param_name}')
-        prior_stds = jnp.concatenate(prior_stds)
-        prior_dist = tfd.MultivariateNormalDiag(jnp.zeros_like(prior_stds), prior_stds)
-        assert prior_dist.event_shape == self.batched_model.param_vectors_stacked.shape[-1:]
-        return prior_dist
 
     @partial(jax.jit, static_argnums=(0,))
     def _evaluate_kernel(self, particles: jnp.ndarray):
@@ -124,7 +102,6 @@ class BNN_SVGD(AbstactRegressionModel):
             stats = OrderedDict(train_nll_loss=-ll)
         return - log_posterior, stats
 
-
     def predict_dist(self, x: jnp.ndarray, include_noise: bool = True) -> tfd.Distribution:
         self.batched_model.param_vectors_stacked = self.params_stack
         x = self._normalize_data(x)
@@ -134,17 +111,12 @@ class BNN_SVGD(AbstactRegressionModel):
         assert pred_dist.event_shape == (self.output_size,)
         return pred_dist
 
-    def predict(self, x: jnp.ndarray, include_noise: bool = False) -> Tuple[jnp.ndarray, jnp.ndarray]:
-        pred_dist = self.predict_dist(x=x, include_noise=include_noise)
-        return pred_dist.mean, pred_dist.stddev
-
     def predict_post_samples(self, x: jnp.ndarray) -> jnp.ndarray:
         x = self._normalize_data(x)
         y_pred_raw = self.batched_model(x)
         y_pred = y_pred_raw * self._y_std + self._y_mean
         assert y_pred.ndim == 3 and y_pred.shape[-2:] == (x.shape[0], self.output_size)
         return y_pred
-
 
 if __name__ == '__main__':
     def key_iter():
@@ -165,7 +137,7 @@ if __name__ == '__main__':
     y_test = fun(x_test) + 0.1 * jax.random.normal(next(key_iter), shape=x_test.shape)
 
 
-    bnn = BNN_SVGD(1, 1, next(key_iter), num_steps=20000, bandwidth_svgd=10.)
+    bnn = BNN_SVGD(1, 1, next(key_iter), num_train_steps=20000, bandwidth_svgd=10.)
     #bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=20000)
     for i in range(10):
         bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=2000)
