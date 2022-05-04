@@ -30,6 +30,7 @@ class BNN_FSVGD(BatchedNeuralNetworkModel):
                  num_train_steps: int = 10000,
                  lr = 1e-3,
                  normalize_data: bool = True,
+                 normalization_stats: Optional[Dict[str, jnp.ndarray]] = None,
                  hidden_layer_sizes: List[int] = (32, 32, 32),
                  hidden_activation: Optional[Callable] = jax.nn.leaky_relu,
                  last_activation: Optional[Callable] = None):
@@ -37,7 +38,7 @@ class BNN_FSVGD(BatchedNeuralNetworkModel):
                          data_batch_size=data_batch_size, num_train_steps=num_train_steps,
                          num_batched_nns=num_particles, hidden_layer_sizes=hidden_layer_sizes,
                          hidden_activation=hidden_activation, last_activation=last_activation,
-                         normalize_data=normalize_data)
+                         normalize_data=normalize_data, normalization_stats=normalization_stats)
         self.likelihood_std = likelihood_std * jnp.ones(output_size)
         self.num_particles = num_particles
         self.bandwidth_svgd = bandwidth_svgd

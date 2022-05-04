@@ -32,6 +32,40 @@ class TestAbstractRegression(unittest.TestCase):
         assert jnp.linalg.norm(jnp.mean(y, axis=0)) < 1e-1
         assert jnp.linalg.norm(jnp.std(y, axis=0) - 1.0) < 1e-1
 
+    def test_normalization_unnormalization(self):
+        key1, key2, key3 = jax.random.split(jax.random.PRNGKey(974), 3)
+        x_data = jnp.array([1., -2.]) + jnp.array([1., 5.]) * jax.random.normal(key1, (10, 2))
+        y_data = jnp.array([5.0]) + jnp.array([0.1]) * jax.random.normal(key2, (10, 1))
+
+        model = AbstactRegressionModel(input_size=2, output_size=1, rng_key=key3)
+        model._compute_normalization_stats(x_data, y_data)
+
+        x1, y1 = model._unnormalize_data(*model._normalize_data(x_data, y_data))
+        assert jnp.allclose(x_data, x1)
+        assert jnp.allclose(y_data, y1)
+
+        x2 = model._unnormalize_data(model._normalize_data(x_data))
+        assert jnp.allclose(x_data, x2)
+
+        y2 = model._unnormalize_y(model._normalize_y(y_data))
+        assert jnp.allclose(y_data, y2)
+
+    def test_setting_normalization_stats(self):
+        key1, key2, key3 = jax.random.split(jax.random.PRNGKey(897), 3)
+        x_data = jnp.array([1.,]) + jnp.array([1.]) * jax.random.normal(key1, (10, 1))
+        y_data = jnp.array([5.0, -3.0]) + jnp.array([0.1, 5.]) * jax.random.normal(key2, (10, 2))
+
+        norm_stats = {'x_mean': jnp.array([1.]), 'x_std': jnp.array([2.]),
+                      'y_mean': jnp.array([2.0, -2.0]), 'y_std': jnp.array([0.1, 5.])}
+        model = AbstactRegressionModel(input_size=1, output_size=2, rng_key=key3,
+                                       normalization_stats=norm_stats)
+
+        x_norm = model._normalize_data(x_data, eps=1e-8)
+        y_norm = model._normalize_y(y_data, eps=1e-8)
+
+        assert jnp.allclose(x_norm, (x_data - norm_stats['x_mean']) / (norm_stats['x_std'] + 1e-8))
+        assert jnp.allclose(y_norm, (y_data - norm_stats['y_mean']) / (norm_stats['y_std'] + 1e-8))
+
     def test_data_loader_epoch(self):
         key1, key2, key3 = jax.random.split(jax.random.PRNGKey(45645), 3)
         x_data = jnp.arange(0, 30).reshape((-1, 1))

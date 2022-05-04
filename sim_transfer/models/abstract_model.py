@@ -20,16 +20,28 @@ import tensorflow_probability.substrates.jax.distributions as tfd
 
 class AbstactRegressionModel(RngKeyMixin):
 
-    def __init__(self, input_size: int, output_size: int, rng_key: jax.random.PRNGKey, normalize_data: bool = True):
+    def __init__(self, input_size: int, output_size: int, rng_key: jax.random.PRNGKey, normalize_data: bool = True,
+                 normalization_stats: Optional[Dict[str, jnp.ndarray]] = None):
         super().__init__(rng_key)
 
         self.input_size = input_size
         self.output_size = output_size
         self.normalize_data = normalize_data
+        self.need_to_compute_norm_stats = normalize_data and (normalization_stats is None)
 
-        # initialize normalization stats to neutral elements
-        self._x_mean, self._x_std = jnp.zeros(input_size), jnp.ones(input_size)
-        self._y_mean, self._y_std = jnp.zeros(output_size), jnp.ones(output_size)
+        if normalization_stats is None:
+            # initialize normalization stats to neutral elements
+            self._x_mean, self._x_std = jnp.zeros(input_size), jnp.ones(input_size)
+            self._y_mean, self._y_std = jnp.zeros(output_size), jnp.ones(output_size)
+        else:
+            # check the provided normalization stats
+            _n_stats = normalization_stats
+            assert _n_stats['x_mean'].shape == _n_stats['x_std'].shape == (self.input_size,)
+            assert _n_stats['y_mean'].shape == _n_stats['y_std'].shape == (self.output_size,)
+            assert jnp.all(_n_stats['y_std'] > 0) and jnp.all(_n_stats['x_std'] > 0), 'stds need to be positive'
+            # set the stats
+            self._x_mean, self._x_std = _n_stats['x_mean'], _n_stats['x_std']
+            self._y_mean, self._y_std = _n_stats['y_mean'], _n_stats['y_std']
         self.affine_transform_y = lambda dist: AffineTransform(shift=self._y_mean, scale=self._y_std)
 
         # disable some stupid tensorflow probability warnings
@@ -37,7 +49,7 @@ class AbstactRegressionModel(RngKeyMixin):
 
     def _compute_normalization_stats(self, x: jnp.ndarray, y: jnp.ndarray) -> None:
         # computes the empirical normalization stats and stores as private variables
-        x, y = self._ensure2d_float(x, y)
+        x, y = self._ensure_atleast_2d_float(x, y)
         self._x_mean = jnp.mean(x, axis=0)
         self._y_mean = jnp.mean(y, axis=0)
         self._x_std = jnp.std(x, axis=0)
@@ -46,20 +58,47 @@ class AbstactRegressionModel(RngKeyMixin):
     def _normalize_data(self, x: jnp.ndarray, y: Optional[jnp.ndarray] = None, eps: float = 1e-8):
         # normalized the given data with the normalization stats
         if y is None:
-            x = self._ensure2d_float(x)
+            x = self._ensure_atleast_2d_float(x)
         else:
-            x, y = self._ensure2d_float(x, y)
+            x, y = self._ensure_atleast_2d_float(x, y)
         x_normalized = (x - self._x_mean[None, :]) / (self._x_std[None, :] + eps)
         assert x_normalized.shape == x.shape
         if y is None:
             return x_normalized
         else:
-            y_normalized = (y - self._y_mean[None, :]) / (self._y_std[None, :] + eps)
+            y_normalized = self._normalize_y(y, eps=eps)
             assert y_normalized.shape == y.shape
             return x_normalized, y_normalized
 
+    def _unnormalize_data(self, x: jnp.ndarray, y: Optional[jnp.ndarray] = None, eps: float = 1e-8):
+        if y is None:
+            x = self._ensure_atleast_2d_float(x)
+        else:
+            x, y = self._ensure_atleast_2d_float(x, y)
+        x_unnorm = x * (self._x_std[None, :] + eps) + self._x_mean[None, :]
+        assert x_unnorm.shape == x.shape
+        if y is None:
+            return x_unnorm
+        else:
+            y_unnorm = self._unnormalize_y(y, eps=eps)
+            return x_unnorm, y_unnorm
+
+    def _normalize_y(self, y: jnp.ndarray, eps: float = 1e-8) -> jnp.ndarray:
+        y = self._ensure_atleast_2d_float(y)
+        assert y.shape[-1] == self.output_size
+        y_normalized = (y - self._y_mean) / (self._y_std + eps)
+        assert y_normalized.shape == y.shape
+        return y_normalized
+
+    def _unnormalize_y(self, y: jnp.ndarray, eps: float = 1e-8) -> jnp.ndarray:
+        y = self._ensure_atleast_2d_float(y)
+        assert y.shape[-1] == self.output_size
+        y_unnorm = y * (self._y_std + eps) + self._y_mean
+        assert y_unnorm.shape == y.shape
+        return y_unnorm
+
     @staticmethod
-    def _ensure2d_float(x: jnp.ndarray, y: Optional[jnp.ndarray] = None, dtype: jnp.dtype = jnp.float32):
+    def _ensure_atleast_2d_float(x: jnp.ndarray, y: Optional[jnp.ndarray] = None, dtype: jnp.dtype = jnp.float32):
         if x.ndim == 1:
             x = jnp.expand_dims(x, -1)
         if y is None:
@@ -87,11 +126,12 @@ class AbstactRegressionModel(RngKeyMixin):
     def _preprocess_train_data(self, x_train: jnp.ndarray, y_train: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
         """ Convert data to float32, ensure 2d shape and normalize if necessary"""
         if self.normalize_data:
-            self._compute_normalization_stats(x_train, y_train)
+            if self.need_to_compute_norm_stats:
+                self._compute_normalization_stats(x_train, y_train)
             x_train, y_train = self._normalize_data(x_train, y_train)
             self.affine_transform_y = AffineTransform(shift=self._y_mean, scale=self._y_std)
         else:
-            x_train, y_train = self._ensure2d_float(x_train, y_train)
+            x_train, y_train = self._ensure_atleast_2d_float(x_train, y_train)
         return x_train, y_train
 
     def _create_data_loader(self, x_data: jnp.ndarray, y_data: jnp.ndarray,
@@ -122,7 +162,7 @@ class AbstactRegressionModel(RngKeyMixin):
         raise NotImplementedError
 
     def eval(self, x: jnp.ndarray, y: np.ndarray, prefix: str = '') -> Dict[str, jnp.ndarray]:
-        x, y = self._ensure2d_float(x, y)
+        x, y = self._ensure_atleast_2d_float(x, y)
         pred_dist = self.predict_dist(x, include_noise=True)
         nll = - jnp.mean(pred_dist.log_prob(y))
         rmse = jnp.sqrt(jnp.mean(jnp.sum((pred_dist.mean - y)**2, axis=-1)))
