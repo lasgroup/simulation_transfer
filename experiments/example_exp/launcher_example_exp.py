@@ -67,7 +67,7 @@ def main(args):
             command_list.append(cmd)
 
     # submit jobs
-    generate_run_commands(command_list, num_cpus=args.num_cpus, mode='local_async', promt=True)
+    generate_run_commands(command_list, num_cpus=args.num_cpus, mode='euler', promt=True)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

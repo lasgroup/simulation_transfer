@@ -66,7 +66,7 @@ for plot_dict in PLOT_DICTS:
                 if i == 0:
                     print(f'{method}_{j}', row['exp_result_folder'][0])
             if k == 0:
-                axes[i].set_ylabel(metric)
+                axes[i].set_ylabel(Y_AX_LABEL_MAP[metric])
             axes[i].set_xticks(np.arange(len(methods)))
             axes[i].set_xticklabels(methods)
             axes[i].set_xlim((-0.5, len(methods) - 0.5))
