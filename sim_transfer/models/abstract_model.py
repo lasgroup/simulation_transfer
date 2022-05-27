@@ -18,7 +18,7 @@ from tensorflow_probability.substrates import jax as tfp
 import tensorflow_probability.substrates.jax.distributions as tfd
 
 
-class AbstactRegressionModel(RngKeyMixin):
+class AbstractRegressionModel(RngKeyMixin):
 
     def __init__(self, input_size: int, output_size: int, rng_key: jax.random.PRNGKey, normalize_data: bool = True,
                  normalization_stats: Optional[Dict[str, jnp.ndarray]] = None):
@@ -215,7 +215,7 @@ class AbstactRegressionModel(RngKeyMixin):
         logger.addFilter(CheckTypesFilter())
 
 
-class BatchedNeuralNetworkModel(AbstactRegressionModel):
+class BatchedNeuralNetworkModel(AbstractRegressionModel):
 
     def __init__(self,
                  *args,
