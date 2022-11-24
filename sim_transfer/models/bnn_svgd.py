@@ -6,7 +6,6 @@ from typing import List, Optional, Callable, Tuple, Dict, Union
 from collections import OrderedDict
 from sim_transfer.models.abstract_model import BatchedNeuralNetworkModel
 
-
 from functools import partial
 from tensorflow_probability.substrates import jax as tfp
 import tensorflow_probability.substrates.jax.distributions as tfd
@@ -23,7 +22,7 @@ class BNN_SVGD(BatchedNeuralNetworkModel):
                  bandwidth_svgd: float = 10.0,
                  data_batch_size: int = 16,
                  num_train_steps: int = 10000,
-                 lr = 1e-3,
+                 lr=1e-3,
                  normalize_data: bool = True,
                  normalization_stats: Optional[Dict[str, jnp.ndarray]] = None,
                  hidden_layer_sizes: List[int] = (32, 32, 32),
@@ -71,7 +70,9 @@ class BNN_SVGD(BatchedNeuralNetworkModel):
     def _step_jit(self, opt_state: optax.OptState, param_vec_stack: jnp.array, x_batch: jnp.array, y_batch: jnp.array,
                   num_train_points: Union[float, int]):
         # SVGD updates
-        (log_post, post_stats), grad_q = jax.value_and_grad(self._neg_log_posterior, has_aux=True)(param_vec_stack, x_batch, y_batch, num_train_points)
+        (log_post, post_stats), grad_q = jax.value_and_grad(self._neg_log_posterior, has_aux=True)(param_vec_stack,
+                                                                                                   x_batch, y_batch,
+                                                                                                   num_train_points)
         grad_k, k = jax.grad(self._evaluate_kernel, has_aux=True)(param_vec_stack)
         grad = k @ grad_q + grad_k / self.num_particles
 
@@ -119,17 +120,20 @@ class BNN_SVGD(BatchedNeuralNetworkModel):
         assert y_pred.ndim == 3 and y_pred.shape[-2:] == (x.shape[0], self.output_size)
         return y_pred
 
+
 if __name__ == '__main__':
     def key_iter():
         key = jax.random.PRNGKey(7644)
         while True:
             key, new_key = jax.random.split(key)
             yield new_key
+
+
     key_iter = key_iter()
 
-    fun = lambda x: 2 * x + 2 * jnp.sin(2 * x)
+    fun = lambda x: jnp.sin(x)
 
-    num_train_points = 10
+    num_train_points = 50
     x_train = jax.random.uniform(next(key_iter), shape=(num_train_points, 1), minval=-5, maxval=5)
     y_train = fun(x_train) + 0.1 * jax.random.normal(next(key_iter), shape=x_train.shape)
 
@@ -137,10 +141,8 @@ if __name__ == '__main__':
     x_test = jax.random.uniform(next(key_iter), shape=(num_test_points, 1), minval=-5, maxval=5)
     y_test = fun(x_test) + 0.1 * jax.random.normal(next(key_iter), shape=x_test.shape)
 
-
-    bnn = BNN_SVGD(1, 1, next(key_iter), num_train_steps=20000, bandwidth_svgd=10.)
-    #bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=20000)
+    bnn = BNN_SVGD(1, 1, next(key_iter), num_train_steps=20000, bandwidth_svgd=0.2, data_batch_size=50)
+    # bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=20000)
     for i in range(10):
         bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=2000)
-        bnn.plot_1d(x_train, y_train, true_fun=fun, title=f'iter {(i+1) * 2000}')
-
+        bnn.plot_1d(x_train, y_train, true_fun=fun, title=f'iter {(i + 1) * 2000}')

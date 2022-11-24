@@ -2,7 +2,6 @@ import jax
 import jax.numpy as jnp
 from typing import Optional, Tuple, Callable, Dict, List
 
-
 import time
 import matplotlib.pyplot as plt
 import numpy as np
@@ -139,7 +138,7 @@ class AbstractRegressionModel(RngKeyMixin):
                             infinite: bool = True) -> tf.data.Dataset:
         ds = tf.data.Dataset.from_tensor_slices((x_data, y_data))
         if shuffle:
-            seed = int(jax.random.randint(self.rng_key, (1,), 0, 10**8))
+            seed = int(jax.random.randint(self.rng_key, (1,), 0, 10 ** 8))
             ds = ds.shuffle(batch_size * 4, seed=seed, reshuffle_each_iteration=True)
         if infinite:
             ds = ds.repeat()
@@ -165,7 +164,7 @@ class AbstractRegressionModel(RngKeyMixin):
         x, y = self._ensure_atleast_2d_float(x, y)
         pred_dist = self.predict_dist(x, include_noise=True)
         nll = - jnp.mean(pred_dist.log_prob(y))
-        rmse = jnp.sqrt(jnp.mean(jnp.sum((pred_dist.mean - y)**2, axis=-1)))
+        rmse = jnp.sqrt(jnp.mean(jnp.sum((pred_dist.mean - y) ** 2, axis=-1)))
         eval_stats = {'nll': nll, 'rmse': rmse}
         # add prefix to stats names
         eval_stats = {f'{prefix}{name}': val for name, val in eval_stats.items()}
@@ -209,9 +208,11 @@ class AbstractRegressionModel(RngKeyMixin):
 
     def _add_checktypes_logging_filter(self):
         logger = logging.getLogger()
+
         class CheckTypesFilter(logging.Filter):
             def filter(self, record):
                 return "check_types" not in record.getMessage()
+
         logger.addFilter(CheckTypesFilter())
 
 
@@ -238,7 +239,6 @@ class BatchedNeuralNetworkModel(AbstractRegressionModel):
                                         hidden_activation=hidden_activation,
                                         last_activation=last_activation,
                                         rng_key=self.rng_key)
-
 
     def fit(self, x_train: jnp.ndarray, y_train: jnp.ndarray, x_eval: Optional[jnp.ndarray] = None,
             y_eval: Optional[jnp.ndarray] = None, num_steps: Optional[int] = None, log_period: int = 1000):

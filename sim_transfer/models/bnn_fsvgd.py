@@ -1,16 +1,15 @@
+from collections import OrderedDict
+from functools import partial
+from typing import List, Optional, Callable, Dict, Union
+
 import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
-
-from typing import List, Optional, Callable, Tuple, Dict, Union
-from collections import OrderedDict
-from sim_transfer.models.abstract_model import BatchedNeuralNetworkModel
-from sim_transfer.modules import BatchedMLP
-
-from functools import partial
-from tensorflow_probability.substrates import jax as tfp
 import tensorflow_probability.substrates.jax.distributions as tfd
+from tensorflow_probability.substrates import jax as tfp
+
+from sim_transfer.models.abstract_model import BatchedNeuralNetworkModel
 
 
 class BNN_FSVGD(BatchedNeuralNetworkModel):
@@ -28,7 +27,7 @@ class BNN_FSVGD(BatchedNeuralNetworkModel):
                  data_batch_size: int = 16,
                  num_measurement_points: int = 16,
                  num_train_steps: int = 10000,
-                 lr = 1e-3,
+                 lr=1e-3,
                  normalize_data: bool = True,
                  normalization_stats: Optional[Dict[str, jnp.ndarray]] = None,
                  hidden_layer_sizes: List[int] = (32, 32, 32),
@@ -107,7 +106,6 @@ class BNN_FSVGD(BatchedNeuralNetworkModel):
     @partial(jax.jit, static_argnums=(0,))
     def _step_jit(self, opt_state: optax.OptState, param_vec_stack: jnp.array, x_batch: jnp.array, y_batch: jnp.array,
                   key: jax.random.PRNGKey, num_train_points: Union[float, int]):
-
         (loss, stats), grad = jax.value_and_grad(self._surrogate_loss, has_aux=True)(
             param_vec_stack, x_batch, y_batch, num_train_points, key)
         updates, opt_state = self.optim.update(grad, opt_state, param_vec_stack)
@@ -155,12 +153,14 @@ if __name__ == '__main__':
         while True:
             key, new_key = jax.random.split(key)
             yield new_key
+
+
     key_iter = key_iter()
 
-    fun = lambda x: 2 * x + 2 * jnp.sin(2 * x)
+    fun = lambda x: jnp.sin(x)
 
     domain_l, domain_u = np.array([-7.]), np.array([7.])
-    num_train_points = 10
+    num_train_points = 50
     x_train = jax.random.uniform(next(key_iter), shape=(num_train_points, 1), minval=-5, maxval=5)
     y_train = fun(x_train) + 0.1 * jax.random.normal(next(key_iter), shape=x_train.shape)
 
@@ -168,10 +168,9 @@ if __name__ == '__main__':
     x_test = jax.random.uniform(next(key_iter), shape=(num_test_points, 1), minval=-5, maxval=5)
     y_test = fun(x_test) + 0.1 * jax.random.normal(next(key_iter), shape=x_test.shape)
 
-
-    bnn = BNN_FSVGD(1, 1, domain_l, domain_u, next(key_iter), num_train_steps=20000)
-    #bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=20000)
+    bnn = BNN_FSVGD(1, 1, domain_l, domain_u, next(key_iter), num_train_steps=20000, data_batch_size=50,
+                    num_measurement_points=0, normalize_data=True)
+    # bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=20000)
     for i in range(10):
         bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=2000)
-        bnn.plot_1d(x_train, y_train, true_fun=fun, title=f'iter {(i+1) * 2000}')
-
+        bnn.plot_1d(x_train, y_train, true_fun=fun, title=f'iter {(i + 1) * 2000}')

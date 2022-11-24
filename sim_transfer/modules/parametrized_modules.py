@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as jnp
+from jax.tree_util import tree_leaves
 
 from typing import Callable, Optional, List, Dict, Union
 from collections import OrderedDict
@@ -25,7 +26,7 @@ class ParametrizedModule:
 
     @property
     def param_values(self) -> List[jnp.ndarray]:
-        return jax.tree_leaves(self.params)
+        return tree_leaves(self.params)
 
     @property
     def param_shapes(self) -> List[tuple]:
@@ -52,7 +53,7 @@ class ParametrizedModule:
         raise NotImplementedError
 
     def get_init_param_vec(self, rng_key: Optional[jax.random.PRNGKey] = None) -> jnp.ndarray:
-        init_param_values = jax.tree_leaves(self.init_params(inplace=False, rng_key=rng_key))
+        init_param_values = tree_leaves(self.init_params(inplace=False, rng_key=rng_key))
         init_vector = jnp.concatenate([param.reshape((-1)) for param in init_param_values])
         assert init_vector.shape == self.param_vector_shape
         return init_vector

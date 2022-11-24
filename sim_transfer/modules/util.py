@@ -1,6 +1,9 @@
+from typing import List, Dict, Callable
+
 import jax
 import jax.numpy as jnp
-from typing import List, Dict, Callable
+from jax.tree_util import tree_flatten
+
 
 def tree_stack(trees):
     """Takes a list of trees and stacks every corresponding leaf.
@@ -9,7 +12,7 @@ def tree_stack(trees):
     Useful for turning a list of objects into something you can feed to a
     vmapped function.
     """
-    leaves_list, treedef_list  = list(zip(*[jax.tree_flatten(tree) for tree in trees]))
+    leaves_list, treedef_list = list(zip(*[tree_flatten(tree) for tree in trees]))
     grouped_leaves = zip(*leaves_list)
     result_leaves = [jnp.stack(l) for l in grouped_leaves]
     return treedef_list[0].unflatten(result_leaves)
@@ -22,7 +25,7 @@ def tree_unstack(tree):
     [((a[0], b[0]), c[0]), ..., ((a[k], b[k]), c[k])]
     Useful for turning the output of a vmapped function into normal objects.
     """
-    leaves, treedef = jax.tree_flatten(tree)
+    leaves, treedef = tree_flatten(tree)
     n_trees = leaves[0].shape[0]
     new_leaves = [[] for _ in range(n_trees)]
     for leaf in leaves:
@@ -69,30 +72,3 @@ def find_root_1d(fun: Callable, low: float = -1e6, high: float = 1e6,
             low = middle
 
     raise RuntimeError(f'Reached max iterations of {maxiter} without reaching the atol of {atol}.')
-
-
-
-
-
-
-
-    # for i in range(num_iters):
-    #     middle = (upper + lower) / 2.0
-    #     param = inv_transform_fn(middle)
-    #     gp_kwargs = copy.deepcopy(default_kwargs)
-    #     gp_kwargs[target_param] = param
-    #     # do leave-one-out cross-validation on the meta-training tasks
-    #     calibr_sharpness_results = ray.get(
-    #         [calib_sharpness.remote(gp_kwargs, meta_train_data[:i] + meta_train_data[i + 1:], *meta_train_data[i])
-    #          for i in range(len(meta_train_data))])
-    #     calib_freq = np.mean(list(zip(*calibr_sharpness_results))[0])
-    #     avg_std = np.mean(list(zip(*calibr_sharpness_results))[1])
-    #     if verbose:
-    #         print(f'iter {i}/{num_iters} | upper: {10 ** upper} | lower = {10 ** lower} '
-    #               f'| {target_param}: {param} | calib_freq = {calib_freq} | avg_std = {avg_std}')
-    #
-    #     if (calib_freq >= min_calib_freq) ^ increase_when_uncalibrated:
-    #         lower = middle
-    #     else:
-    #         upper = middle
-

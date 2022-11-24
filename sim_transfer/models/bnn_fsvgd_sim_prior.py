@@ -31,7 +31,7 @@ class BNN_FSVGD_Sim_Prior(BatchedNeuralNetworkModel):
                  data_batch_size: int = 8,
                  num_measurement_points: int = 8,
                  num_train_steps: int = 10000,
-                 lr = 1e-3,
+                 lr=1e-3,
                  normalize_data: bool = True,
                  normalization_stats: Optional[Dict[str, jnp.ndarray]] = None,
                  hidden_layer_sizes: List[int] = (32, 32, 32),
@@ -68,7 +68,6 @@ class BNN_FSVGD_Sim_Prior(BatchedNeuralNetworkModel):
         # initialize kernel and ssge algo
         self.kernel_svgd = tfp.math.psd_kernels.ExponentiatedQuadratic(length_scale=self.bandwidth_svgd)
         self.ssge = SSGE(bandwidth=bandwidth_ssge)
-
 
     def _sample_measurement_points(self, key: jax.random.PRNGKey, num_points: int = 10,
                                    normalize: bool = True) -> jnp.ndarray:
@@ -112,6 +111,8 @@ class BNN_FSVGD_Sim_Prior(BatchedNeuralNetworkModel):
 
         surrogate_loss = jnp.sum(f_raw * jax.lax.stop_gradient(jnp.einsum('ij,jkm', k, grad_post)
                                                                + grad_k / self.num_particles))
+        # surrogate_loss = jnp.sum(f_raw * jax.lax.stop_gradient(jnp.einsum('ij,jkm', k, grad_k)
+        #                                                        + grad_post / self.num_particles))
         avg_triu_k = jnp.sum(jnp.triu(k, k=1)) / ((self.num_particles - 1) * self.num_particles / 2)
         stats = OrderedDict(**post_stats, avg_triu_k=avg_triu_k)
         return surrogate_loss, stats
@@ -148,7 +149,8 @@ class BNN_FSVGD_Sim_Prior(BatchedNeuralNetworkModel):
             f_prior_normalized = f_prior_normalized.squeeze(-1)
             y_squeezed = y.squeeze(-1)
         else:
-            raise NotImplementedError('Batched SSGE for mutliple output dims is not yet implemented -> needs to be done')
+            raise NotImplementedError(
+                'Batched SSGE for mutliple output dims is not yet implemented -> needs to be done')
         ssge_score = self.ssge.estimate_gradients_s_x(x_query=y_squeezed, x_sample=f_prior_normalized)
         ssge_score = jnp.expand_dims(ssge_score, axis=-1)
         assert ssge_score.shape == y.shape
@@ -173,11 +175,15 @@ class BNN_FSVGD_Sim_Prior(BatchedNeuralNetworkModel):
 
 if __name__ == '__main__':
     from sim_transfer.sims import GaussianProcessSim, SinusoidsSim
+
+
     def key_iter():
         key = jax.random.PRNGKey(7644)
         while True:
             key, new_key = jax.random.split(key)
             yield new_key
+
+
     key_iter = key_iter()
 
     fun = lambda x: 2 * x + 2 * jnp.sin(2 * x)
@@ -198,12 +204,11 @@ if __name__ == '__main__':
         'y_std': jnp.std(y_test, axis=0),
     }
 
-    #sim = GaussianProcessSim(input_size=1, output_scale=3.0, mean_fn=lambda x: 2 * x)
+    # sim = GaussianProcessSim(input_size=1, output_scale=3.0, mean_fn=lambda x: 2 * x)
     sim = SinusoidsSim()
     bnn = BNN_FSVGD_Sim_Prior(1, 1, domain_l, domain_u, rng_key=next(key_iter), function_sim=sim,
-                              normalization_stats=normalization_stats, num_train_steps=20000)
+                              normalization_stats=normalization_stats, num_train_steps=20000, data_batch_size=1)
     for i in range(10):
         bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=5000)
-        bnn.plot_1d(x_train, y_train, true_fun=fun, title=f'iter {(i+1) * 5000}',
+        bnn.plot_1d(x_train, y_train, true_fun=fun, title=f'iter {(i + 1) * 5000}',
                     domain_l=-7, domain_u=7)
-
