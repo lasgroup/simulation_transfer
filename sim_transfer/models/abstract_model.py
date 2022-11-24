@@ -1,20 +1,19 @@
-import jax
-import jax.numpy as jnp
+import logging
+import time
 from typing import Optional, Tuple, Callable, Dict, List
 
-import time
+import jax
+import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
-import logging
-
-from sim_transfer.modules.util import RngKeyMixin, aggregate_stats
-from sim_transfer.modules.distribution import AffineTransform
-from sim_transfer.modules import BatchedMLP
-
 import tensorflow as tf
 import tensorflow_datasets as tfds
-from tensorflow_probability.substrates import jax as tfp
 import tensorflow_probability.substrates.jax.distributions as tfd
+from tensorflow_probability.substrates import jax as tfp
+
+from sim_transfer.flax_modules.batched_nn import BatchedModel
+from sim_transfer.modules.distribution import AffineTransform
+from sim_transfer.modules.util import RngKeyMixin, aggregate_stats
 
 
 class AbstractRegressionModel(RngKeyMixin):
@@ -233,12 +232,12 @@ class BatchedNeuralNetworkModel(AbstractRegressionModel):
         self.num_batched_nns = num_batched_nns
 
         # setup batched mlp
-        self.batched_model = BatchedMLP(input_size=self.input_size, output_size=self.output_size,
-                                        num_batched_modules=num_batched_nns,
-                                        hidden_layer_sizes=hidden_layer_sizes,
-                                        hidden_activation=hidden_activation,
-                                        last_activation=last_activation,
-                                        rng_key=self.rng_key)
+        self.batched_model = BatchedModel(input_size=self.input_size, output_size=self.output_size,
+                                          num_batched_modules=num_batched_nns,
+                                          hidden_layer_sizes=hidden_layer_sizes,
+                                          hidden_activation=hidden_activation,
+                                          last_activation=last_activation,
+                                          rng_key=self.rng_key)
 
     def fit(self, x_train: jnp.ndarray, y_train: jnp.ndarray, x_eval: Optional[jnp.ndarray] = None,
             y_eval: Optional[jnp.ndarray] = None, num_steps: Optional[int] = None, log_period: int = 1000):
@@ -287,21 +286,7 @@ class BatchedNeuralNetworkModel(AbstractRegressionModel):
                 break
 
     def _construct_nn_param_prior(self, weight_prior_std: float, bias_prior_std: float) -> tfd.MultivariateNormalDiag:
-        prior_stds = []
-        params = self.batched_model.params_stacked
-        for layer_params in params:
-            for param_name, param_array in layer_params.items():
-                flat_shape = param_array[0].flatten().shape
-                if param_name == 'w':
-                    prior_stds.append(weight_prior_std * jnp.ones(flat_shape))
-                elif param_name == 'b':
-                    prior_stds.append(bias_prior_std * jnp.ones(flat_shape))
-                else:
-                    raise ValueError(f'Unknown parameter {param_name}')
-        prior_stds = jnp.concatenate(prior_stds)
-        prior_dist = tfd.MultivariateNormalDiag(jnp.zeros_like(prior_stds), prior_stds)
-        assert prior_dist.event_shape == self.batched_model.param_vectors_stacked.shape[-1:]
-        return prior_dist
+        return self.batched_model.params_prior(weight_prior_std=weight_prior_std, bias_prior_std=bias_prior_std)
 
     def predict(self, x: jnp.ndarray, include_noise: bool = False) -> Tuple[jnp.ndarray, jnp.ndarray]:
         """ Returns the mean and std of the predictive distribution.

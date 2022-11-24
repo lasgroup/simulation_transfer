@@ -1,14 +1,14 @@
+from collections import OrderedDict
+from functools import partial
+from typing import List, Optional, Callable, Dict, Union
+
 import jax
 import jax.numpy as jnp
 import optax
-
-from typing import List, Optional, Callable, Tuple, Dict, Union
-from collections import OrderedDict
-from sim_transfer.models.abstract_model import BatchedNeuralNetworkModel
-
-from functools import partial
-from tensorflow_probability.substrates import jax as tfp
 import tensorflow_probability.substrates.jax.distributions as tfd
+from tensorflow_probability.substrates import jax as tfp
+
+from sim_transfer.models.abstract_model import BatchedNeuralNetworkModel
 
 
 class BNN_SVGD(BatchedNeuralNetworkModel):
@@ -73,10 +73,12 @@ class BNN_SVGD(BatchedNeuralNetworkModel):
         (log_post, post_stats), grad_q = jax.value_and_grad(self._neg_log_posterior, has_aux=True)(param_vec_stack,
                                                                                                    x_batch, y_batch,
                                                                                                    num_train_points)
-        grad_k, k = jax.grad(self._evaluate_kernel, has_aux=True)(param_vec_stack)
+        grad_q = self.batched_model.flatten_batch(grad_q)
+
+        grad_k, k = jax.grad(self._evaluate_kernel, has_aux=True)(self.batched_model.flatten_batch(param_vec_stack))
         grad = k @ grad_q + grad_k / self.num_particles
 
-        updates, opt_state = self.optim.update(grad, opt_state, param_vec_stack)
+        updates, opt_state = self.optim.update(self.batched_model.unravel_batch(grad), opt_state, param_vec_stack)
         param_vec_stack = optax.apply_updates(param_vec_stack, updates)
 
         avg_triu_k = jnp.sum(jnp.triu(k, k=1)) / ((self.num_particles - 1) * self.num_particles / 2)
@@ -95,7 +97,7 @@ class BNN_SVGD(BatchedNeuralNetworkModel):
                            num_train_points: Union[float, int]):
         ll = self._ll(param_vec_stack, x_batch=x_batch, y_batch=y_batch)
         if self.use_prior:
-            log_prior = jnp.mean(self.prior_dist.log_prob(param_vec_stack))
+            log_prior = jnp.mean(self.prior_dist.log_prob(self.batched_model.flatten_batch(param_vec_stack)))
             log_prior /= (num_train_points * self.prior_dist.event_shape[0])
             stats = OrderedDict(train_nll_loss=-ll, neg_log_prior=-log_prior)
             log_posterior = ll + log_prior
@@ -141,7 +143,7 @@ if __name__ == '__main__':
     x_test = jax.random.uniform(next(key_iter), shape=(num_test_points, 1), minval=-5, maxval=5)
     y_test = fun(x_test) + 0.1 * jax.random.normal(next(key_iter), shape=x_test.shape)
 
-    bnn = BNN_SVGD(1, 1, next(key_iter), num_train_steps=20000, bandwidth_svgd=0.2, data_batch_size=50)
+    bnn = BNN_SVGD(1, 1, next(key_iter), num_train_steps=20000, bandwidth_svgd=0.2, data_batch_size=50, use_prior=True)
     # bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=20000)
     for i in range(10):
         bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=2000)

@@ -207,7 +207,7 @@ if __name__ == '__main__':
     # sim = GaussianProcessSim(input_size=1, output_scale=3.0, mean_fn=lambda x: 2 * x)
     sim = SinusoidsSim()
     bnn = BNN_FSVGD_Sim_Prior(1, 1, domain_l, domain_u, rng_key=next(key_iter), function_sim=sim,
-                              normalization_stats=normalization_stats, num_train_steps=20000, data_batch_size=1)
+                              normalization_stats=normalization_stats, num_train_steps=20000, data_batch_size=4)
     for i in range(10):
         bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=5000)
         bnn.plot_1d(x_train, y_train, true_fun=fun, title=f'iter {(i + 1) * 5000}',
