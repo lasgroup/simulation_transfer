@@ -23,7 +23,7 @@ class TestDenseParametrized(unittest.TestCase):
         self.x_test = jnp.linspace(-5, 5, num=200).reshape((-1, 1))
 
     def test_basic_learning(self):
-        key= jax.random.split(jax.random.PRNGKey(2567))
+        key = jax.random.PRNGKey(2567)
         dense = Dense(input_size=1, output_size=1, rng_key=key)
 
         optim = optax.adam(learning_rate=0.1)
@@ -45,7 +45,7 @@ class TestDenseParametrized(unittest.TestCase):
         assert mse < 0.1
 
     def test_basic_learning_vectorized(self):
-        key = jax.random.split(jax.random.PRNGKey(2567))
+        key = jax.random.PRNGKey(2567)
         dense = Dense(input_size=1, output_size=1, rng_key=key)
 
         optim = optax.adam(learning_rate=0.1)
@@ -288,9 +288,7 @@ class TestUtil(unittest.TestCase):
 
 class TestDataLoader(unittest.TestCase):
 
-    @pytest.mark.parametrize(['batch_size', 'shuffle'], [[3, True], [5, True], [3, False]])
-    @staticmethod
-    def test_goes_through_all_data(batch_size: int, shuffle: bool):
+    def test_goes_through_all_data(self, batch_size: int = 3, shuffle: bool = True):
         key = jax.random.PRNGKey(234)
         num_data_points = 20
         x_data = jnp.arange(num_data_points).reshape((-1, 1))
@@ -311,15 +309,13 @@ class TestDataLoader(unittest.TestCase):
         assert jnp.allclose(x_cat[sorted_idx], x_data)
         assert jnp.allclose(y_cat[sorted_idx], y_data)
 
-    @pytest.mark.parametrize('drop_last', [True, False])
-    @staticmethod
-    def test_key_and_shape_consistency(drop_last: bool):
+    def test_key_and_shape_consistency(self, drop_last: bool = True):
         key1, key2, key3 = jax.random.split(jax.random.PRNGKey(234), 3)
         x_data = jax.random.uniform(key1, (10, 8, 3))
         y_data = jax.random.uniform(key2, (10, 4))
 
-        data_loader1 = DataLoader(x_data, y_data, rng_key=key3, shuffle=True, batch_size=4, drop_last=False)
-        data_loader2 = DataLoader(x_data, y_data, rng_key=key3, shuffle=True, batch_size=4, drop_last=False)
+        data_loader1 = DataLoader(x_data, y_data, rng_key=key3, shuffle=True, batch_size=4, drop_last=drop_last)
+        data_loader2 = DataLoader(x_data, y_data, rng_key=key3, shuffle=True, batch_size=4, drop_last=drop_last)
 
         cum_batch_sizes = 0
         for (x1, y1), (x2, y2) in zip(data_loader1, data_loader2):
