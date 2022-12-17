@@ -7,7 +7,7 @@ import pytest
 from tensorflow_probability.substrates import jax as tfp
 
 from sim_transfer.modules import Dense, MLP, SequentialModule, BatchedMLP
-from sim_transfer.modules.util import tree_unstack, tree_stack
+from sim_transfer.modules.util import tree_unstack, tree_stack, find_root_1d
 from sim_transfer.modules.data_loader import DataLoader
 from sim_transfer.modules.distribution import AffineTransform
 
@@ -366,6 +366,19 @@ class TestAffineTransformedDist(unittest.TestCase):
         assert jnp.allclose(dist.mean() * scale + shift, dist_tansf.mean)
         assert jnp.allclose(dist.stddev() * scale, dist_tansf.stddev)
         assert jnp.allclose(dist.variance() * scale**2, dist_tansf.variance)
+
+
+class TestRootFind1d(unittest.TestCase):
+
+    def test_root_x3(self):
+        f = lambda x: (x-3.)**3
+        r =  find_root_1d(f)
+        assert jnp.allclose(r, 3., atol=1e-4)
+
+    def test_tanh(self):
+        f = lambda x: 0.5 * jnp.tanh(20 * (x + 0.05))
+        r =  find_root_1d(f)
+        assert jnp.allclose(r, -.05, atol=1e-4)
 
 
 if __name__ == '__main__':

@@ -1,6 +1,6 @@
 import jax
 import jax.numpy as jnp
-from typing import List, Dict
+from typing import List, Dict, Callable
 
 def tree_stack(trees):
     """Takes a list of trees and stacks every corresponding leaf.
@@ -50,3 +50,49 @@ class RngKeyMixin:
 
 def aggregate_stats(stats_list: List[Dict]) -> Dict:
     return jax.tree_map(jnp.mean, tree_stack(stats_list))
+
+""" Root finding """
+
+def find_root_1d(fun: Callable, low: float = -1e6, high: float = 1e6,
+              atol: float = 1e-6, maxiter: int = 10**2):
+    assert fun(low) < 0, 'Lower bound not small enough'
+    assert fun(high) > 0, 'High bound not small enough'
+
+    for i in range(maxiter):
+        middle = (high + low) / 2.0
+        if jnp.abs(low - high) < atol:
+            return middle
+        f_middle = fun(middle)
+        if f_middle > 0:
+            high = middle
+        else:
+            low = middle
+
+    raise RuntimeError(f'Reached max iterations of {maxiter} without reaching the atol of {atol}.')
+
+
+
+
+
+
+
+    # for i in range(num_iters):
+    #     middle = (upper + lower) / 2.0
+    #     param = inv_transform_fn(middle)
+    #     gp_kwargs = copy.deepcopy(default_kwargs)
+    #     gp_kwargs[target_param] = param
+    #     # do leave-one-out cross-validation on the meta-training tasks
+    #     calibr_sharpness_results = ray.get(
+    #         [calib_sharpness.remote(gp_kwargs, meta_train_data[:i] + meta_train_data[i + 1:], *meta_train_data[i])
+    #          for i in range(len(meta_train_data))])
+    #     calib_freq = np.mean(list(zip(*calibr_sharpness_results))[0])
+    #     avg_std = np.mean(list(zip(*calibr_sharpness_results))[1])
+    #     if verbose:
+    #         print(f'iter {i}/{num_iters} | upper: {10 ** upper} | lower = {10 ** lower} '
+    #               f'| {target_param}: {param} | calib_freq = {calib_freq} | avg_std = {avg_std}')
+    #
+    #     if (calib_freq >= min_calib_freq) ^ increase_when_uncalibrated:
+    #         lower = middle
+    #     else:
+    #         upper = middle
+
