@@ -149,7 +149,7 @@ class BNN_FSVGD(BatchedNeuralNetworkModel):
 
 if __name__ == '__main__':
     def key_iter():
-        key = jax.random.PRNGKey(7644)
+        key = jax.random.PRNGKey(567)
         while True:
             key, new_key = jax.random.split(key)
             yield new_key
@@ -157,10 +157,10 @@ if __name__ == '__main__':
 
     key_iter = key_iter()
 
-    fun = lambda x: jnp.sin(x)
+    fun = lambda x: 2 * x + 2 * jnp.sin(2 * x)
 
     domain_l, domain_u = np.array([-7.]), np.array([7.])
-    num_train_points = 50
+    num_train_points = 10
     x_train = jax.random.uniform(next(key_iter), shape=(num_train_points, 1), minval=-5, maxval=5)
     y_train = fun(x_train) + 0.1 * jax.random.normal(next(key_iter), shape=x_train.shape)
 
@@ -169,8 +169,7 @@ if __name__ == '__main__':
     y_test = fun(x_test) + 0.1 * jax.random.normal(next(key_iter), shape=x_test.shape)
 
     bnn = BNN_FSVGD(1, 1, domain_l, domain_u, next(key_iter), num_train_steps=20000, data_batch_size=50,
-                    num_measurement_points=0, normalize_data=True)
-    # bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=20000)
+                    num_measurement_points=0, normalize_data=True, bandwidth_svgd=1.0)
     for i in range(10):
         bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=2000)
         bnn.plot_1d(x_train, y_train, true_fun=fun, title=f'iter {(i + 1) * 2000}')

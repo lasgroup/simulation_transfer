@@ -1,2 +1,2 @@
-from .parametrized_modules import Dense, MLP, SequentialModule
-from .batched_modules import BatchedModuleMixin, BatchedMLP
+from .nn_modules import BatchedMLP
+from .distribution import AffineTransform

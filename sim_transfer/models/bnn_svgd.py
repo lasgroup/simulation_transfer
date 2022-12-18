@@ -133,9 +133,9 @@ if __name__ == '__main__':
 
     key_iter = key_iter()
 
-    fun = lambda x: jnp.sin(x)
+    fun = lambda x: 2 * x + 2 * jnp.sin(2 * x)
 
-    num_train_points = 50
+    num_train_points = 10
     x_train = jax.random.uniform(next(key_iter), shape=(num_train_points, 1), minval=-5, maxval=5)
     y_train = fun(x_train) + 0.1 * jax.random.normal(next(key_iter), shape=x_train.shape)
 

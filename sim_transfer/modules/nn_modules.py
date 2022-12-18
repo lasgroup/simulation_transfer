@@ -1,14 +1,16 @@
-import math
+from typing import Optional, Sequence, Callable, Union, List, Dict, Tuple
 from functools import partial
-from typing import Optional, Sequence, Callable, Union, List, Dict
+import math
 
+import jax.nn
 import jax.numpy as jnp
 import tensorflow_probability.substrates.jax.distributions as tfd
-from flax import linen as nn
-from flax.core import FrozenDict
 from jax import random, vmap, jit
 from jax.flatten_util import ravel_pytree
 from jax.tree_util import tree_map, tree_leaves
+
+from flax import linen as nn
+from flax.core import FrozenDict
 
 from sim_transfer.modules.util import RngKeyMixin
 
@@ -20,18 +22,7 @@ class BatchedModule(RngKeyMixin):
         self.num_batched_modules = num_batched_modules
 
         self._param_vectors_stacked = self.get_init_param_vec_stacked()
-        self.flatten_batch, self.unravel_batch = self.flatten_params()
-
-    def flatten_params(self):
-        one_batch = self._init_params_one_model(random.PRNGKey(0))
-        flat_params, unravel_callable = ravel_pytree(one_batch)
-
-        def only_flatten(params):
-            return ravel_pytree(params)[0]
-
-        flatten_batch = jit(vmap(only_flatten))
-        unravel_batch = jit(vmap(unravel_callable))
-        return flatten_batch, unravel_batch
+        self.flatten_batch, self.unravel_batch = self._get_flatten_batch_fns()
 
     @property
     def param_vectors_stacked(self) -> jnp.ndarray:
@@ -41,19 +32,7 @@ class BatchedModule(RngKeyMixin):
     def param_vectors_stacked(self, params_stacked: Union[List, Dict]):
         self._param_vectors_stacked = params_stacked
 
-    def _init_params_one_model(self, key):
-        variables = self.base_module.init(key, jnp.ones(shape=(self.base_module.input_size,)))
-        # Split state and params (which are updated by optimizer).
-        if 'params' in variables:
-            state, params = variables.pop('params')
-        else:
-            state, params = variables, FrozenDict({})
-        del variables  # Delete variables to avoid wasting resources
-        # TODO: incorporate state as well in the training
-        # return params, state
-        return params
-
-    def get_init_param_vec_stacked(self, rng_key: Optional[random.PRNGKey] = None):
+    def get_init_param_vec_stacked(self, rng_key: Optional[random.PRNGKey] = None) -> FrozenDict:
         if rng_key is None:
             rng_keys = [self._next_rng_key() for _ in range(self.num_batched_modules)]
         else:
@@ -97,29 +76,36 @@ class BatchedModule(RngKeyMixin):
     def __call__(self, x: jnp.ndarray):
         return self._apply_vec_batch(x, self._param_vectors_stacked)
 
+    def _get_flatten_batch_fns(self) -> Tuple[Callable, Callable]:
+        """ Construct function for flattening and unraveling the parameters"""
+        one_batch = self._init_params_one_model(random.PRNGKey(0))
+        flat_params, unravel_callable = ravel_pytree(one_batch)
 
-class BatchedModel(BatchedModule, RngKeyMixin):
-    def __init__(self, input_size: int, output_size: int, num_batched_modules: int, hidden_layer_sizes=Sequence[int],
-                 hidden_activation=Callable, last_activation=Callable, rng_key=jnp.ndarray):
-        super().__init__(
-            base_module=MLP(hidden_layer_sizes=hidden_layer_sizes, output_size=output_size, input_size=input_size,
-                            hidden_activation=hidden_activation, last_activation=last_activation),
-            num_batched_modules=num_batched_modules, rng_key=rng_key)
+        def only_flatten(params):
+            return ravel_pytree(params)[0]
 
-    def forward_vec(self, x: jnp.ndarray, batched_params: jnp.ndarray) -> jnp.ndarray:
-        assert x.ndim == 2 and x.shape[-1] == self.base_module.input_size
-        res = super()._apply_vec_batch(x, batched_params)
-        assert res.ndim == 3
-        assert res.shape[0] == self.num_batched_modules and res.shape[-1] == self.base_module.output_size
-        return res
+        flatten_batch = jit(vmap(only_flatten))
+        unravel_batch = jit(vmap(unravel_callable))
+        return flatten_batch, unravel_batch
+
+    def _init_params_one_model(self, key: random.PRNGKey) -> FrozenDict:
+        variables = self.base_module.init(key, jnp.ones(shape=(self.base_module.input_size,)))
+        # Split state and params (which are updated by optimizer).
+        if 'params' in variables:
+            state, params = variables.pop('params')
+        else:
+            state, params = variables, FrozenDict({})
+        del variables  # Delete variables to avoid wasting resources
+        # TODO: incorporate state as well in the training
+        return params
 
 
 class MLP(nn.Module):
-    hidden_layer_sizes: Sequence[int]
-    output_size: int
     input_size: int
-    hidden_activation: Callable
-    last_activation: Optional[Callable]
+    output_size: int
+    hidden_layer_sizes: Sequence[int]
+    hidden_activation: Callable = jax.nn.leaky_relu
+    last_activation: Optional[Callable] = None
 
     @nn.compact
     def __call__(self, x, train=False):
@@ -130,3 +116,22 @@ class MLP(nn.Module):
         if self.last_activation is not None:
             x = self.last_activation(x)
         return x
+
+
+class BatchedMLP(BatchedModule, RngKeyMixin):
+    def __init__(self, input_size: int, output_size: int, num_batched_modules: int, hidden_layer_sizes: Sequence[int],
+                 rng_key: jax.random.PRNGKey, hidden_activation: Callable = jax.nn.leaky_relu,
+                 last_activation: Optional[Callable] = None):
+        super().__init__(
+            base_module=MLP(hidden_layer_sizes=hidden_layer_sizes, output_size=output_size, input_size=input_size,
+                            hidden_activation=hidden_activation, last_activation=last_activation),
+            num_batched_modules=num_batched_modules,
+            rng_key=rng_key)
+
+    def forward_vec(self, x: jnp.ndarray, batched_params: jnp.ndarray) -> jnp.ndarray:
+        assert x.ndim == 2 and x.shape[-1] == self.base_module.input_size
+        res = super()._apply_vec_batch(x, batched_params)
+        assert res.ndim == 3
+        assert res.shape[0] == self.num_batched_modules and res.shape[-1] == self.base_module.output_size
+        return res
+

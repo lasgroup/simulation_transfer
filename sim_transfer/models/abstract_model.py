@@ -11,7 +11,7 @@ import tensorflow_datasets as tfds
 import tensorflow_probability.substrates.jax.distributions as tfd
 from tensorflow_probability.substrates import jax as tfp
 
-from sim_transfer.flax_modules.batched_nn import BatchedModel
+from sim_transfer.modules.nn_modules import BatchedMLP
 from sim_transfer.modules.distribution import AffineTransform
 from sim_transfer.modules.util import RngKeyMixin, aggregate_stats
 
@@ -232,12 +232,12 @@ class BatchedNeuralNetworkModel(AbstractRegressionModel):
         self.num_batched_nns = num_batched_nns
 
         # setup batched mlp
-        self.batched_model = BatchedModel(input_size=self.input_size, output_size=self.output_size,
-                                          num_batched_modules=num_batched_nns,
-                                          hidden_layer_sizes=hidden_layer_sizes,
-                                          hidden_activation=hidden_activation,
-                                          last_activation=last_activation,
-                                          rng_key=self.rng_key)
+        self.batched_model = BatchedMLP(input_size=self.input_size, output_size=self.output_size,
+                                        num_batched_modules=num_batched_nns,
+                                        hidden_layer_sizes=hidden_layer_sizes,
+                                        hidden_activation=hidden_activation,
+                                        last_activation=last_activation,
+                                        rng_key=self.rng_key)
 
     def fit(self, x_train: jnp.ndarray, y_train: jnp.ndarray, x_eval: Optional[jnp.ndarray] = None,
             y_eval: Optional[jnp.ndarray] = None, num_steps: Optional[int] = None, log_period: int = 1000):
