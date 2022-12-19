@@ -1,9 +1,10 @@
-from typing import Optional, Sequence, Callable, Union, List, Dict, Tuple
+from typing import Optional, Sequence, Callable, Union, List, Dict, Tuple, Any
 from functools import partial
 import math
 
 import jax.nn
 import jax.numpy as jnp
+from jax._src import dtypes
 import tensorflow_probability.substrates.jax.distributions as tfd
 from jax import random, vmap, jit
 from jax.flatten_util import ravel_pytree
@@ -11,9 +12,11 @@ from jax.tree_util import tree_map, tree_leaves
 
 from flax import linen as nn
 from flax.core import FrozenDict
+from flax.linen.dtypes import promote_dtype
 
 from sim_transfer.modules.util import RngKeyMixin
 
+Array = Any
 
 class BatchedModule(RngKeyMixin):
     def __init__(self, base_module: nn.Module, num_batched_modules: int, rng_key: random.PRNGKey):
@@ -100,19 +103,70 @@ class BatchedModule(RngKeyMixin):
         return params
 
 
+class UniformBiasInitializer:
+    """ Initializes the biases uniformly in [- 1/sqrt(fan_in), 1/sqrt(fan_in)] """
+
+    def __call__(self, key: jax.random.PRNGKey, shape: Sequence[int],
+                 fan_in: int, dtype: Any = None) -> jnp.array:
+        dtype = dtypes.canonicalize_dtype(dtype)
+        scale = 1 / math.sqrt(fan_in) if fan_in > 0 else 0
+        return jax.random.uniform(key, shape, dtype) * 2 * scale - scale
+
+
+class CustomDense(nn.Dense):
+    """
+    The same as jax.nn.Dense except that it allows to use UniformBiasInitializer
+    which also uses fan_in to determine the scale of the uniform bias initialization
+    """
+
+    @nn.compact
+    def __call__(self, inputs: Array) -> Array:
+        """Applies a linear transformation to the inputs along the last dimension.
+
+        Args:
+          inputs: The nd-array to be transformed.
+
+        Returns:
+          The transformed input.
+        """
+        kernel = self.param('kernel',
+                            self.kernel_init,
+                            (jnp.shape(inputs)[-1], self.features),
+                            self.param_dtype)
+        if self.use_bias:
+            if isinstance(self.bias_init, UniformBiasInitializer):
+                bias = self.param('bias', self.bias_init, (self.features,),
+                                  jnp.shape(inputs)[-1], self.param_dtype)
+            else:
+                bias = self.param('bias', self.bias_init, (self.features,),
+                                  self.param_dtype)
+        else:
+            bias = None
+        inputs, kernel, bias = promote_dtype(inputs, kernel, bias, dtype=self.dtype)
+        y = jax.lax.dot_general(inputs, kernel,
+                            (((inputs.ndim - 1,), (0,)), ((), ())),
+                            precision=self.precision)
+        if bias is not None:
+            y += jnp.reshape(bias, (1,) * (y.ndim - 1) + (-1,))
+        return y
+
+
 class MLP(nn.Module):
     input_size: int
     output_size: int
     hidden_layer_sizes: Sequence[int]
     hidden_activation: Callable = jax.nn.leaky_relu
     last_activation: Optional[Callable] = None
+    kernel_init: Callable[[jax.random.PRNGKey, Tuple[int, ...], Any], Any] = jax.nn.initializers.he_uniform()
+    bias_init: Callable[[jax.random.PRNGKey, Tuple[int, ...], Any], Any] = UniformBiasInitializer()
 
     @nn.compact
     def __call__(self, x, train=False):
         for feat in self.hidden_layer_sizes:
-            x = nn.Dense(features=feat)(x)
+            x = CustomDense(features=feat, kernel_init=self.kernel_init,
+                         bias_init=self.bias_init)(x)
             x = self.hidden_activation(x)
-        x = nn.Dense(features=self.output_size)(x)
+        x = CustomDense(features=self.output_size)(x)
         if self.last_activation is not None:
             x = self.last_activation(x)
         return x
@@ -134,4 +188,3 @@ class BatchedMLP(BatchedModule, RngKeyMixin):
         assert res.ndim == 3
         assert res.shape[0] == self.num_batched_modules and res.shape[-1] == self.base_module.output_size
         return res
-
