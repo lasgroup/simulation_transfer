@@ -18,15 +18,13 @@ class FunctionSimulator:
 class GaussianProcessSim(FunctionSimulator):
 
     def __init__(self, input_size: int = 1, output_scale: float = 1.0, length_scale: float = 1.0,
-                 mean_fn: Optional[Callable] = None,
-                 eps_k: float = 1e-5):
+                 mean_fn: Optional[Callable] = None):
         """ Samples functions from a Gaussian Process (GP) with SE kernel
         Args:
             input_size: dimensionality of the inputs
             output_scale: output_scale of the SE kernel (coincides with the std of the GP prior)
             length_scale: lengthscale of the SE kernel
             mean_fn (optional): mean function of the GP. If None, uses a zero mean.
-            eps_k: scale of the identity matrix to be added to the kernel matrix for numerical stability
         """
         super().__init__(input_size=input_size, output_size=1)
 
@@ -38,18 +36,21 @@ class GaussianProcessSim(FunctionSimulator):
 
         self.output_scale = output_scale
         self.kernel = tfp.math.psd_kernels.ExponentiatedQuadratic(length_scale=length_scale)
-        self.eps_k = eps_k
 
     def sample_function_vals(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
+        """ Samples functions from a Gaussian Process (GP) with SE kernel
+            Args:
+                x: index/measurement points of size (n, input_size)
+                num_samples: number of samples to draw
+                rng_key: random number generator key
+        """
         assert x.ndim == 2 and x.shape[-1] == self.input_size
-        m = self.mean_fn(x).reshape((x.shape[0],))
-        k = self.kernel.matrix(x, x)
-        k += self.eps_k * jnp.eye(k.shape[0])  # add eps * I for numerical stability of the cholesky decomposition
-        gp_noise = tfd.MultivariateNormalFullCovariance(jnp.zeros_like(m), k).sample(num_samples, seed=rng_key)
-        f = m + self.output_scale * gp_noise
-        f = jnp.expand_dims(f, axis=-1)
-        assert f.shape == (num_samples, x.shape[0], self.output_size)
-        return f
+        gp = tfd.GaussianProcess(kernel=self.kernel, index_points=x)
+        f_samples = gp.sample(num_samples, seed=rng_key)
+        f_samples = jnp.expand_dims(f_samples, axis=-1)
+        f_samples *= self.output_scale
+        assert f_samples.shape == (num_samples, x.shape[0], self.output_size)
+        return f_samples
 
 
 class SinusoidsSim(FunctionSimulator):
