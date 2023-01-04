@@ -2,6 +2,7 @@ from typing import Optional, Sequence, Callable, Union, List, Dict, Tuple, Any
 from functools import partial
 import math
 
+import flax.linen
 import jax.nn
 import jax.numpy as jnp
 from jax._src import dtypes
@@ -159,12 +160,15 @@ class MLP(nn.Module):
     last_activation: Optional[Callable] = None
     kernel_init: Callable[[jax.random.PRNGKey, Tuple[int, ...], Any], Any] = jax.nn.initializers.he_uniform()
     bias_init: Callable[[jax.random.PRNGKey, Tuple[int, ...], Any], Any] = UniformBiasInitializer()
+    layer_norm: bool = False
 
     @nn.compact
     def __call__(self, x, train=False):
         for feat in self.hidden_layer_sizes:
             x = CustomDense(features=feat, kernel_init=self.kernel_init,
                          bias_init=self.bias_init)(x)
+            if self.layer_norm:
+                x = flax.linen.LayerNorm(reduction_axes=-1)(x)
             x = self.hidden_activation(x)
         x = CustomDense(features=self.output_size)(x)
         if self.last_activation is not None:
