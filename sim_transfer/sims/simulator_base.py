@@ -55,16 +55,22 @@ class GaussianProcessSim(FunctionSimulator):
 
 class SinusoidsSim(FunctionSimulator):
 
-    def __init__(self):
-        super().__init__(input_size=1, output_size=1)
+    def __init__(self, input_size: int = 1, output_size: int = 1):
+        assert input_size == 1, 'only 1 dimensional inputs are supported'
+        assert output_size in [1, 2], 'only 1 or 2-dimensional outputs are supported'
+        super().__init__(input_size=input_size, output_size=output_size)
 
     def sample_function_vals(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
         assert x.ndim == 2 and x.shape[-1] == self.input_size
-        key1, key2, key3 = jax.random.split(rng_key, 3)
+        key1, key2, key3, key4 = jax.random.split(rng_key, 4)
         freq = jax.random.uniform(key1, shape=(num_samples,), minval=1.7, maxval=2.3)
         amp = 2 + 0.4 * jax.random.normal(key2, shape=(num_samples,))
-        slope = 2 + 0.3 * jax.random.normal(key2, shape=(num_samples,))
+        slope = 2 + 0.3 * jax.random.normal(key3, shape=(num_samples,))
         f = amp[:, None, None] * jnp.sin(freq[:, None, None] * x) + slope[:, None, None] * x
+        if self.output_size == 2:
+            freq2 = jax.random.uniform(key4, shape=(num_samples,), minval=1.3, maxval=1.7)
+            f2 = amp[:, None, None] * jnp.cos(freq2[:, None, None] * x) - slope[:, None, None] * x
+            f = jnp.concatenate([f, f2], axis=-1)
         assert f.shape == (num_samples, x.shape[0], self.output_size)
         return f
 

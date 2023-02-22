@@ -23,13 +23,14 @@ class BNN_FSVGD_Sim_Prior(BatchedNeuralNetworkModel):
                  domain_u: jnp.ndarray,
                  rng_key: jax.random.PRNGKey,
                  function_sim: FunctionSimulator,
-                 num_f_samples: int = 64,
-                 likelihood_std: float = 0.2,
+                 independent_output_dims: bool = True,
                  num_particles: int = 10,
+                 num_f_samples: int = 64,
+                 num_measurement_points: int = 8,
+                 likelihood_std: float = 0.2,
                  bandwidth_ssge: float = 1.,
                  bandwidth_svgd: float = 0.2,
                  data_batch_size: int = 8,
-                 num_measurement_points: int = 8,
                  num_train_steps: int = 10000,
                  lr=1e-3,
                  normalize_data: bool = True,
@@ -68,6 +69,13 @@ class BNN_FSVGD_Sim_Prior(BatchedNeuralNetworkModel):
         # initialize kernel and ssge algo
         self.kernel_svgd = tfp.math.psd_kernels.ExponentiatedQuadratic(length_scale=self.bandwidth_svgd)
         self.ssge = SSGE(bandwidth=bandwidth_ssge)
+
+        # create estimate gradient function over the output dims
+        self.independent_output_dims = independent_output_dims
+        if independent_output_dims:
+            self.estimate_gradients_s_x_vectorized = jax.vmap(lambda y, f: self.ssge.estimate_gradients_s_x(y, f),
+                                                              in_axes=-1,
+                                                              out_axes=-1)
 
     def _sample_measurement_points(self, key: jax.random.PRNGKey, num_points: int = 10,
                                    normalize: bool = True) -> jnp.ndarray:
@@ -145,14 +153,16 @@ class BNN_FSVGD_Sim_Prior(BatchedNeuralNetworkModel):
         x_unnormalized = self._unnormalize_data(x)
         f_prior = self.function_sim.sample_function_vals(x=x_unnormalized, num_samples=self.num_f_samples, rng_key=key)
         f_prior_normalized = self._normalize_y(f_prior)
-        if f_prior_normalized.shape[-1] == 1:
-            f_prior_normalized = f_prior_normalized.squeeze(-1)
-            y_squeezed = y.squeeze(-1)
+        if self.independent_output_dims:
+            # performs score estimation for each output dimension independently
+            ssge_score = self.estimate_gradients_s_x_vectorized(y, f_prior_normalized)
         else:
-            raise NotImplementedError(
-                'Batched SSGE for mutliple output dims is not yet implemented -> needs to be done')
-        ssge_score = self.ssge.estimate_gradients_s_x(x_query=y_squeezed, x_sample=f_prior_normalized)
-        ssge_score = jnp.expand_dims(ssge_score, axis=-1)
+            # performs score estimation for all output dimensions jointly
+            # befor score estimation call, flatten the output dimensions
+            ssge_score = self.ssge.estimate_gradients_s_x(y.reshape((y.shape[0], -1)),
+                                                          f_prior_normalized.reshape((f_prior_normalized.shape[0], -1)))
+            # add back the output dimensions
+            ssge_score = ssge_score.reshape(y.shape)
         assert ssge_score.shape == y.shape
         return ssge_score
 
@@ -176,39 +186,43 @@ class BNN_FSVGD_Sim_Prior(BatchedNeuralNetworkModel):
 if __name__ == '__main__':
     from sim_transfer.sims import GaussianProcessSim, SinusoidsSim
 
-
     def key_iter():
         key = jax.random.PRNGKey(7644)
         while True:
             key, new_key = jax.random.split(key)
             yield new_key
 
-
     key_iter = key_iter()
+    NUM_DIM_X = 1
+    NUM_DIM_Y = 1
+    num_train_points = 2
 
-    fun = lambda x: 2 * x + 2 * jnp.sin(2 * x)
+    if NUM_DIM_X == 1 and NUM_DIM_Y == 1:
+        fun = lambda x: (2 * x + 2 * jnp.sin(2 * x)).reshape(-1, 1)
+    elif NUM_DIM_X == 1 and NUM_DIM_Y == 2:
+        fun = lambda x: jnp.concatenate([(2 * x + 2 * jnp.sin(2 * x)).reshape(-1, 1),
+                                         (- 2 * x + 2 * jnp.cos(1.5 * x)).reshape(-1, 1)], axis=-1)
+    else:
+        raise NotImplementedError
 
-    domain_l, domain_u = np.array([-7.]), np.array([7.])
-    num_train_points = 1
-    x_train = jax.random.uniform(next(key_iter), shape=(num_train_points, 1), minval=-5, maxval=5)
-    y_train = fun(x_train) + 0.1 * jax.random.normal(next(key_iter), shape=x_train.shape)
+    domain_l, domain_u = np.array([-7.] * NUM_DIM_X), np.array([7.] * NUM_DIM_X)
+
+    x_train = jax.random.uniform(next(key_iter), shape=(num_train_points, NUM_DIM_X), minval=-5, maxval=5)
+    y_train = fun(x_train) + 0.1 * jax.random.normal(next(key_iter), shape=(x_train.shape[0], NUM_DIM_Y))
 
     num_test_points = 100
-    x_test = jax.random.uniform(next(key_iter), shape=(num_test_points, 1), minval=-5, maxval=5)
-    y_test = fun(x_test) + 0.1 * jax.random.normal(next(key_iter), shape=x_test.shape)
+    x_test = jax.random.uniform(next(key_iter), shape=(num_test_points, NUM_DIM_X), minval=-5, maxval=5)
+    y_test = fun(x_test) + 0.1 * jax.random.normal(next(key_iter), shape=(x_test.shape[0], NUM_DIM_Y))
 
-    normalization_stats = {
-        'x_mean': jnp.mean(x_test, axis=0),
-        'x_std': jnp.std(x_test, axis=0),
-        'y_mean': jnp.mean(y_test, axis=0),
-        'y_std': jnp.std(y_test, axis=0),
-    }
 
     # sim = GaussianProcessSim(input_size=1, output_scale=3.0, mean_fn=lambda x: 2 * x)
-    sim = SinusoidsSim()
-    bnn = BNN_FSVGD_Sim_Prior(1, 1, domain_l, domain_u, rng_key=next(key_iter), function_sim=sim,
-                              normalization_stats=normalization_stats, num_train_steps=20000, data_batch_size=4)
+    sim = SinusoidsSim(input_size=1, output_size=NUM_DIM_Y)
+    bnn = BNN_FSVGD_Sim_Prior(NUM_DIM_X, NUM_DIM_Y, domain_l, domain_u, rng_key=next(key_iter), function_sim=sim,
+                              hidden_layer_sizes=[64, 64, 64],
+                              num_train_steps=20000, data_batch_size=4,
+                              independent_output_dims=True)
     for i in range(10):
         bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=5000)
-        bnn.plot_1d(x_train, y_train, true_fun=fun, title=f'iter {(i + 1) * 5000}',
-                    domain_l=-7, domain_u=7)
+        if NUM_DIM_X == 1:
+            bnn.plot_1d(x_train, y_train, true_fun=fun, title=f'iter {(i + 1) * 5000}',
+                        domain_l=-7, domain_u=7)
