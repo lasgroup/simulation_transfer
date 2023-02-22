@@ -172,7 +172,7 @@ class AbstractRegressionModel(RngKeyMixin):
     def plot_1d(self, x_train: jnp.ndarray, y_train: jnp.ndarray,
                 domain_l: Optional[float] = None, domain_u: Optional[float] = None,
                 true_fun: Optional[Callable] = None, title: Optional[str] = '', show: bool = True):
-        assert self.output_size == self.input_size == 1
+        assert self.input_size == 1, 'Can only plot if input_size = 1'
 
         # determine plotting domain
         x_min, x_max = jnp.min(x_train, axis=0), jnp.max(x_train, axis=0)
@@ -184,24 +184,29 @@ class AbstractRegressionModel(RngKeyMixin):
         x_plot = jnp.linspace(domain_l, domain_u, 200).reshape((-1, 1))
 
         # make predictions
-        pred_mean, pred_std = map(lambda arr: arr.flatten(), self.predict(x_plot))
+        pred_mean, pred_std = self.predict(x_plot)
 
         # draw the plot
-        fig, ax = plt.subplots()
-        ax.scatter(x_train, y_train, label='train points')
-        if true_fun is not None:
-            ax.plot(x_plot, true_fun(x_plot), label='true fun')
-        ax.plot(x_plot, pred_mean, label='pred mean')
-        ax.fill_between(x_plot.flatten(), pred_mean - pred_std, pred_mean + pred_std, alpha=0.3)
+        fig, ax = plt.subplots(nrows=1, ncols=self.output_size, figsize=(self.output_size * 4, 4))
+        if self.output_size == 1:
+            ax = [ax]
+        for i in range(self.output_size):
+            ax[i].scatter(x_train.flatten(), y_train[:, i], label='train points')
+            if true_fun is not None:
+                ax[i].plot(x_plot, true_fun(x_plot)[:, i], label='true fun')
+            ax[i].plot(x_plot.flatten(), pred_mean[:, i], label='pred mean')
+            ax[i].fill_between(x_plot.flatten(), pred_mean[:, i] - pred_std[:, i],
+                            pred_mean[:, i] + pred_std[:, i], alpha=0.3)
 
-        if hasattr(self, 'predict_post_samples'):
-            y_post_samples = self.predict_post_samples(x_plot)
-            for y in y_post_samples:
-                ax.plot(x_plot, y, linewidth=0.2, color='green')
+            if hasattr(self, 'predict_post_samples'):
+                y_post_samples = self.predict_post_samples(x_plot)
+                for y in y_post_samples:
+                    ax[i].plot(x_plot, y[:, i], linewidth=0.2, color='green')
 
-        if title is not None:
-            ax.set_title(title)
-        ax.legend()
+            if title is not None:
+                ax[i].set_title(f'Output dimension {i}')
+            ax[i].legend()
+        fig.suptitle(title)
         if show:
             fig.show()
 

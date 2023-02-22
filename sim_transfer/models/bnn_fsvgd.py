@@ -89,7 +89,7 @@ class BNN_FSVGD(BatchedNeuralNetworkModel):
         x_domain = self._sample_measurement_points(key, num_points=self.num_measurement_points)
         x_stacked = jnp.concatenate([x_batch, x_domain], axis=0)
 
-        # likelihood
+        # posterior score
         f_raw = self.batched_model.forward_vec(x_stacked, param_vec_stack)
         (_, post_stats), grad_post = jax.value_and_grad(self._neg_log_posterior, has_aux=True)(
             f_raw, x_stacked, y_batch, train_batch_size, num_train_points)
@@ -149,27 +149,40 @@ class BNN_FSVGD(BatchedNeuralNetworkModel):
 
 if __name__ == '__main__':
     def key_iter():
-        key = jax.random.PRNGKey(567)
+        key = jax.random.PRNGKey(3453)
         while True:
             key, new_key = jax.random.split(key)
             yield new_key
 
-
     key_iter = key_iter()
 
-    fun = lambda x: 2 * x + 2 * jnp.sin(2 * x)
-
-    domain_l, domain_u = np.array([-7.]), np.array([7.])
+    NUM_DIM_X = 1
+    NUM_DIM_Y = 2
     num_train_points = 10
-    x_train = jax.random.uniform(next(key_iter), shape=(num_train_points, 1), minval=-5, maxval=5)
-    y_train = fun(x_train) + 0.1 * jax.random.normal(next(key_iter), shape=x_train.shape)
+
+    if NUM_DIM_X == 1 and NUM_DIM_Y == 1:
+        fun = lambda x: (2 * x + 2 * jnp.sin(2 * x)).reshape(-1, 1)
+    elif NUM_DIM_X == 2 and NUM_DIM_Y == 1:
+        fun = lambda x: (2 * x[..., 0] - x[..., 1] + 2 * jnp.sin(2 * x[..., 0]) * jnp.cos(x[..., 1])).reshape(-1, 1)
+    elif NUM_DIM_X == 1 and NUM_DIM_Y == 2:
+        fun = lambda x: jnp.concatenate([(2 * x + 2 * jnp.sin(2 * x)).reshape(-1, 1),
+                                         (- x + 3 * jnp.cos(x)).reshape(-1, 1)], axis=-1)
+
+
+    domain_l, domain_u = np.array([-7.] * NUM_DIM_X), np.array([7.] * NUM_DIM_X)
+
+    x_train = jax.random.uniform(next(key_iter), shape=(num_train_points, NUM_DIM_X), minval=-5, maxval=5)
+    y_train = fun(x_train) + 0.1 * jax.random.normal(next(key_iter), shape=(x_train.shape[0], NUM_DIM_Y))
 
     num_test_points = 100
-    x_test = jax.random.uniform(next(key_iter), shape=(num_test_points, 1), minval=-5, maxval=5)
-    y_test = fun(x_test) + 0.1 * jax.random.normal(next(key_iter), shape=x_test.shape)
+    x_test = jax.random.uniform(next(key_iter), shape=(num_test_points, NUM_DIM_X), minval=-5, maxval=5)
+    y_test = fun(x_test) + 0.1 * jax.random.normal(next(key_iter), shape=(x_test.shape[0], NUM_DIM_Y))
 
-    bnn = BNN_FSVGD(1, 1, domain_l, domain_u, next(key_iter), num_train_steps=20000, data_batch_size=50,
-                    num_measurement_points=0, normalize_data=True, bandwidth_svgd=1.0)
+    bnn = BNN_FSVGD(NUM_DIM_X, NUM_DIM_Y, domain_l, domain_u, next(key_iter), num_train_steps=20000,
+                    data_batch_size=10, num_measurement_points=20, normalize_data=True, bandwidth_svgd=0.4,
+                    bandwidth_gp_prior=0.2, hidden_layer_sizes=[64, 64, 64],
+                    hidden_activation=jax.nn.tanh)
     for i in range(10):
         bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=2000)
-        bnn.plot_1d(x_train, y_train, true_fun=fun, title=f'iter {(i + 1) * 2000}')
+        if NUM_DIM_X == 1:
+            bnn.plot_1d(x_train, y_train, true_fun=fun, title=f'iter {(i + 1) * 2000}')
