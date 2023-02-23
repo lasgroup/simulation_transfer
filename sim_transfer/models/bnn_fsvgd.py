@@ -2,17 +2,18 @@ from collections import OrderedDict
 from functools import partial
 from typing import List, Optional, Callable, Dict, Union
 
+import optax
 import jax
 import jax.numpy as jnp
 import numpy as np
-import optax
 import tensorflow_probability.substrates.jax.distributions as tfd
 from tensorflow_probability.substrates import jax as tfp
 
-from sim_transfer.models.abstract_model import BatchedNeuralNetworkModel
+from sim_transfer.models.bnn import AbstractFSVGD_BNN
 
 
-class BNN_FSVGD(BatchedNeuralNetworkModel):
+class BNN_FSVGD(AbstractFSVGD_BNN):
+    """ BNN with FSVGD inference and a GP prior in the function space """
 
     def __init__(self,
                  input_size: int,
@@ -27,7 +28,7 @@ class BNN_FSVGD(BatchedNeuralNetworkModel):
                  data_batch_size: int = 16,
                  num_measurement_points: int = 16,
                  num_train_steps: int = 10000,
-                 lr=1e-3,
+                 lr: float = 1e-3,
                  normalize_data: bool = True,
                  normalization_stats: Optional[Dict[str, jnp.ndarray]] = None,
                  hidden_layer_sizes: List[int] = (32, 32, 32),
@@ -37,49 +38,15 @@ class BNN_FSVGD(BatchedNeuralNetworkModel):
                          data_batch_size=data_batch_size, num_train_steps=num_train_steps,
                          num_batched_nns=num_particles, hidden_layer_sizes=hidden_layer_sizes,
                          hidden_activation=hidden_activation, last_activation=last_activation,
-                         normalize_data=normalize_data, normalization_stats=normalization_stats)
+                         normalize_data=normalize_data, normalization_stats=normalization_stats,
+                         lr=lr, domain_l=domain_l, domain_u=domain_u, bandwidth_svgd=bandwidth_svgd)
         self.likelihood_std = likelihood_std * jnp.ones(output_size)
         self.num_particles = num_particles
-        self.bandwidth_svgd = bandwidth_svgd
         self.bandwidth_gp_prior = bandwidth_gp_prior
         self.num_measurement_points = num_measurement_points
 
-        # check and set domain boundaries
-        assert domain_u.shape == domain_l.shape == (self.input_size,)
-        assert jnp.all(domain_l <= domain_u), 'lower bound of domain must be smaller than upper bound'
-        self.domain_l = domain_l
-        self.domain_u = domain_u
-
-        # initialize batched NN
-        self.params_stack = self.batched_model.param_vectors_stacked
-
-        # initialize optimizer
-        self.optim = optax.adam(learning_rate=lr)
-        self.opt_state = self.optim.init(self.params_stack)
-
         # initialize kernel
-        self.kernel_svgd = tfp.math.psd_kernels.ExponentiatedQuadratic(length_scale=self.bandwidth_svgd)
         self.kernel_gp_prior = tfp.math.psd_kernels.ExponentiatedQuadratic(length_scale=self.bandwidth_gp_prior)
-
-    def _sample_measurement_points(self, key: jax.random.PRNGKey, num_points: int = 10) -> jnp.ndarray:
-        x_domain = jax.random.uniform(key, shape=(num_points, self.input_size),
-                                      minval=self.domain_l, maxval=self.domain_u)
-        x_domain = self._normalize_data(x_domain)
-        assert x_domain.shape == (num_points, self.input_size)
-        return x_domain
-
-    @partial(jax.jit, static_argnums=(0,))
-    def _evaluate_kernel(self, pred_raw: jnp.ndarray):
-        assert pred_raw.ndim == 3 and pred_raw.shape[-1] == self.output_size
-        pred_raw = pred_raw.reshape((pred_raw.shape[0], -1))
-        particles_copy = jax.lax.stop_gradient(pred_raw)
-        k = self.kernel_svgd.matrix(pred_raw, particles_copy)
-        return jnp.sum(k), k
-
-    def step(self, x_batch: jnp.ndarray, y_batch: jnp.ndarray, num_train_points: Union[float, int]) -> Dict[str, float]:
-        self.opt_state, self.params_stack, stats = self._step_jit(self.opt_state, self.params_stack, x_batch, y_batch,
-                                                                  key=self.rng_key, num_train_points=num_train_points)
-        return stats
 
     @partial(jax.jit, static_argnums=(0,))
     def _surrogate_loss(self, param_vec_stack: jnp.array, x_batch: jnp.array, y_batch: jnp.array,
@@ -103,19 +70,6 @@ class BNN_FSVGD(BatchedNeuralNetworkModel):
         stats = OrderedDict(**post_stats, avg_triu_k=avg_triu_k)
         return surrogate_loss, stats
 
-    @partial(jax.jit, static_argnums=(0,))
-    def _step_jit(self, opt_state: optax.OptState, param_vec_stack: jnp.array, x_batch: jnp.array, y_batch: jnp.array,
-                  key: jax.random.PRNGKey, num_train_points: Union[float, int]):
-        (loss, stats), grad = jax.value_and_grad(self._surrogate_loss, has_aux=True)(
-            param_vec_stack, x_batch, y_batch, num_train_points, key)
-        updates, opt_state = self.optim.update(grad, opt_state, param_vec_stack)
-        param_vec_stack = optax.apply_updates(param_vec_stack, updates)
-        return opt_state, param_vec_stack, stats
-
-    def _nll(self, pred_raw: jnp.ndarray, y_batch: jnp.ndarray, train_data_till_idx: int):
-        likelihood_std = self.likelihood_std
-        log_prob = tfd.MultivariateNormalDiag(pred_raw[:, :train_data_till_idx, :], likelihood_std).log_prob(y_batch)
-        return - jnp.mean(log_prob)
 
     def _neg_log_posterior(self, pred_raw: jnp.ndarray, x_stacked: jnp.ndarray, y_batch: jnp.ndarray,
                            train_data_till_idx: int, num_train_points: Union[float, int]):
@@ -130,21 +84,7 @@ class BNN_FSVGD(BatchedNeuralNetworkModel):
         dist = tfd.MultivariateNormalFullCovariance(jnp.zeros(x.shape[0]), k)
         return jnp.mean(jnp.sum(dist.log_prob(jnp.swapaxes(y, -1, -2)), axis=-1)) / x.shape[0]
 
-    def predict_dist(self, x: jnp.ndarray, include_noise: bool = True) -> tfd.Distribution:
-        self.batched_model.param_vectors_stacked = self.params_stack
-        x = self._normalize_data(x)
-        y_pred_raw = self.batched_model(x)
-        pred_dist = self._to_pred_dist(y_pred_raw, likelihood_std=self.likelihood_std, include_noise=include_noise)
-        assert pred_dist.batch_shape == x.shape[:-1]
-        assert pred_dist.event_shape == (self.output_size,)
-        return pred_dist
 
-    def predict_post_samples(self, x: jnp.ndarray) -> jnp.ndarray:
-        x = self._normalize_data(x)
-        y_pred_raw = self.batched_model(x)
-        y_pred = y_pred_raw * self._y_std + self._y_mean
-        assert y_pred.ndim == 3 and y_pred.shape[-2:] == (x.shape[0], self.output_size)
-        return y_pred
 
 
 if __name__ == '__main__':
