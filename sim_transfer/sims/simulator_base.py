@@ -1,8 +1,12 @@
+from typing import Callable, Optional
+
 import jax
 import jax.numpy as jnp
-from typing import Callable, Optional
-from tensorflow_probability.substrates import jax as tfp
 import tensorflow_probability.substrates.jax.distributions as tfd
+from jax import vmap, random
+from tensorflow_probability.substrates import jax as tfp
+
+from sim_transfer.sims.dynamics_models import Pendulum, PendulumParams
 
 
 class FunctionSimulator:
@@ -17,7 +21,7 @@ class FunctionSimulator:
 
 class GaussianProcessSim(FunctionSimulator):
 
-    def __init__(self, input_size: int = 1, output_scale: float = 1.0, length_scale: float = 1.0,
+    def __init__(self, input_size: int = 1, output_size: int = 1, output_scale: float = 1.0, length_scale: float = 1.0,
                  mean_fn: Optional[Callable] = None):
         """ Samples functions from a Gaussian Process (GP) with SE kernel
         Args:
@@ -26,7 +30,7 @@ class GaussianProcessSim(FunctionSimulator):
             length_scale: lengthscale of the SE kernel
             mean_fn (optional): mean function of the GP. If None, uses a zero mean.
         """
-        super().__init__(input_size=input_size, output_size=1)
+        super().__init__(input_size=input_size, output_size=output_size)
 
         if mean_fn is None:
             # use a zero mean by default
@@ -46,8 +50,8 @@ class GaussianProcessSim(FunctionSimulator):
         """
         assert x.ndim == 2 and x.shape[-1] == self.input_size
         gp = tfd.GaussianProcess(kernel=self.kernel, index_points=x)
-        f_samples = gp.sample(num_samples, seed=rng_key)
-        f_samples = jnp.expand_dims(f_samples, axis=-1)
+        keys = random.split(rng_key, self.output_size)
+        f_samples = vmap(gp.sample, in_axes=(None, 0), out_axes=2)(num_samples, keys)
         f_samples *= self.output_scale
         assert f_samples.shape == (num_samples, x.shape[0], self.output_size)
         return f_samples
@@ -75,12 +79,37 @@ class SinusoidsSim(FunctionSimulator):
         return f
 
 
+class PendulumSim(FunctionSimulator):
+    def __init__(self, h: float = 0.01, upper_bound: PendulumParams | None = None,
+                 lower_bound: PendulumParams | None = None):
+        super().__init__(input_size=3, output_size=2)
+        self.model = Pendulum(h=h)
+        if upper_bound is None:
+            upper_bound = PendulumParams(m=jnp.array(.5), l=jnp.array(.5), g=jnp.array(5.0), nu=jnp.array(0.0))
+        if lower_bound is None:
+            upper_bound = PendulumParams(m=jnp.array(1.5), l=jnp.array(1.5), g=jnp.array(15.0), nu=jnp.array(1.0))
+        self.upper_bound = upper_bound
+        self.lower_bound = lower_bound
+
+    def sample_function_vals(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
+        assert x.ndim == 2 and x.shape[-1] == self.input_size
+        keys = random.split(rng_key, num_samples)
+        params = vmap(self.model.sample_params, in_axes=(0, None, None))(keys, self.upper_bound, self.lower_bound)
+
+        def batched_fun(z, params):
+            x, u = z[..., :2], z[..., 2:]
+            return vmap(self.model.next_step, in_axes=(0, 0, None))(x, u, params)
+
+        f = vmap(batched_fun, in_axes=(None, 0))(x, params)
+        assert f.shape == (num_samples, x.shape[0], self.output_size)
+        return f
+
 
 if __name__ == '__main__':
     from matplotlib import pyplot as plt
 
     key = jax.random.PRNGKey(984)
-    #sim = GaussianProcessSim(input_size=1, output_scale=3.0, mean_fn=lambda x: 2 * x)
+    # sim = GaussianProcessSim(input_size=1, output_scale=3.0, mean_fn=lambda x: 2 * x)
     sim = SinusoidsSim()
     x_plot = jnp.linspace(-5, 5, 200).reshape((-1, 1))
 

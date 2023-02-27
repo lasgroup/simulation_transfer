@@ -2,7 +2,6 @@ from collections import OrderedDict
 from functools import partial
 from typing import List, Optional, Callable, Dict, Union
 
-import optax
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -70,7 +69,6 @@ class BNN_FSVGD(AbstractFSVGD_BNN):
         stats = OrderedDict(**post_stats, avg_triu_k=avg_triu_k)
         return surrogate_loss, stats
 
-
     def _neg_log_posterior(self, pred_raw: jnp.ndarray, x_stacked: jnp.ndarray, y_batch: jnp.ndarray,
                            train_data_till_idx: int, num_train_points: Union[float, int]):
         nll = self._nll(pred_raw, y_batch, train_data_till_idx)
@@ -85,8 +83,6 @@ class BNN_FSVGD(AbstractFSVGD_BNN):
         return jnp.mean(jnp.sum(dist.log_prob(jnp.swapaxes(y, -1, -2)), axis=-1)) / x.shape[0]
 
 
-
-
 if __name__ == '__main__':
     def key_iter():
         key = jax.random.PRNGKey(3453)
@@ -94,10 +90,11 @@ if __name__ == '__main__':
             key, new_key = jax.random.split(key)
             yield new_key
 
+
     key_iter = key_iter()
 
     NUM_DIM_X = 1
-    NUM_DIM_Y = 2
+    NUM_DIM_Y = 1
     num_train_points = 10
 
     if NUM_DIM_X == 1 and NUM_DIM_Y == 1:
@@ -107,7 +104,6 @@ if __name__ == '__main__':
     elif NUM_DIM_X == 1 and NUM_DIM_Y == 2:
         fun = lambda x: jnp.concatenate([(2 * x + 2 * jnp.sin(2 * x)).reshape(-1, 1),
                                          (- x + 3 * jnp.cos(x)).reshape(-1, 1)], axis=-1)
-
 
     domain_l, domain_u = np.array([-7.] * NUM_DIM_X), np.array([7.] * NUM_DIM_X)
 

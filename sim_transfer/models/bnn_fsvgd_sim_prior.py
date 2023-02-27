@@ -1,17 +1,15 @@
+from collections import OrderedDict
+from functools import partial
+from typing import List, Optional, Callable, Dict, Union
+
 import jax
 import jax.numpy as jnp
 import numpy as np
-import optax
-
-from typing import List, Optional, Callable, Dict, Union
-from collections import OrderedDict
-from sim_transfer.sims import FunctionSimulator
-from sim_transfer.score_estimation import SSGE
-
-from functools import partial
-
 
 from sim_transfer.models.bnn import AbstractFSVGD_BNN
+from sim_transfer.score_estimation import SSGE
+from sim_transfer.sims import FunctionSimulator
+
 
 class BNN_FSVGD_Sim_Prior(AbstractFSVGD_BNN):
 
@@ -86,7 +84,6 @@ class BNN_FSVGD_Sim_Prior(AbstractFSVGD_BNN):
         stats = OrderedDict(**post_stats, avg_triu_k=avg_triu_k)
         return surrogate_loss, stats
 
-
     def _neg_log_posterior_surrogate(self, pred_raw: jnp.ndarray, x_stacked: jnp.ndarray, y_batch: jnp.ndarray,
                                      train_data_till_idx: int, num_train_points: Union[float, int],
                                      key: jax.random.PRNGKey):
@@ -114,10 +111,9 @@ class BNN_FSVGD_Sim_Prior(AbstractFSVGD_BNN):
         return ssge_score
 
 
-
-
 if __name__ == '__main__':
-    from sim_transfer.sims import GaussianProcessSim, SinusoidsSim
+    from sim_transfer.sims import SinusoidsSim
+
 
     def key_iter():
         key = jax.random.PRNGKey(7644)
@@ -125,9 +121,10 @@ if __name__ == '__main__':
             key, new_key = jax.random.split(key)
             yield new_key
 
+
     key_iter = key_iter()
     NUM_DIM_X = 1
-    NUM_DIM_Y = 1
+    NUM_DIM_Y = 2
     num_train_points = 2
 
     if NUM_DIM_X == 1 and NUM_DIM_Y == 1:
@@ -146,7 +143,6 @@ if __name__ == '__main__':
     num_test_points = 100
     x_test = jax.random.uniform(next(key_iter), shape=(num_test_points, NUM_DIM_X), minval=-5, maxval=5)
     y_test = fun(x_test) + 0.1 * jax.random.normal(next(key_iter), shape=(x_test.shape[0], NUM_DIM_Y))
-
 
     # sim = GaussianProcessSim(input_size=1, output_scale=3.0, mean_fn=lambda x: 2 * x)
     sim = SinusoidsSim(input_size=1, output_size=NUM_DIM_Y)
