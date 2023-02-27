@@ -1,8 +1,10 @@
-import jax.numpy as jnp
-import jax
-import numpy as np
-from .util import RngKeyMixin
 from typing import List, Iterable, Tuple
+
+import jax
+import jax.numpy as jnp
+
+from .util import RngKeyMixin
+
 
 class DataLoader(RngKeyMixin):
 
@@ -26,7 +28,7 @@ class DataLoader(RngKeyMixin):
     def _split_indices(self, indices: List[int]):
         assert len(indices) == self.num_data_points
         num_splits_full = len(indices) // self.batch_size
-        idx_splits = jnp.split(indices[:(num_splits_full*self.batch_size)], num_splits_full)
+        idx_splits = jnp.split(indices[:(num_splits_full * self.batch_size)], num_splits_full)
         num_remaining_points = len(indices) % self.batch_size
         if not self.drop_last and num_remaining_points > 0:
             idx_splits.append(indices[-num_remaining_points:])
@@ -48,4 +50,3 @@ class DataLoader(RngKeyMixin):
                 yield self._get_data_by_indices(batch_idx)
 
         return iter(data_iter())
-

@@ -1,15 +1,18 @@
+from typing import Callable
+
+import haiku as hk
 import jax
 import jax.numpy as jnp
-import haiku as hk
-from typing import Optional, Callable
-
 from haiku import MultiHeadAttention
+
 
 def hk_layer_norm(*, axis, name=None):
     return hk.LayerNorm(axis=axis, create_scale=True, create_offset=True, name=name)
 
+
 class ScoreNetworkAttentionModel(hk.Module):
     """ Attention-based architecture which uses a combined embedding on the input-output concatenation. """
+
     def __init__(self,
                  x_dim: int,
                  hidden_dim: int = 128,
@@ -78,4 +81,3 @@ class ScoreNetworkAttentionModel(hk.Module):
                 hk.Linear(1, w_init=self.w_init),
             ])(z))
         return score
-
