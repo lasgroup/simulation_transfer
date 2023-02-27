@@ -21,7 +21,7 @@ class FunctionSimulator:
 
 class GaussianProcessSim(FunctionSimulator):
 
-    def __init__(self, input_size: int = 1, output_scale: float = 1.0, length_scale: float = 1.0,
+    def __init__(self, input_size: int = 1, output_size: int = 1, output_scale: float = 1.0, length_scale: float = 1.0,
                  mean_fn: Optional[Callable] = None):
         """ Samples functions from a Gaussian Process (GP) with SE kernel
         Args:
@@ -30,7 +30,7 @@ class GaussianProcessSim(FunctionSimulator):
             length_scale: lengthscale of the SE kernel
             mean_fn (optional): mean function of the GP. If None, uses a zero mean.
         """
-        super().__init__(input_size=input_size, output_size=1)
+        super().__init__(input_size=input_size, output_size=output_size)
 
         if mean_fn is None:
             # use a zero mean by default
@@ -50,8 +50,8 @@ class GaussianProcessSim(FunctionSimulator):
         """
         assert x.ndim == 2 and x.shape[-1] == self.input_size
         gp = tfd.GaussianProcess(kernel=self.kernel, index_points=x)
-        f_samples = gp.sample(num_samples, seed=rng_key)
-        f_samples = jnp.expand_dims(f_samples, axis=-1)
+        keys = random.split(rng_key, self.output_size)
+        f_samples = vmap(gp.sample, in_axes=(None, 0), out_axes=2)(num_samples, keys)
         f_samples *= self.output_scale
         assert f_samples.shape == (num_samples, x.shape[0], self.output_size)
         return f_samples

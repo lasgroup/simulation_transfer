@@ -3,7 +3,7 @@ import jax.numpy as jnp
 from jax import vmap
 
 from sim_transfer.models.bnn_fsvgd_sim_prior import BNN_FSVGD_Sim_Prior
-from sim_transfer.sims import PendulumSim
+from sim_transfer.sims import PendulumSim, GaussianProcessSim
 from sim_transfer.sims.dynamics_models import PendulumParams, Pendulum
 
 
@@ -18,6 +18,7 @@ key_iter = key_iter()
 x_dim = 2
 u_dim = 1
 time_step = 0.1
+MODEL_PRIOR = True
 
 NUM_DIM_X = x_dim + u_dim
 NUM_DIM_Y = x_dim
@@ -29,9 +30,12 @@ true_pendulum_params = PendulumParams(m=jnp.array(1.0), l=jnp.array(1.0), g=jnp.
 pendulum_model = Pendulum(h=time_step)
 
 # Here we define prior
-lower_b_params = PendulumParams(m=jnp.array(0.8), l=jnp.array(0.7), g=jnp.array(8.0), nu=jnp.array(0.0))
-upper_b_params = PendulumParams(m=jnp.array(1.2), l=jnp.array(1.3), g=jnp.array(11.9), nu=jnp.array(1.0))
-sim = PendulumSim(h=time_step, lower_bound=lower_b_params, upper_bound=upper_b_params)
+if MODEL_PRIOR:
+    lower_b_params = PendulumParams(m=jnp.array(0.95), l=jnp.array(0.9), g=jnp.array(9.7), nu=jnp.array(0.05))
+    upper_b_params = PendulumParams(m=jnp.array(1.05), l=jnp.array(1.1), g=jnp.array(9.9), nu=jnp.array(0.15))
+    sim = PendulumSim(h=time_step, lower_bound=lower_b_params, upper_bound=upper_b_params)
+else:
+    sim = GaussianProcessSim(input_size=3, output_size=2)
 
 
 def fun(z):
@@ -48,13 +52,9 @@ x_test = jax.random.uniform(next(key_iter), shape=(num_test_points, NUM_DIM_X), 
 y_test = vmap(fun)(x_test) + 0.1 * jax.random.normal(next(key_iter), shape=(x_test.shape[0], NUM_DIM_Y))
 domain_l, domain_u = -5 * jnp.ones(shape=(NUM_DIM_X)), 5 * jnp.ones(shape=(NUM_DIM_X))
 
-# sim = GaussianProcessSim(input_size=1, output_scale=3.0, mean_fn=lambda x: 2 * x)
-# sim = SinusoidsSim(input_size=1, output_size=NUM_DIM_Y)
-# sim = PendulumSim()
 bnn = BNN_FSVGD_Sim_Prior(NUM_DIM_X, NUM_DIM_Y, domain_l, domain_u, rng_key=next(key_iter), function_sim=sim,
-                          hidden_layer_sizes=[64, 64, 64],
-                          num_train_steps=20000, data_batch_size=4,
-                          independent_output_dims=True)
+                          hidden_layer_sizes=[64, 64, 64], num_train_steps=20000, data_batch_size=32,
+                          num_measurement_points=10, independent_output_dims=True)
 
 for i in range(10):
     bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=5000)
