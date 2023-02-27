@@ -10,6 +10,7 @@ from sim_transfer.modules.nn_modules import BatchedMLP, MLP
 from sim_transfer.modules.util import tree_unstack, tree_stack, find_root_1d
 from sim_transfer.modules.data_loader import DataLoader
 from sim_transfer.modules.distribution import AffineTransform
+from sim_transfer.modules.util import mmd2
 
 
 class TestBatchedMLP(unittest.TestCase):
@@ -172,6 +173,36 @@ class TestRootFind1d(unittest.TestCase):
         f = lambda x: 0.5 * jnp.tanh(20 * (x + 0.05))
         r =  find_root_1d(f)
         assert jnp.allclose(r, -.05, atol=1e-4)
+
+
+class TestMMD(unittest.TestCase):
+
+    def setUp(self) -> None:
+        key1, key2, key3 = jax.random.split(jax.random.PRNGKey(567), 3)
+        self.x = jax.random.normal(key1, shape=(20, 2))
+        self.y = jax.random.normal(key1, shape=(30, 2))
+        self.z = 5 + 2 * jax.random.normal(key1, shape=(25, 2))
+        self.kernel = tfp.math.psd_kernels.ExponentiatedQuadratic()
+
+    def test_mmd_of_same_dist_smaller1(self):
+        mmd = mmd2(self.x, self.x, self.kernel)
+        assert mmd < 1e-5
+
+    def test_mmd_of_same_dist_smaller2(self):
+        for d in [True, False]:
+            assert mmd2(self.x, self.y, self.kernel, include_diag=d) < mmd2(self.x, self.z, self.kernel, include_diag=d)
+
+    def test_multiple_lengthscales(self):
+        for include_diag in [True, False]:
+            kernel = tfp.math.psd_kernels.ExponentiatedQuadratic(length_scale=[0.1, 2.])
+            mmd_joint = mmd2(self.x, self.y, kernel, include_diag=include_diag)
+            assert mmd_joint.shape == (2,)
+
+            kernel = tfp.math.psd_kernels.ExponentiatedQuadratic(length_scale=0.1)
+            assert jnp.array_equal(mmd2(self.x, self.y, kernel, include_diag=include_diag), mmd_joint[0])
+
+            kernel = tfp.math.psd_kernels.ExponentiatedQuadratic(length_scale=2.)
+            assert jnp.array_equal(mmd2(self.x, self.y, kernel, include_diag=include_diag), mmd_joint[1])
 
 
 if __name__ == '__main__':

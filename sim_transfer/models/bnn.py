@@ -63,9 +63,9 @@ class AbstractParticleBNN(BatchedNeuralNetworkModel):
         return y_pred
 
 
-class AbstractFSVGD_BNN(AbstractParticleBNN):
+class AbstractFunctional_BNN(AbstractParticleBNN):
 
-    def __init__(self, domain_l: jnp.ndarray, domain_u: jnp.ndarray, bandwidth_svgd: float = 0.4, **kwargs):
+    def __init__(self, domain_l: jnp.ndarray, domain_u: jnp.ndarray, **kwargs):
         super().__init__(**kwargs)
 
         # check and set domain boundaries
@@ -73,9 +73,6 @@ class AbstractFSVGD_BNN(AbstractParticleBNN):
         assert jnp.all(domain_l <= domain_u), 'lower bound of domain must be smaller than upper bound'
         self.domain_l = domain_l
         self.domain_u = domain_u
-        self.bandwidth_svgd = bandwidth_svgd
-
-        self.kernel_svgd = tfp.math.psd_kernels.ExponentiatedQuadratic(length_scale=self.bandwidth_svgd)
 
     def _sample_measurement_points(self, key: jax.random.PRNGKey, num_points: int = 10,
                                    normalize: bool = True) -> jnp.ndarray:
@@ -86,6 +83,13 @@ class AbstractFSVGD_BNN(AbstractParticleBNN):
             x_domain = self._normalize_data(x_domain)
         assert x_domain.shape == (num_points, self.input_size)
         return x_domain
+
+class AbstractFSVGD_BNN(AbstractFunctional_BNN):
+
+    def __init__(self, bandwidth_svgd: float = 0.4, **kwargs):
+        super().__init__(**kwargs)
+        self.bandwidth_svgd = bandwidth_svgd
+        self.kernel_svgd = tfp.math.psd_kernels.ExponentiatedQuadratic(length_scale=self.bandwidth_svgd)
 
     @partial(jax.jit, static_argnums=(0,))
     def _evaluate_kernel(self, pred_raw: jnp.ndarray):

@@ -1,8 +1,10 @@
-from typing import List, Dict, Callable
+from typing import List, Dict, Callable, Union
 
 import jax
 import jax.numpy as jnp
 from jax.tree_util import tree_flatten
+
+from tensorflow_probability.substrates import jax as tfp
 
 
 def tree_stack(trees):
@@ -72,3 +74,26 @@ def find_root_1d(fun: Callable, low: float = -1e6, high: float = 1e6,
             low = middle
 
     raise RuntimeError(f'Reached max iterations of {maxiter} without reaching the atol of {atol}.')
+
+""" Statistical distance measures """
+
+
+tfp.math.psd_kernels.ExponentiatedQuadratic(length_scale=1.0)
+
+def mmd2(x: jnp.ndarray, y: jnp.ndarray,
+         kernel: tfp.math.psd_kernels.PositiveSemidefiniteKernel,
+         include_diag: bool = False) -> Union[jnp.ndarray, float]:
+    """ Computes the MMD^2 between two samples x and y """
+    assert x.ndim == y.ndim >= 2, 'x and y must be at least 2-dimensional'
+    assert x.shape[-1] == y.shape[-1], 'x and y must have the same diimensionality'
+    n, m = x.shape[-2], y.shape[-2]
+    Kxx = kernel.matrix(x, x)
+    Kyy = kernel.matrix(y, y)
+    Kxy = kernel.matrix(x, y)
+    if include_diag:
+        mmd = jnp.mean(Kxx, axis=(-2, -1)) + jnp.mean(Kyy, axis=(-2, -1)) - 2 * jnp.mean(Kxy, axis=(-2, -1))
+    else:
+        mmd = jnp.sum(Kxx * (1 - jnp.eye(n)), axis=(-2, -1)) / (n * (n-1)) \
+              + jnp.sum(Kyy * (1 - jnp.eye(m)), axis=(-2, -1)) / (m * (m-1)) \
+              - 2 * jnp.sum(Kxy, axis=(-2, -1)) / (n * m)
+    return mmd
