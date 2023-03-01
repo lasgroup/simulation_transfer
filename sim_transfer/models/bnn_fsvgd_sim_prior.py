@@ -34,7 +34,8 @@ class BNN_FSVGD_Sim_Prior(AbstractFSVGD_BNN):
                  normalization_stats: Optional[Dict[str, jnp.ndarray]] = None,
                  hidden_layer_sizes: List[int] = (32, 32, 32),
                  hidden_activation: Optional[Callable] = jax.nn.leaky_relu,
-                 last_activation: Optional[Callable] = None):
+                 last_activation: Optional[Callable] = None,
+                 log_wandb: bool = False, ):
         super().__init__(input_size=input_size, output_size=output_size, rng_key=rng_key,
                          data_batch_size=data_batch_size, num_train_steps=num_train_steps,
                          num_batched_nns=num_particles, hidden_layer_sizes=hidden_layer_sizes,
@@ -44,6 +45,7 @@ class BNN_FSVGD_Sim_Prior(AbstractFSVGD_BNN):
         self.likelihood_std = likelihood_std * jnp.ones(output_size)
         self.num_particles = num_particles
         self.num_measurement_points = num_measurement_points
+        self.log_wandb = log_wandb
 
         # check and set function sim
         self.function_sim = function_sim
@@ -124,7 +126,7 @@ if __name__ == '__main__':
 
     key_iter = key_iter()
     NUM_DIM_X = 1
-    NUM_DIM_Y = 2
+    NUM_DIM_Y = 1
     num_train_points = 2
 
     if NUM_DIM_X == 1 and NUM_DIM_Y == 1:
@@ -146,9 +148,9 @@ if __name__ == '__main__':
 
     # sim = GaussianProcessSim(input_size=1, output_scale=3.0, mean_fn=lambda x: 2 * x)
     sim = SinusoidsSim(input_size=1, output_size=NUM_DIM_Y)
+    # sim = GaussianProcessSim(input_size=1, output_size=NUM_DIM_Y, output_scale=1.0, mean_fn=lambda x: 2 * x)
     bnn = BNN_FSVGD_Sim_Prior(NUM_DIM_X, NUM_DIM_Y, domain_l, domain_u, rng_key=next(key_iter), function_sim=sim,
-                              hidden_layer_sizes=[64, 64, 64],
-                              num_train_steps=20000, data_batch_size=4,
+                              hidden_layer_sizes=[64, 64, 64], num_train_steps=20000, data_batch_size=4,
                               independent_output_dims=True)
     for i in range(10):
         bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=5000)

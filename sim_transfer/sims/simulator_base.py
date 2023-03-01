@@ -49,7 +49,7 @@ class GaussianProcessSim(FunctionSimulator):
                 rng_key: random number generator key
         """
         assert x.ndim == 2 and x.shape[-1] == self.input_size
-        gp = tfd.GaussianProcess(kernel=self.kernel, index_points=x)
+        gp = tfd.GaussianProcess(kernel=self.kernel, index_points=x, jitter=1e-4)
         keys = random.split(rng_key, self.output_size)
         f_samples = vmap(gp.sample, in_axes=(None, 0), out_axes=2)(num_samples, keys)
         f_samples *= self.output_scale
@@ -75,6 +75,18 @@ class SinusoidsSim(FunctionSimulator):
             freq2 = jax.random.uniform(key4, shape=(num_samples,), minval=1.3, maxval=1.7)
             f2 = amp[:, None, None] * jnp.cos(freq2[:, None, None] * x) - slope[:, None, None] * x
             f = jnp.concatenate([f, f2], axis=-1)
+        assert f.shape == (num_samples, x.shape[0], self.output_size)
+        return f
+
+
+class QuadraticSim(FunctionSimulator):
+    def __init__(self):
+        super().__init__(input_size=1, output_size=1)
+
+    def sample_function_vals(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
+        assert x.ndim == 2 and x.shape[-1] == self.input_size
+        ks = jax.random.uniform(rng_key, shape=(num_samples,), minval=0.9, maxval=1.1)
+        f = ks[:, None, None] * (x - 2) ** 2
         assert f.shape == (num_samples, x.shape[0], self.output_size)
         return f
 

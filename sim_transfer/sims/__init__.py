@@ -1,1 +1,1 @@
-from .simulator_base import SinusoidsSim, FunctionSimulator, GaussianProcessSim, PendulumSim
+from .simulator_base import SinusoidsSim, FunctionSimulator, GaussianProcessSim, PendulumSim, QuadraticSim

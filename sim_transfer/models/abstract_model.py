@@ -10,6 +10,7 @@ import tensorflow as tf
 import tensorflow_datasets as tfds
 import tensorflow_probability.substrates.jax.distributions as tfd
 from tensorflow_probability.substrates import jax as tfp
+import wandb
 
 from sim_transfer.modules.nn_modules import BatchedMLP
 from sim_transfer.modules.distribution import AffineTransform
@@ -277,6 +278,8 @@ class BatchedNeuralNetworkModel(AbstractRegressionModel):
                 if evaluate:
                     eval_stats = self.eval(x_eval, y_eval, prefix='eval_')
                     stats_agg.update(eval_stats)
+                if self.log_wandb:
+                    wandb.log({f'{n}': float(v) for n, v in stats_agg.items()})
                 stats_msg = ' | '.join([f'{n}: {v:.4f}' for n, v in stats_agg.items()])
                 msg = (f'Step {step}/{num_steps} | {stats_msg} | Duration {duration_sec:.2f} sec | '
                        f'Time per sample {duration_per_sample_ms:.2f} ms')
