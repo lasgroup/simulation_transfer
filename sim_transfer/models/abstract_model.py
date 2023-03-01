@@ -253,7 +253,8 @@ class BatchedNeuralNetworkModel(AbstractRegressionModel):
 
         # prepare data and data loader
         x_train, y_train = self._preprocess_train_data(x_train, y_train)
-        train_loader = self._create_data_loader(x_train, y_train, batch_size=self.data_batch_size)
+        batch_size = min(self.data_batch_size, x_train.shape[0])
+        train_loader = self._create_data_loader(x_train, y_train, batch_size=batch_size)
         num_train_points = x_train.shape[0]
 
         # initialize attributes to keep track of during training
