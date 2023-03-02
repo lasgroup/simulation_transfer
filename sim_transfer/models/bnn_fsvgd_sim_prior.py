@@ -35,17 +35,16 @@ class BNN_FSVGD_Sim_Prior(AbstractFSVGD_BNN):
                  hidden_layer_sizes: List[int] = (32, 32, 32),
                  hidden_activation: Optional[Callable] = jax.nn.leaky_relu,
                  last_activation: Optional[Callable] = None,
-                 log_wandb: bool = False, ):
+                 log_wandb: bool = False):
         super().__init__(input_size=input_size, output_size=output_size, rng_key=rng_key,
                          data_batch_size=data_batch_size, num_train_steps=num_train_steps,
                          num_batched_nns=num_particles, hidden_layer_sizes=hidden_layer_sizes,
                          hidden_activation=hidden_activation, last_activation=last_activation,
-                         normalize_data=normalize_data, normalization_stats=normalization_stats,
+                         normalize_data=normalize_data, normalization_stats=normalization_stats, log_wandb=log_wandb,
                          lr=lr, domain_l=domain_l, domain_u=domain_u, bandwidth_svgd=bandwidth_svgd)
         self.likelihood_std = likelihood_std * jnp.ones(output_size)
         self.num_particles = num_particles
         self.num_measurement_points = num_measurement_points
-        self.log_wandb = log_wandb
 
         # check and set function sim
         self.function_sim = function_sim

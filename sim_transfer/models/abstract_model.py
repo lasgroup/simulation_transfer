@@ -20,13 +20,15 @@ from sim_transfer.modules.util import RngKeyMixin, aggregate_stats
 class AbstractRegressionModel(RngKeyMixin):
 
     def __init__(self, input_size: int, output_size: int, rng_key: jax.random.PRNGKey, normalize_data: bool = True,
-                 normalization_stats: Optional[Dict[str, jnp.ndarray]] = None):
+                 normalization_stats: Optional[Dict[str, jnp.ndarray]] = None,
+                 log_wandb: bool = False):
         super().__init__(rng_key)
 
         self.input_size = input_size
         self.output_size = output_size
         self.normalize_data = normalize_data
         self.need_to_compute_norm_stats = normalize_data and (normalization_stats is None)
+        self.log_wandb = log_wandb
 
         if normalization_stats is None:
             # initialize normalization stats to neutral elements

@@ -35,13 +35,14 @@ class BNN_MMD_SimPrior(AbstractFunctional_BNN):
                  normalization_stats: Optional[Dict[str, jnp.ndarray]] = None,
                  hidden_layer_sizes: List[int] = (32, 32, 32),
                  hidden_activation: Optional[Callable] = jax.nn.leaky_relu,
-                 last_activation: Optional[Callable] = None):
+                 last_activation: Optional[Callable] = None,
+                 log_wandb: bool = False):
         super().__init__(input_size=input_size, output_size=output_size, rng_key=rng_key,
                          data_batch_size=data_batch_size, num_train_steps=num_train_steps,
                          num_batched_nns=num_particles, hidden_layer_sizes=hidden_layer_sizes,
                          hidden_activation=hidden_activation, last_activation=last_activation,
                          normalize_data=normalize_data, normalization_stats=normalization_stats,
-                         lr=lr, domain_l=domain_l, domain_u=domain_u)
+                         log_wandb=log_wandb, lr=lr, domain_l=domain_l, domain_u=domain_u)
         self.likelihood_std = likelihood_std * jnp.ones(output_size)
         self.num_particles = num_particles
         self.num_measurement_points = num_measurement_points
@@ -63,7 +64,8 @@ class BNN_MMD_SimPrior(AbstractFunctional_BNN):
 
     @partial(jax.jit, static_argnums=(0,))
     def _surrogate_loss(self, param_vec_stack: jnp.array, x_batch: jnp.array, y_batch: jnp.array,
-                        num_train_points: int, key: jax.random.PRNGKey) -> [jnp.ndarray, Dict]:
+                        num_train_points: int, key: jax.random.PRNGKey,
+                        f_sim_noise_std: float = 0.05) -> [jnp.ndarray, Dict]:
         key1, key2, key3 = jax.random.split(key, num=3)
         # combine the training data batch with a batch of sampled measurement points
         train_batch_size = x_batch.shape[0]
@@ -77,20 +79,20 @@ class BNN_MMD_SimPrior(AbstractFunctional_BNN):
         nll = self._nll(f_raw, y_batch, train_batch_size)
 
         # estimate mmd between posterior and prior
-        f_prior = self._gp_prior_samples(x_stacked, key=key2)
-        f_raw_noisy = f_raw + 0.05 * jax.random.normal(key2, shape=f_raw.shape)
+        fsim_samples = self._fsim_samples(x_stacked, key=key2)  # sample function values from sim prior
+        f_raw_noisy = f_raw + f_sim_noise_std * jax.random.normal(key2, shape=f_raw.shape)  # add noise to sim prior samples
         if self.independent_output_dims:
-            mmd = jnp.sum(self._mmd_fn_vmap(f_raw_noisy, f_prior))
+            mmd = jnp.sum(self._mmd_fn_vmap(f_raw_noisy, fsim_samples))
         else:
             mmd = jnp.sum(self._mmd_fn(f_raw_noisy.reshape(f_raw_noisy.shape[0], -1),
-                                       f_prior.reshape(f_prior.shape[0], -1)))
+                                       fsim_samples.reshape(fsim_samples.shape[0], -1)))
 
         loss = nll + mmd / num_train_points
 
         stats = OrderedDict(train_nll_loss=nll, mmd=mmd, loss=loss)
         return loss, stats
 
-    def _gp_prior_samples(self, x: jnp.array, key: jax.random.PRNGKey) -> jnp.ndarray:
+    def _fsim_samples(self, x: jnp.array, key: jax.random.PRNGKey) -> jnp.ndarray:
         x_unnormalized = self._unnormalize_data(x)
         f_prior = self.function_sim.sample_function_vals(x=x_unnormalized, num_samples=self.num_f_samples, rng_key=key)
         f_prior_normalized = self._normalize_y(f_prior)
