@@ -1,4 +1,4 @@
-from typing import Union, Dict, Callable
+from typing import Union, Dict, Union
 from functools import partial
 import jax.numpy as jnp
 import jax
@@ -12,8 +12,17 @@ from sim_transfer.models.abstract_model import BatchedNeuralNetworkModel
 
 class AbstractParticleBNN(BatchedNeuralNetworkModel):
 
-    def __init__(self, lr: float = 1e-3, **kwargs):
+    def __init__(self, likelihood_std: Union[float, jnp.array] = 0.2, lr: float = 1e-3, **kwargs):
         super().__init__(**kwargs)
+
+        # setup likelihood std
+        if isinstance(likelihood_std, float):
+            self.likelihood_std = likelihood_std * jnp.ones(self.output_size)
+        elif isinstance(likelihood_std, jnp.ndarray):
+            assert likelihood_std.shape == (self.output_size,)
+            self.likelihood_std = likelihood_std
+        else:
+            raise ValueError(f'likelihood_std must be float or jnp.ndarray of size ({self.output_size},)')
 
         # initialize batched NN
         self.params_stack = self.batched_model.param_vectors_stacked

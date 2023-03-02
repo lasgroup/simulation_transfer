@@ -39,7 +39,6 @@ class BNN_FSVGD(AbstractFSVGD_BNN):
                          hidden_activation=hidden_activation, last_activation=last_activation,
                          normalize_data=normalize_data, normalization_stats=normalization_stats,
                          lr=lr, domain_l=domain_l, domain_u=domain_u, bandwidth_svgd=bandwidth_svgd)
-        self.likelihood_std = likelihood_std * jnp.ones(output_size)
         self.num_particles = num_particles
         self.bandwidth_gp_prior = bandwidth_gp_prior
         self.num_measurement_points = num_measurement_points

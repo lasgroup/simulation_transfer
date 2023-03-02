@@ -24,7 +24,7 @@ class BNN_FSVGD_Sim_Prior(AbstractFSVGD_BNN):
                  num_particles: int = 10,
                  num_f_samples: int = 64,
                  num_measurement_points: int = 8,
-                 likelihood_std: float = 0.2,
+                 likelihood_std: Union[float, jnp.array] = 0.2,
                  bandwidth_ssge: float = 1.,
                  bandwidth_svgd: float = 0.2,
                  data_batch_size: int = 8,
@@ -41,8 +41,8 @@ class BNN_FSVGD_Sim_Prior(AbstractFSVGD_BNN):
                          num_batched_nns=num_particles, hidden_layer_sizes=hidden_layer_sizes,
                          hidden_activation=hidden_activation, last_activation=last_activation,
                          normalize_data=normalize_data, normalization_stats=normalization_stats, log_wandb=log_wandb,
-                         lr=lr, domain_l=domain_l, domain_u=domain_u, bandwidth_svgd=bandwidth_svgd)
-        self.likelihood_std = likelihood_std * jnp.ones(output_size)
+                         lr=lr, likelihood_std=likelihood_std,
+                         domain_l=domain_l, domain_u=domain_u, bandwidth_svgd=bandwidth_svgd)
         self.num_particles = num_particles
         self.num_measurement_points = num_measurement_points
 

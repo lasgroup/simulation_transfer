@@ -26,7 +26,7 @@ class BNN_MMD_SimPrior(AbstractFunctional_BNN):
                  num_particles: int = 10,
                  num_f_samples: int = 64,
                  num_measurement_points: int = 8,
-                 likelihood_std: float = 0.2,
+                 likelihood_std: Union[float, jnp.array] = 0.2,
                  bandwith_mmd_range_log2: Tuple[int, int] = (-3, 6),
                  data_batch_size: int = 8,
                  num_train_steps: int = 10000,
@@ -42,8 +42,8 @@ class BNN_MMD_SimPrior(AbstractFunctional_BNN):
                          num_batched_nns=num_particles, hidden_layer_sizes=hidden_layer_sizes,
                          hidden_activation=hidden_activation, last_activation=last_activation,
                          normalize_data=normalize_data, normalization_stats=normalization_stats,
-                         log_wandb=log_wandb, lr=lr, domain_l=domain_l, domain_u=domain_u)
-        self.likelihood_std = likelihood_std * jnp.ones(output_size)
+                         log_wandb=log_wandb, lr=lr, likelihood_std=likelihood_std,
+                         domain_l=domain_l, domain_u=domain_u)
         self.num_particles = num_particles
         self.num_measurement_points = num_measurement_points
         self.independent_output_dims = independent_output_dims

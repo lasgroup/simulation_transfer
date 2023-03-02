@@ -8,16 +8,16 @@ import optax
 import tensorflow_probability.substrates.jax.distributions as tfd
 from tensorflow_probability.substrates import jax as tfp
 
-from sim_transfer.models.abstract_model import BatchedNeuralNetworkModel
+from sim_transfer.models.bnn import AbstractParticleBNN
 
 
-class BNN_SVGD(BatchedNeuralNetworkModel):
+class BNN_SVGD(AbstractParticleBNN):
 
     def __init__(self,
                  input_size: int,
                  output_size: int,
                  rng_key: jax.random.PRNGKey,
-                 likelihood_std: float = 0.2,
+                 likelihood_std: Union[float, jnp.array] = 0.2,
                  num_particles: int = 10,
                  bandwidth_svgd: float = 10.0,
                  data_batch_size: int = 16,
@@ -35,22 +35,15 @@ class BNN_SVGD(BatchedNeuralNetworkModel):
                          data_batch_size=data_batch_size, num_train_steps=num_train_steps,
                          num_batched_nns=num_particles, hidden_layer_sizes=hidden_layer_sizes,
                          hidden_activation=hidden_activation, last_activation=last_activation,
-                         normalize_data=normalize_data, normalization_stats=normalization_stats)
-        self.likelihood_std = likelihood_std * jnp.ones(output_size)
+                         normalize_data=normalize_data, normalization_stats=normalization_stats,
+                         lr=lr, likelihood_std=likelihood_std)
         self.num_particles = num_particles
         self.bandwidth_svgd = bandwidth_svgd
-
-        # get batched NN params as a stack of vectors
-        self.params_stack = self.batched_model.param_vectors_stacked
 
         # construct the neural network prior distribution
         self.use_prior = use_prior
         if use_prior:
             self.prior_dist = self._construct_nn_param_prior(weight_prior_std, bias_prior_std)
-
-        # initialize optimizer
-        self.optim = optax.adam(learning_rate=lr)
-        self.opt_state = self.optim.init(self.params_stack)
 
         # initialize kernel
         self.kernel = tfp.math.psd_kernels.ExponentiatedQuadratic(length_scale=self.bandwidth_svgd)
@@ -105,22 +98,6 @@ class BNN_SVGD(BatchedNeuralNetworkModel):
             log_posterior = ll
             stats = OrderedDict(train_nll_loss=-ll)
         return - log_posterior, stats
-
-    def predict_dist(self, x: jnp.ndarray, include_noise: bool = True) -> tfd.Distribution:
-        self.batched_model.param_vectors_stacked = self.params_stack
-        x = self._normalize_data(x)
-        y_pred_raw = self.batched_model(x)
-        pred_dist = self._to_pred_dist(y_pred_raw, likelihood_std=self.likelihood_std, include_noise=include_noise)
-        assert pred_dist.batch_shape == x.shape[:-1]
-        assert pred_dist.event_shape == (self.output_size,)
-        return pred_dist
-
-    def predict_post_samples(self, x: jnp.ndarray) -> jnp.ndarray:
-        x = self._normalize_data(x)
-        y_pred_raw = self.batched_model(x)
-        y_pred = y_pred_raw * self._y_std + self._y_mean
-        assert y_pred.ndim == 3 and y_pred.shape[-2:] == (x.shape[0], self.output_size)
-        return y_pred
 
 
 if __name__ == '__main__':
