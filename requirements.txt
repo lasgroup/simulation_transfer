@@ -6,6 +6,8 @@ scipy
 jax
 optax
 dm-haiku
+jaxtyping
+wandb
 
 #ray[tune]
 # ray[default]
