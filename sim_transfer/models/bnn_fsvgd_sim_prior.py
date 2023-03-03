@@ -43,7 +43,6 @@ class BNN_FSVGD_Sim_Prior(AbstractFSVGD_BNN):
                          normalize_data=normalize_data, normalization_stats=normalization_stats, log_wandb=log_wandb,
                          lr=lr, likelihood_std=likelihood_std,
                          domain_l=domain_l, domain_u=domain_u, bandwidth_svgd=bandwidth_svgd)
-        self.num_particles = num_particles
         self.num_measurement_points = num_measurement_points
 
         # check and set function sim

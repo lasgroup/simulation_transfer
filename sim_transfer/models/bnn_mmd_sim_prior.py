@@ -8,11 +8,11 @@ import numpy as np
 from sim_transfer.sims import FunctionSimulator
 from tensorflow_probability.substrates import jax as tfp
 
-from sim_transfer.models.bnn import AbstractFunctional_BNN
+from sim_transfer.models.bnn import AbstractParticleBNN, MeasurementSetMixin
 from sim_transfer.modules.util import mmd2
 
 
-class BNN_MMD_SimPrior(AbstractFunctional_BNN):
+class BNN_MMD_SimPrior(AbstractParticleBNN, MeasurementSetMixin):
     """ BNN based on MMD w.r.t. sim prior. """
 
     def __init__(self,
@@ -37,14 +37,13 @@ class BNN_MMD_SimPrior(AbstractFunctional_BNN):
                  hidden_activation: Optional[Callable] = jax.nn.leaky_relu,
                  last_activation: Optional[Callable] = None,
                  log_wandb: bool = False):
-        super().__init__(input_size=input_size, output_size=output_size, rng_key=rng_key,
-                         data_batch_size=data_batch_size, num_train_steps=num_train_steps,
-                         num_batched_nns=num_particles, hidden_layer_sizes=hidden_layer_sizes,
-                         hidden_activation=hidden_activation, last_activation=last_activation,
-                         normalize_data=normalize_data, normalization_stats=normalization_stats,
-                         log_wandb=log_wandb, lr=lr, likelihood_std=likelihood_std,
-                         domain_l=domain_l, domain_u=domain_u)
-        self.num_particles = num_particles
+        AbstractParticleBNN.__init__(self, input_size=input_size, output_size=output_size, rng_key=rng_key,
+                                     data_batch_size=data_batch_size, num_train_steps=num_train_steps,
+                                     num_batched_nns=num_particles, hidden_layer_sizes=hidden_layer_sizes,
+                                     hidden_activation=hidden_activation, last_activation=last_activation,
+                                     normalize_data=normalize_data, normalization_stats=normalization_stats,
+                                     log_wandb=log_wandb, lr=lr, likelihood_std=likelihood_std)
+        MeasurementSetMixin.__init__(self, domain_l, domain_u)
         self.num_measurement_points = num_measurement_points
         self.independent_output_dims = independent_output_dims
 

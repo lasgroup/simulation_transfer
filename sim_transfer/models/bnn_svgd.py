@@ -8,10 +8,10 @@ import optax
 import tensorflow_probability.substrates.jax.distributions as tfd
 from tensorflow_probability.substrates import jax as tfp
 
-from sim_transfer.models.bnn import AbstractParticleBNN
+from sim_transfer.models.bnn import AbstractSVGD_BNN
 
 
-class BNN_SVGD(AbstractParticleBNN):
+class BNN_SVGD(AbstractSVGD_BNN):
 
     def __init__(self,
                  input_size: int,
@@ -36,68 +36,15 @@ class BNN_SVGD(AbstractParticleBNN):
                          num_batched_nns=num_particles, hidden_layer_sizes=hidden_layer_sizes,
                          hidden_activation=hidden_activation, last_activation=last_activation,
                          normalize_data=normalize_data, normalization_stats=normalization_stats,
-                         lr=lr, likelihood_std=likelihood_std)
-        self.num_particles = num_particles
-        self.bandwidth_svgd = bandwidth_svgd
+                         lr=lr, likelihood_std=likelihood_std, bandwidth_svgd=bandwidth_svgd, use_prior=use_prior)
 
         # construct the neural network prior distribution
-        self.use_prior = use_prior
         if use_prior:
-            self.prior_dist = self._construct_nn_param_prior(weight_prior_std, bias_prior_std)
+            self._prior_dist = self._construct_nn_param_prior(weight_prior_std, bias_prior_std)
 
-        # initialize kernel
-        self.kernel = tfp.math.psd_kernels.ExponentiatedQuadratic(length_scale=self.bandwidth_svgd)
-
-    @partial(jax.jit, static_argnums=(0,))
-    def _evaluate_kernel(self, particles: jnp.ndarray):
-        particles_copy = jax.lax.stop_gradient(particles)
-        k = self.kernel.matrix(particles, particles_copy)
-        return jnp.sum(k), k
-
-    def step(self, x_batch: jnp.ndarray, y_batch: jnp.ndarray, num_train_points: Union[float, int]) -> Dict[str, float]:
-        self.opt_state, self.params_stack, stats = self._step_jit(self.opt_state, self.params_stack, x_batch, y_batch,
-                                                                  num_train_points)
-        return stats
-
-    @partial(jax.jit, static_argnums=(0,))
-    def _step_jit(self, opt_state: optax.OptState, param_vec_stack: jnp.array, x_batch: jnp.array, y_batch: jnp.array,
-                  num_train_points: Union[float, int]):
-        # SVGD updates
-        (log_post, post_stats), grad_q = jax.value_and_grad(self._neg_log_posterior, has_aux=True)(param_vec_stack,
-                                                                                                   x_batch, y_batch,
-                                                                                                   num_train_points)
-        grad_q = self.batched_model.flatten_batch(grad_q)
-
-        grad_k, k = jax.grad(self._evaluate_kernel, has_aux=True)(self.batched_model.flatten_batch(param_vec_stack))
-        grad = k @ grad_q + grad_k / self.num_particles
-
-        updates, opt_state = self.optim.update(self.batched_model.unravel_batch(grad), opt_state, param_vec_stack)
-        param_vec_stack = optax.apply_updates(param_vec_stack, updates)
-
-        avg_triu_k = jnp.sum(jnp.triu(k, k=1)) / ((self.num_particles - 1) * self.num_particles / 2)
-        stats = OrderedDict(**post_stats, avg_grad_q=jnp.mean(grad_q), avg_grad_k=jnp.mean(grad_q),
-                            avg_triu_k=avg_triu_k)
-
-        return opt_state, param_vec_stack, stats
-
-    def _ll(self, param_vec_stack: jnp.ndarray, x_batch: jnp.ndarray, y_batch: jnp.ndarray):
-        pred_raw = self.batched_model.forward_vec(x_batch, param_vec_stack)
-        likelihood_std = self.likelihood_std
-        log_prob = tfd.MultivariateNormalDiag(pred_raw, likelihood_std).log_prob(y_batch)
-        return jnp.mean(log_prob)
-
-    def _neg_log_posterior(self, param_vec_stack: jnp.ndarray, x_batch: jnp.ndarray, y_batch: jnp.ndarray,
-                           num_train_points: Union[float, int]):
-        ll = self._ll(param_vec_stack, x_batch=x_batch, y_batch=y_batch)
-        if self.use_prior:
-            log_prior = jnp.mean(self.prior_dist.log_prob(self.batched_model.flatten_batch(param_vec_stack)))
-            log_prior /= (num_train_points * self.prior_dist.event_shape[0])
-            stats = OrderedDict(train_nll_loss=-ll, neg_log_prior=-log_prior)
-            log_posterior = ll + log_prior
-        else:
-            log_posterior = ll
-            stats = OrderedDict(train_nll_loss=-ll)
-        return - log_posterior, stats
+    @property
+    def prior_dist(self):
+        return self._prior_dist
 
 
 if __name__ == '__main__':
