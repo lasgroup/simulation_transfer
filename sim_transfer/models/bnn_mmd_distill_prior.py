@@ -7,7 +7,6 @@ import time
 import jax
 import jax.numpy as jnp
 import optax
-import numpy as np
 
 from tensorflow_probability.substrates import jax as tfp
 import tensorflow_probability.substrates.jax.distributions as tfd
@@ -18,7 +17,7 @@ from sim_transfer.models.bnn import AbstractSVGD_BNN, MeasurementSetMixin
 from sim_transfer.modules.util import mmd2, aggregate_stats
 
 class BNN_SVGD_Distill_Prior(AbstractSVGD_BNN, MeasurementSetMixin):
-    """ BNN with SVGD inference whose prior is distillled from a simulator """
+    """ BNN with SVGD inference whose prior is distilled from a simulator """
 
     def __init__(self,
                  input_size: int,
@@ -59,7 +58,7 @@ class BNN_SVGD_Distill_Prior(AbstractSVGD_BNN, MeasurementSetMixin):
 
         # init learnable distillation prior
         # heuristic for setting the std of the prior on the weights
-        weight_std = 4.0 / np.sqrt(np.sum(hidden_layer_sizes))
+        weight_std = 4.0 / jnp.sqrt(jnp.sum(jnp.array(hidden_layer_sizes)))
         _prior = self.batched_model.params_prior(weight_prior_std=weight_std, bias_prior_std=0.5)
         self.distill_prior_params = {'mean': _prior.mean(), 'std': _prior.stddev()}
 
@@ -218,7 +217,7 @@ if __name__ == '__main__':
     else:
         raise NotImplementedError
 
-    domain_l, domain_u = np.array([-7.] * NUM_DIM_X), np.array([7.] * NUM_DIM_X)
+    domain_l, domain_u = jnp.array([-7.] * NUM_DIM_X), jnp.array([7.] * NUM_DIM_X)
 
     x_train = jax.random.uniform(next(key_iter), shape=(num_train_points, NUM_DIM_X), minval=-5, maxval=5)
     y_train = fun(x_train) + 0.01 * jax.random.normal(next(key_iter), shape=(x_train.shape[0], NUM_DIM_Y))
@@ -237,9 +236,10 @@ if __name__ == '__main__':
                                    num_f_samples=400,
                                    num_measurement_points=8,
                                    lr_distill_prior=1e-2,
+                                   bandwidth_svgd=0.1,
                                    independent_output_dims=False)
         print('\n----- Distilling prior...')
-        for i in range(10):
+        for i in range(5):
             bnn.fit_distill_prior(num_steps=5000, log_period=500)
             bnn.plot_distill_prior_samples(key=next(key_iter), domain_l=domain_l, domain_u=domain_u,
                                            title=f'Distillation prior samples, step {i * 5000}')
