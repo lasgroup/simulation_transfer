@@ -1,6 +1,7 @@
-from typing import Union, Dict, Union
+from typing import Optional, Dict, Union
 from functools import partial
 from collections import OrderedDict
+from jaxtyping import PyTree
 import jax.numpy as jnp
 import jax
 import optax
@@ -66,6 +67,101 @@ class AbstractParticleBNN(BatchedNeuralNetworkModel):
         assert y_pred.ndim == 3 and y_pred.shape[-2:] == (x.shape[0], self.output_size)
         return y_pred
 
+
+class AbstractVariationalBNN(BatchedNeuralNetworkModel):
+
+    def __init__(self, likelihood_std: Union[float, jnp.array] = 0.2, **kwargs):
+        super().__init__(**kwargs)
+
+        # setup likelihood std
+        if isinstance(likelihood_std, float):
+            self.likelihood_std = likelihood_std * jnp.ones(self.output_size)
+        elif isinstance(likelihood_std, jnp.ndarray):
+            assert likelihood_std.shape == (self.output_size,)
+            self.likelihood_std = likelihood_std
+        else:
+            raise ValueError(f'likelihood_std must be float or jnp.ndarray of size ({self.output_size},)')
+
+        # need to be implemented by subclass
+        self.posterior_params = None
+        self.optim = None
+        self.opt_state = None
+
+    def step(self, x_batch: jnp.ndarray, y_batch: jnp.ndarray, num_train_points: Union[float, int]) -> Dict[str, float]:
+        self.opt_state, self.posterior_params, stats = self._step_jit(self.opt_state, self.posterior_params, x_batch, y_batch,
+                                                                  key=self.rng_key, num_train_points=num_train_points)
+        return stats
+
+    def _loss(self, posterior_params: PyTree, x_batch: jnp.array, y_batch: jnp.array,
+                    num_train_points: int, key: jax.random.PRNGKey) -> [jnp.ndarray, Dict]:
+        raise NotImplementedError('Needs to be implemented by subclass')
+
+    @partial(jax.jit, static_argnums=(0,))
+    def _step_jit(self, opt_state: optax.OptState, posterior_params: jnp.array, x_batch: jnp.array, y_batch: jnp.array,
+                  key: jax.random.PRNGKey, num_train_points: Union[float, int]):
+        (loss, stats), grad = jax.value_and_grad(self._loss, has_aux=True)(
+            posterior_params, x_batch, y_batch, num_train_points, key)
+        updates, opt_state = self.optim.update(grad, opt_state, posterior_params)
+        posterior_params = optax.apply_updates(posterior_params, updates)
+        return opt_state, posterior_params, stats
+
+    def _post_predict_raw(self, x: jnp.ndarray, key: Optional[jax.random.PRNGKey] = None,
+                     num_post_samples: Optional[int] = None) -> jnp.ndarray:
+        if key is None:
+            key = self.rng_key
+        if num_post_samples is None:
+            num_post_samples = self.num_post_samples
+        params_stack = self.posterior_dist.sample(sample_shape=num_post_samples, seed=key)
+        self.batched_model.param_vectors_stacked = self.batched_model.unravel_batch(params_stack)
+        y_pred_raw = self.batched_model(x)
+        return y_pred_raw
+
+    def predict_dist(self, x: jnp.ndarray, include_noise: bool = True,
+                     key: Optional[jax.random.PRNGKey] = None,
+                     num_post_samples: Optional[int] = None) -> tfd.Distribution:
+        # normalize input data
+        x = self._normalize_data(x)
+
+        # sample NNs from posterior and return the corresponding (raw) predictions
+        y_pred_raw = self._post_predict_raw(x, key=key, num_post_samples=num_post_samples)
+
+        # convert sampled NN predictions into predictive distribution.
+        pred_dist = self._to_pred_dist(y_pred_raw, likelihood_std=self.likelihood_std, include_noise=include_noise)
+
+        # do shape checks
+        assert pred_dist.batch_shape == x.shape[:-1]
+        assert pred_dist.event_shape == (self.output_size,)
+        return pred_dist
+
+    def predict_post_samples(self, x: jnp.ndarray, key: Optional[jax.random.PRNGKey] = None,
+                     num_post_samples: Optional[int] = None) -> jnp.ndarray:
+        # normalize input data
+        x = self._normalize_data(x)
+
+        # sample NNs from posterior and return the corresponding (raw) predictions
+        y_pred_raw = self._post_predict_raw(x, key=key, num_post_samples=num_post_samples)
+
+        # denormalize output data
+        y_pred = y_pred_raw * self._y_std + self._y_mean
+
+        # do shape checks
+        assert y_pred.ndim == 3 and y_pred.shape[-2:] == (x.shape[0], self.output_size)
+        if num_post_samples is None:
+            num_post_samples = self.num_post_samples
+        assert y_pred.shape[0] == num_post_samples
+        return y_pred
+
+    @property
+    def posterior_dist(self) -> tfd.Distribution:
+        raise NotImplementedError
+
+    @property
+    def prior_dist(self) -> tfd.Distribution:
+        raise NotImplementedError
+
+    @property
+    def num_post_samples(self) -> int:
+        return self.num_batched_nns
 
 class MeasurementSetMixin:
     def __init__(self, domain_l: jnp.ndarray, domain_u: jnp.ndarray):
