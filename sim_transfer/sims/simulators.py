@@ -1,4 +1,4 @@
-from typing import Callable, Optional, Tuple
+from typing import Callable, Optional, Tuple, Dict
 
 import jax
 import jax.numpy as jnp
@@ -23,6 +23,14 @@ class FunctionSimulator:
     def domain(self) -> Domain:
         raise NotImplementedError
 
+    def sample_dataset(self, rng_key: jax.random.PRNGKey, num_samples: int,
+                       obs_noise_std: float, x_support_mode: str,
+                       param_mode: str) -> Tuple[jnp.ndarray, jnp.ndarray]:
+        raise NotImplementedError
+
+    @property
+    def normalization_stats(self) -> Dict[str, jnp.ndarray]:
+        raise NotImplementedError
 
 class GaussianProcessSim(FunctionSimulator):
 
@@ -63,6 +71,14 @@ class GaussianProcessSim(FunctionSimulator):
 
 
 class SinusoidsSim(FunctionSimulator):
+    amp_mean = 2.0
+    amp_std = 0.4
+    slope_mean = 2.0
+    slope_std = 0.3
+    freq1_mid = 2.0
+    freq1_spread = 0.3
+    freq2_mid = 1.5
+    freq2_spread = 0.2
 
     def __init__(self, input_size: int = 1, output_size: int = 1):
         assert input_size == 1, 'only 1 dimensional inputs are supported'
@@ -72,12 +88,14 @@ class SinusoidsSim(FunctionSimulator):
     def sample_function_vals(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
         assert x.ndim == 2 and x.shape[-1] == self.input_size
         key1, key2, key3, key4 = jax.random.split(rng_key, 4)
-        freq = jax.random.uniform(key1, shape=(num_samples,), minval=1.7, maxval=2.3)
-        amp = 2 + 0.4 * jax.random.normal(key2, shape=(num_samples,))
-        slope = 2 + 0.3 * jax.random.normal(key3, shape=(num_samples,))
+        freq = jax.random.uniform(key1, shape=(num_samples,), minval=self.freq1_mid - self.freq1_spread,
+                                  maxval=self.freq1_mid + self.freq1_spread)
+        amp = self.amp_mean + self.amp_std * jax.random.normal(key2, shape=(num_samples,))
+        slope = self.slope_mean + self.slope_std * jax.random.normal(key3, shape=(num_samples,))
         f = self._f1(amp[:, None, None], freq[:, None, None], slope[:, None, None], x)
         if self.output_size == 2:
-            freq2 = jax.random.uniform(key4, shape=(num_samples,), minval=1.3, maxval=1.7)
+            freq2 = jax.random.uniform(key4, shape=(num_samples,), minval=self.freq2_mid - self.freq2_spread,
+                                       maxval=self.freq2_mid + self.freq2_spread)
             f2 = self._f2(amp[:, None, None], freq2[:, None, None], slope[:, None, None], x)
             f = jnp.concatenate([f, f2], axis=-1)
         assert f.shape == (num_samples, x.shape[0], self.output_size)
@@ -89,11 +107,52 @@ class SinusoidsSim(FunctionSimulator):
     def _f2(self, amp, freq, slope, x):
         return amp * jnp.cos(freq * x) - slope * x
 
+    def _typical_f(self, x: jnp.array) -> jnp.array:
+        assert x.ndim == 2 and x.shape[-1] == self.input_size
+        f = self._f1(self.amp_mean, self.freq1_mid, self.slope_mean, x)
+        if self.output_size == 2:
+            f2 = self._f2(self.amp_mean, self.freq2_mid, self.slope_mean, x)
+            f = jnp.concatenate([f, f2], axis=-1)
+        assert f.shape == (x.shape[0], self.output_size)
+        return f
+
     @property
     def domain(self) -> Domain:
         lower = jnp.array([-5.] * self.input_size)
         upper = jnp.array([5.] * self.input_size)
         return HypercubeDomain(lower=lower, upper=upper)
+
+    def sample_dataset(self, rng_key: jax.random.PRNGKey, num_samples: int,
+                       obs_noise_std: float = 0.1, x_support_mode: str = 'full',
+                       param_mode: str = 'typical') -> Tuple[jnp.ndarray, jnp.ndarray]:
+        key1, key2 = jax.random.split(rng_key, 2)
+
+
+        # 1) sample x
+        x = self.domain.sample_uniformly(key1, num_samples, support_mode=x_support_mode)
+
+        # 2) get function values
+        if param_mode == 'typical':
+            f = self._typical_f(x)
+        elif param_mode == 'random':
+            f = self.sample_function_vals(x, num_samples=1, rng_key=key2).squeeze(axis=0)
+        else:
+            raise ValueError(f'param_mode {param_mode} not supported')
+
+        # 3) add noise
+        y = f + obs_noise_std * jax.random.normal(key2, shape=f.shape)
+
+        # check shapes and return dataset
+        assert x.shape == (num_samples, self.input_size)
+        assert y.shape == (num_samples, self.output_size)
+        return x, y
+
+    def normalization_stats(self) -> Dict[str, jnp.ndarray]:
+        return {'x_mean': (self.domain.u + self.domain.l) / 2,
+                'x_std': (self.domain.u - self.domain.l) / 2,
+                'y_mean': jnp.zeros(self.output_size),
+                'y_std': jnp.ones(self.output_size)}
+
 
 
 class QuadraticSim(FunctionSimulator):
@@ -144,5 +203,8 @@ if __name__ == '__main__':
 
     y_samples = sim.sample_function_vals(x_plot, 10, key)
     for y in y_samples:
-        plt.plot(x_plot, y)
+        plt.plot(x_plot, y, alpha=0.2)
+
+    x, y = sim.sample_dataset(key, 100, obs_noise_std=0.1, x_support_mode='partial', param_mode='random')
+    plt.scatter(x, y)
     plt.show()

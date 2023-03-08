@@ -3,7 +3,7 @@ import pytest
 import jax
 import jax.numpy as jnp
 from sim_transfer.sims.mset_sampler import UniformMSetSampler
-from sim_transfer.sims.simulator_base import GaussianProcessSim
+from sim_transfer.sims.simulators import GaussianProcessSim
 
 class TestUniformMSetSampler(unittest.TestCase):
 
