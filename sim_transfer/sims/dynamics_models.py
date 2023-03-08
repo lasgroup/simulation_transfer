@@ -17,13 +17,13 @@ class PendulumParams(NamedTuple):
 
 class DynamicsModel(ABC):
     def __init__(self, h: float, x_dim: int, u_dim: int, params_example: PyTree):
-        self.h = h
+        self.dt = h
         self.x_dim = x_dim
         self.u_dim = u_dim
         self.params_example = params_example
 
     def next_step(self, x: jax.Array, u: jax.Array, params: PyTree) -> jax.Array:
-        return x + self.h * self.ode(x, u, params)
+        return x + self.dt * self.ode(x, u, params)
 
     def ode(self, x: jax.Array, u: jax.Array, params) -> jax.Array:
         assert x.shape == (self.x_dim,) and u.shape == (self.u_dim,)
@@ -50,7 +50,8 @@ class Pendulum(DynamicsModel):
         super().__init__(h=h, x_dim=2, u_dim=1, params_example=PendulumParams())
 
     def _ode(self, x, u, params: PendulumParams):
-        # x represents (theta, theta_dot)
+        # x represents [theta in rad/s, theta_dot in rad/s^2]
+        # u represents [torque]
         x0_dot = x[1]
         x1_dot = params.g / params.l * jnp.sin(x[0]) - params.nu / (params.m * params.l ** 2) * x[1] + u[0] / (
                 params.m * params.l ** 2)

@@ -8,6 +8,7 @@ import optax
 
 import tensorflow_probability.substrates.jax.distributions as tfd
 from tensorflow_probability.substrates import jax as tfp
+from sim_transfer.sims import Domain
 
 from sim_transfer.models.abstract_model import BatchedNeuralNetworkModel
 
@@ -164,24 +165,21 @@ class AbstractVariationalBNN(BatchedNeuralNetworkModel):
         return self.num_batched_nns
 
 class MeasurementSetMixin:
-    def __init__(self, domain_l: jnp.ndarray, domain_u: jnp.ndarray):
+    def __init__(self, domain: Domain):
         assert isinstance(self, AbstractParticleBNN)
-
+        assert isinstance(domain, Domain)
         # check and set domain boundaries
-        assert domain_u.shape == domain_l.shape == (self.input_size,)
-        assert jnp.all(domain_l <= domain_u), 'lower bound of domain must be smaller than upper bound'
-        self.domain_l = domain_l
-        self.domain_u = domain_u
+        assert domain.num_dims == self.input_size
+        self.domain = domain
 
     def _sample_measurement_points(self, key: jax.random.PRNGKey, num_points: int = 10,
                                    normalize: bool = True) -> jnp.ndarray:
         """ Samples measurement points from the domain """
-        x_domain = jax.random.uniform(key, shape=(num_points, self.input_size),
-                                      minval=self.domain_l, maxval=self.domain_u)
+        x_samples = self.domain.sample_uniformly(key, sample_shape=(num_points,))
         if normalize:
-            x_domain = self._normalize_data(x_domain)
-        assert x_domain.shape == (num_points, self.input_size)
-        return x_domain
+            x_domain = self._normalize_data(x_samples)
+        assert x_samples.shape == (num_points, self.input_size)
+        return x_samples
 
     def _nll(self, pred_raw: jnp.ndarray, y_batch: jnp.ndarray, train_data_till_idx: int):
         likelihood_std = self.likelihood_std
@@ -191,9 +189,9 @@ class MeasurementSetMixin:
 
 class AbstractFSVGD_BNN(AbstractParticleBNN, MeasurementSetMixin):
 
-    def __init__(self, domain_l: jnp.ndarray, domain_u: jnp.ndarray, bandwidth_svgd: float = 0.4, **kwargs):
+    def __init__(self, domain, bandwidth_svgd: float = 0.4, **kwargs):
         AbstractParticleBNN.__init__(self, **kwargs)
-        MeasurementSetMixin.__init__(self, domain_l, domain_u)
+        MeasurementSetMixin.__init__(self, domain=domain)
         self.bandwidth_svgd = bandwidth_svgd
         self.kernel_svgd = tfp.math.psd_kernels.ExponentiatedQuadratic(length_scale=self.bandwidth_svgd)
 
@@ -208,6 +206,7 @@ class AbstractFSVGD_BNN(AbstractParticleBNN, MeasurementSetMixin):
     @property
     def num_particles(self) -> int:
         return self.num_batched_nns
+
 
 class AbstractSVGD_BNN(AbstractParticleBNN):
 

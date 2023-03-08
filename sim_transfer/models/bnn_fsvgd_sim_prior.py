@@ -8,7 +8,7 @@ import numpy as np
 
 from sim_transfer.models.bnn import AbstractFSVGD_BNN
 from sim_transfer.score_estimation import SSGE
-from sim_transfer.sims import FunctionSimulator
+from sim_transfer.sims import FunctionSimulator, Domain, HypercubeDomain
 
 
 class BNN_FSVGD_Sim_Prior(AbstractFSVGD_BNN):
@@ -16,8 +16,7 @@ class BNN_FSVGD_Sim_Prior(AbstractFSVGD_BNN):
     def __init__(self,
                  input_size: int,
                  output_size: int,
-                 domain_l: jnp.ndarray,
-                 domain_u: jnp.ndarray,
+                 domain: Domain,
                  rng_key: jax.random.PRNGKey,
                  function_sim: FunctionSimulator,
                  independent_output_dims: bool = True,
@@ -41,8 +40,7 @@ class BNN_FSVGD_Sim_Prior(AbstractFSVGD_BNN):
                          num_batched_nns=num_particles, hidden_layer_sizes=hidden_layer_sizes,
                          hidden_activation=hidden_activation, last_activation=last_activation,
                          normalize_data=normalize_data, normalization_stats=normalization_stats, log_wandb=log_wandb,
-                         lr=lr, likelihood_std=likelihood_std,
-                         domain_l=domain_l, domain_u=domain_u, bandwidth_svgd=bandwidth_svgd)
+                         lr=lr, likelihood_std=likelihood_std, domain=domain, bandwidth_svgd=bandwidth_svgd)
         self.num_measurement_points = num_measurement_points
 
         # check and set function sim
@@ -135,7 +133,7 @@ if __name__ == '__main__':
     else:
         raise NotImplementedError
 
-    domain_l, domain_u = np.array([-7.] * NUM_DIM_X), np.array([7.] * NUM_DIM_X)
+    domain = HypercubeDomain(lower=jnp.array([-7.] * NUM_DIM_X), upper=jnp.array([7.] * NUM_DIM_X))
 
     x_train = jax.random.uniform(next(key_iter), shape=(num_train_points, NUM_DIM_X), minval=-5, maxval=5)
     y_train = fun(x_train) + 0.1 * jax.random.normal(next(key_iter), shape=(x_train.shape[0], NUM_DIM_Y))
@@ -147,7 +145,7 @@ if __name__ == '__main__':
     # sim = GaussianProcessSim(input_size=1, output_scale=3.0, mean_fn=lambda x: 2 * x)
     sim = SinusoidsSim(input_size=1, output_size=NUM_DIM_Y)
     # sim = GaussianProcessSim(input_size=1, output_size=NUM_DIM_Y, output_scale=1.0, mean_fn=lambda x: 2 * x)
-    bnn = BNN_FSVGD_Sim_Prior(NUM_DIM_X, NUM_DIM_Y, domain_l, domain_u, rng_key=next(key_iter), function_sim=sim,
+    bnn = BNN_FSVGD_Sim_Prior(NUM_DIM_X, NUM_DIM_Y, domain=domain, rng_key=next(key_iter), function_sim=sim,
                               hidden_layer_sizes=[64, 64, 64], num_train_steps=20000, data_batch_size=4,
                               independent_output_dims=True)
     for i in range(10):

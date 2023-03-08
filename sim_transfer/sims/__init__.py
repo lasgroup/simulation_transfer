@@ -1,1 +1,2 @@
-from .simulator_base import SinusoidsSim, FunctionSimulator, GaussianProcessSim, PendulumSim, QuadraticSim
+from .simulators import SinusoidsSim, FunctionSimulator, GaussianProcessSim, PendulumSim, QuadraticSim
+from .domain import Domain, HypercubeDomain

@@ -1,4 +1,4 @@
-from typing import Callable, Optional
+from typing import Callable, Optional, Tuple
 
 import jax
 import jax.numpy as jnp
@@ -7,6 +7,7 @@ from jax import vmap, random
 from tensorflow_probability.substrates import jax as tfp
 
 from sim_transfer.sims.dynamics_models import Pendulum, PendulumParams
+from sim_transfer.sims.domain import Domain, HypercubeDomain
 
 
 class FunctionSimulator:
@@ -16,6 +17,10 @@ class FunctionSimulator:
         self.output_size = output_size
 
     def sample_function_vals(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
+        raise NotImplementedError
+
+    @property
+    def domain(self) -> Domain:
         raise NotImplementedError
 
 
@@ -70,13 +75,25 @@ class SinusoidsSim(FunctionSimulator):
         freq = jax.random.uniform(key1, shape=(num_samples,), minval=1.7, maxval=2.3)
         amp = 2 + 0.4 * jax.random.normal(key2, shape=(num_samples,))
         slope = 2 + 0.3 * jax.random.normal(key3, shape=(num_samples,))
-        f = amp[:, None, None] * jnp.sin(freq[:, None, None] * x) + slope[:, None, None] * x
+        f = self._f1(amp[:, None, None], freq[:, None, None], slope[:, None, None], x)
         if self.output_size == 2:
             freq2 = jax.random.uniform(key4, shape=(num_samples,), minval=1.3, maxval=1.7)
-            f2 = amp[:, None, None] * jnp.cos(freq2[:, None, None] * x) - slope[:, None, None] * x
+            f2 = self._f2(amp[:, None, None], freq2[:, None, None], slope[:, None, None], x)
             f = jnp.concatenate([f, f2], axis=-1)
         assert f.shape == (num_samples, x.shape[0], self.output_size)
         return f
+
+    def _f1(self, amp, freq, slope, x):
+        return amp * jnp.sin(freq * x) + slope * x
+
+    def _f2(self, amp, freq, slope, x):
+        return amp * jnp.cos(freq * x) - slope * x
+
+    @property
+    def domain(self) -> Domain:
+        lower = jnp.array([-5.] * self.input_size)
+        upper = jnp.array([5.] * self.input_size)
+        return HypercubeDomain(lower=lower, upper=upper)
 
 
 class QuadraticSim(FunctionSimulator):

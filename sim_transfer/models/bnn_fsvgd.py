@@ -9,6 +9,7 @@ import tensorflow_probability.substrates.jax.distributions as tfd
 from tensorflow_probability.substrates import jax as tfp
 
 from sim_transfer.models.bnn import AbstractFSVGD_BNN
+from sim_transfer.sims import Domain, HypercubeDomain
 
 
 class BNN_FSVGD(AbstractFSVGD_BNN):
@@ -17,8 +18,7 @@ class BNN_FSVGD(AbstractFSVGD_BNN):
     def __init__(self,
                  input_size: int,
                  output_size: int,
-                 domain_l: jnp.ndarray,
-                 domain_u: jnp.ndarray,
+                 domain: Domain,
                  rng_key: jax.random.PRNGKey,
                  likelihood_std: float = 0.2,
                  num_particles: int = 10,
@@ -38,7 +38,7 @@ class BNN_FSVGD(AbstractFSVGD_BNN):
                          num_batched_nns=num_particles, hidden_layer_sizes=hidden_layer_sizes,
                          hidden_activation=hidden_activation, last_activation=last_activation,
                          normalize_data=normalize_data, normalization_stats=normalization_stats,
-                         lr=lr, domain_l=domain_l, domain_u=domain_u, bandwidth_svgd=bandwidth_svgd,
+                         lr=lr, domain=domain, bandwidth_svgd=bandwidth_svgd,
                          likelihood_std=likelihood_std)
         self.bandwidth_gp_prior = bandwidth_gp_prior
         self.num_measurement_points = num_measurement_points
@@ -104,7 +104,7 @@ if __name__ == '__main__':
         fun = lambda x: jnp.concatenate([(2 * x + 2 * jnp.sin(2 * x)).reshape(-1, 1),
                                          (- x + 3 * jnp.cos(x)).reshape(-1, 1)], axis=-1)
 
-    domain_l, domain_u = np.array([-7.] * NUM_DIM_X), np.array([7.] * NUM_DIM_X)
+    domain = HypercubeDomain(lower=jnp.array([-7.] * NUM_DIM_X), upper=jnp.array([7.] * NUM_DIM_X))
 
     x_train = jax.random.uniform(next(key_iter), shape=(num_train_points, NUM_DIM_X), minval=-5, maxval=5)
     y_train = fun(x_train) + 0.1 * jax.random.normal(next(key_iter), shape=(x_train.shape[0], NUM_DIM_Y))
@@ -113,7 +113,7 @@ if __name__ == '__main__':
     x_test = jax.random.uniform(next(key_iter), shape=(num_test_points, NUM_DIM_X), minval=-5, maxval=5)
     y_test = fun(x_test) + 0.1 * jax.random.normal(next(key_iter), shape=(x_test.shape[0], NUM_DIM_Y))
 
-    bnn = BNN_FSVGD(NUM_DIM_X, NUM_DIM_Y, domain_l, domain_u, next(key_iter), num_train_steps=20000,
+    bnn = BNN_FSVGD(NUM_DIM_X, NUM_DIM_Y, domain=domain, rng_key=next(key_iter), num_train_steps=20000,
                     data_batch_size=10, num_measurement_points=20, normalize_data=True, bandwidth_svgd=0.4,
                     bandwidth_gp_prior=0.2, hidden_layer_sizes=[64, 64, 64],
                     hidden_activation=jax.nn.tanh)

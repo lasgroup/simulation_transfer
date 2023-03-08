@@ -9,7 +9,7 @@ from jax.tree_util import PyTreeDef
 from typing import Any, Tuple
 from tqdm import tqdm
 from sim_transfer.modules.attention_modules import ScoreNetworkAttentionModel
-from sim_transfer.sims.simulator_base import FunctionSimulator
+from sim_transfer.sims.simulators import FunctionSimulator
 from sim_transfer.sims.mset_sampler import MSetSampler
 
 tfd = tfp.distributions
@@ -142,7 +142,7 @@ class ScoreMatchingEstimator:
 
 
 if __name__ == '__main__':
-    from sim_transfer.sims.simulator_base import GaussianProcessSim
+    from sim_transfer.sims.simulators import GaussianProcessSim
     from sim_transfer.sims.mset_sampler import UniformMSetSampler
     key = jax.random.PRNGKey(9645)
     function_sim = GaussianProcessSim(input_size=1)

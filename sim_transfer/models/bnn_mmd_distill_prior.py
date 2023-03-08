@@ -11,8 +11,7 @@ import optax
 from tensorflow_probability.substrates import jax as tfp
 import tensorflow_probability.substrates.jax.distributions as tfd
 
-
-from sim_transfer.sims import FunctionSimulator
+from sim_transfer.sims import FunctionSimulator, Domain, HypercubeDomain
 from sim_transfer.models.bnn import AbstractSVGD_BNN, MeasurementSetMixin
 from sim_transfer.modules.util import mmd2, aggregate_stats
 
@@ -22,8 +21,7 @@ class BNN_SVGD_Distill_Prior(AbstractSVGD_BNN, MeasurementSetMixin):
     def __init__(self,
                  input_size: int,
                  output_size: int,
-                 domain_l: jnp.ndarray,
-                 domain_u: jnp.ndarray,
+                 domain: Domain,
                  rng_key: jax.random.PRNGKey,
                  function_sim: FunctionSimulator,
                  independent_output_dims: bool = True,
@@ -50,7 +48,7 @@ class BNN_SVGD_Distill_Prior(AbstractSVGD_BNN, MeasurementSetMixin):
                                   normalize_data=normalize_data, normalization_stats=normalization_stats,
                                   lr=lr, likelihood_std=likelihood_std, bandwidth_svgd=bandwidth_svgd,
                                   use_prior=True)
-        MeasurementSetMixin.__init__(self, domain_l=domain_l, domain_u=domain_u)
+        MeasurementSetMixin.__init__(self, domain=domain)
 
         self.num_measurement_points = num_measurement_points
         self.independent_output_dims = independent_output_dims
@@ -217,7 +215,7 @@ if __name__ == '__main__':
     else:
         raise NotImplementedError
 
-    domain_l, domain_u = jnp.array([-7.] * NUM_DIM_X), jnp.array([7.] * NUM_DIM_X)
+    domain = HypercubeDomain(lower=jnp.array([-7.] * NUM_DIM_X), upper=jnp.array([7.] * NUM_DIM_X))
 
     x_train = jax.random.uniform(next(key_iter), shape=(num_train_points, NUM_DIM_X), minval=-5, maxval=5)
     y_train = fun(x_train) + 0.01 * jax.random.normal(next(key_iter), shape=(x_train.shape[0], NUM_DIM_Y))
@@ -229,7 +227,7 @@ if __name__ == '__main__':
     with jax.disable_jit(False):
         # sim = GaussianProcessSim(input_size=1, output_scale=1.0, mean_fn=lambda x: 2 * x)
         sim = SinusoidsSim(input_size=1, output_size=NUM_DIM_Y)
-        bnn = BNN_SVGD_Distill_Prior(NUM_DIM_X, NUM_DIM_Y, domain_l, domain_u, rng_key=next(key_iter), function_sim=sim,
+        bnn = BNN_SVGD_Distill_Prior(NUM_DIM_X, NUM_DIM_Y, domain=domain, rng_key=next(key_iter), function_sim=sim,
                                    hidden_layer_sizes=[128] * 3,
                                    num_particles=30,
                                    data_batch_size=4,
@@ -241,7 +239,7 @@ if __name__ == '__main__':
         print('\n----- Distilling prior...')
         for i in range(5):
             bnn.fit_distill_prior(num_steps=5000, log_period=500)
-            bnn.plot_distill_prior_samples(key=next(key_iter), domain_l=domain_l, domain_u=domain_u,
+            bnn.plot_distill_prior_samples(key=next(key_iter), domain_l=domain.l, domain_u=domain.u,
                                            title=f'Distillation prior samples, step {i * 5000}')
         print('\n----- Approximating posterior via SVGD...')
         for i in range(5):
