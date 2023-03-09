@@ -53,8 +53,8 @@ class Pendulum(DynamicsModel):
         # x represents [theta in rad/s, theta_dot in rad/s^2]
         # u represents [torque]
         x0_dot = x[1]
-        x1_dot = params.g / params.l * jnp.sin(x[0]) - params.nu / (params.m * params.l ** 2) * x[1] + u[0] / (
-                params.m * params.l ** 2)
+        x1_dot = params.g / params.l * jnp.sin(x[0]) - params.nu / (params.m * params.l ** 2) * x[1] \
+                 + u[0] / (params.m * params.l ** 2)
         return jnp.array([x0_dot, x1_dot])
 
 

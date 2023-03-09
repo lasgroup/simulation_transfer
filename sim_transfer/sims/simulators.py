@@ -1,4 +1,4 @@
-from typing import Callable, Optional, Tuple, Dict
+from typing import Callable, Tuple, Dict, Optional
 
 import jax
 import jax.numpy as jnp
@@ -122,14 +122,16 @@ class SinusoidsSim(FunctionSimulator):
         upper = jnp.array([5.] * self.input_size)
         return HypercubeDomain(lower=lower, upper=upper)
 
-    def sample_dataset(self, rng_key: jax.random.PRNGKey, num_samples: int,
-                       obs_noise_std: float = 0.1, x_support_mode: str = 'full',
-                       param_mode: str = 'typical') -> Tuple[jnp.ndarray, jnp.ndarray]:
+    def sample_datasets(self, rng_key: jax.random.PRNGKey, num_samples_train: int,
+                        num_samples_test: int, obs_noise_std: float = 0.1,
+                        x_support_mode_train: str = 'full', param_mode: str = 'typical') \
+            -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
         key1, key2 = jax.random.split(rng_key, 2)
 
-
         # 1) sample x
-        x = self.domain.sample_uniformly(key1, num_samples, support_mode=x_support_mode)
+        x_train = self.domain.sample_uniformly(key1, num_samples_train, support_mode=x_support_mode_train)
+        x_test = self.domain.sample_uniformly(key1, num_samples_test, support_mode='full')
+        x = jnp.concatenate([x_train, x_test], axis=0)
 
         # 2) get function values
         if param_mode == 'typical':
@@ -142,16 +144,22 @@ class SinusoidsSim(FunctionSimulator):
         # 3) add noise
         y = f + obs_noise_std * jax.random.normal(key2, shape=f.shape)
 
+        # 4) split into train and test
+        y_train = y[:num_samples_train]
+        y_test = y[num_samples_train:]
+
         # check shapes and return dataset
-        assert x.shape == (num_samples, self.input_size)
-        assert y.shape == (num_samples, self.output_size)
-        return x, y
+        assert x_train.shape == (num_samples_train, self.input_size)
+        assert y_train.shape == (num_samples_train, self.output_size)
+        assert x_test.shape == (num_samples_test, self.input_size)
+        assert y_test.shape == (num_samples_test, self.output_size)
+        return x_train, y_train, x_test, y_test
 
     def normalization_stats(self) -> Dict[str, jnp.ndarray]:
         return {'x_mean': (self.domain.u + self.domain.l) / 2,
                 'x_std': (self.domain.u - self.domain.l) / 2,
                 'y_mean': jnp.zeros(self.output_size),
-                'y_std': jnp.ones(self.output_size)}
+                'y_std': 8 * jnp.ones(self.output_size)}
 
 
 
@@ -168,8 +176,8 @@ class QuadraticSim(FunctionSimulator):
 
 
 class PendulumSim(FunctionSimulator):
-    def __init__(self, h: float = 0.01, upper_bound: PendulumParams | None = None,
-                 lower_bound: PendulumParams | None = None):
+    def __init__(self, h: float = 0.01, upper_bound: Optional[PendulumParams] = None,
+                 lower_bound: Optional[PendulumParams] = None):
         super().__init__(input_size=3, output_size=2)
         self.model = Pendulum(h=h)
         if upper_bound is None:

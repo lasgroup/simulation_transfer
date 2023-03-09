@@ -3,16 +3,13 @@ matplotlib
 tqdm
 pandas
 scipy
+jaxlib
 jax
 optax
+flax
 dm-haiku
 jaxtyping
 wandb
-
-#ray[tune]
-# ray[default]
-
-# mujoco-py==2.0.2.8
-# gym
-
-#Pillow
+tensorflow-probability
+tensorflow-datasets
+tensorflow
