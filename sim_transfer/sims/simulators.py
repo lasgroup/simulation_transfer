@@ -155,6 +155,7 @@ class SinusoidsSim(FunctionSimulator):
         assert y_test.shape == (num_samples_test, self.output_size)
         return x_train, y_train, x_test, y_test
 
+    @property
     def normalization_stats(self) -> Dict[str, jnp.ndarray]:
         return {'x_mean': (self.domain.u + self.domain.l) / 2,
                 'x_std': (self.domain.u - self.domain.l) / 2,
