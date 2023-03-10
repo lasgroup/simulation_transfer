@@ -8,7 +8,7 @@ from tensorflow_probability.substrates import jax as tfp
 
 from sim_transfer.sims import FunctionSimulator, Domain, HypercubeDomain
 from sim_transfer.models.bnn import AbstractParticleBNN, MeasurementSetMixin
-from sim_transfer.modules.util import mmd2
+from sim_transfer.modules.metrics import mmd2
 
 
 class BNN_MMD_SimPrior(AbstractParticleBNN, MeasurementSetMixin):
@@ -33,14 +33,13 @@ class BNN_MMD_SimPrior(AbstractParticleBNN, MeasurementSetMixin):
                  normalization_stats: Optional[Dict[str, jnp.ndarray]] = None,
                  hidden_layer_sizes: List[int] = (32, 32, 32),
                  hidden_activation: Optional[Callable] = jax.nn.leaky_relu,
-                 last_activation: Optional[Callable] = None,
-                 log_wandb: bool = False):
+                 last_activation: Optional[Callable] = None):
         AbstractParticleBNN.__init__(self, input_size=input_size, output_size=output_size, rng_key=rng_key,
                                      data_batch_size=data_batch_size, num_train_steps=num_train_steps,
                                      num_batched_nns=num_particles, hidden_layer_sizes=hidden_layer_sizes,
                                      hidden_activation=hidden_activation, last_activation=last_activation,
                                      normalize_data=normalize_data, normalization_stats=normalization_stats,
-                                     log_wandb=log_wandb, lr=lr, likelihood_std=likelihood_std)
+                                     lr=lr, likelihood_std=likelihood_std)
         MeasurementSetMixin.__init__(self, domain=domain)
         self.num_measurement_points = num_measurement_points
         self.independent_output_dims = independent_output_dims
@@ -123,7 +122,7 @@ if __name__ == '__main__':
     x_train = jax.random.uniform(next(key_iter), shape=(num_train_points, NUM_DIM_X), minval=-5, maxval=5)
     y_train = fun(x_train) + 0.01 * jax.random.normal(next(key_iter), shape=(x_train.shape[0], NUM_DIM_Y))
 
-    num_test_points = 100
+    num_test_points = 1000
     x_test = jax.random.uniform(next(key_iter), shape=(num_test_points, NUM_DIM_X), minval=-5, maxval=5)
     y_test = fun(x_test) + 0.1 * jax.random.normal(next(key_iter), shape=(x_test.shape[0], NUM_DIM_Y))
 
@@ -137,6 +136,8 @@ if __name__ == '__main__':
                                num_f_samples=400,
                                num_measurement_points=8,
                                independent_output_dims=False)
+        bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=1)
+        bnn.plot_1d(x_train, y_train, true_fun=fun, title=f'iter 1', domain_l=-7, domain_u=7)
         for i in range(10):
             bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=5000)
             if NUM_DIM_X == 1:

@@ -10,7 +10,7 @@ from sim_transfer.modules.nn_modules import BatchedMLP, MLP
 from sim_transfer.modules.util import tree_unstack, tree_stack, find_root_1d
 from sim_transfer.modules.data_loader import DataLoader
 from sim_transfer.modules.distribution import AffineTransform
-from sim_transfer.modules.util import mmd2
+from sim_transfer.modules.metrics import mmd2, calibration_error_cum, calibration_error_bin
 
 
 class TestBatchedMLP(unittest.TestCase):
@@ -203,6 +203,65 @@ class TestMMD(unittest.TestCase):
 
             kernel = tfp.math.psd_kernels.ExponentiatedQuadratic(length_scale=2.)
             assert jnp.array_equal(mmd2(self.x, self.y, kernel, include_diag=include_diag), mmd_joint[1])
+
+class TestCalibErr(unittest.TestCase):
+
+    def setUp(self) -> None:
+        key1, key2, key3, key4 = jax.random.split(jax.random.PRNGKey(45645), 4)
+        x = jax.random.uniform(key1, shape=(20000,), minval=-5, maxval=5)
+        self.y_mean = 5 * x + 2
+        self.dist = tfp.distributions.Normal(loc=self.y_mean, scale=1)
+        self.y = self.dist.sample(seed=key2)
+
+        self.dist2d_dummy = tfp.distributions.Normal(loc=self.y_mean[:, None], scale=1)
+        self.y2d_dummy = self.y[:, None]
+
+
+        self.y_mean_2d = jnp.stack([5 * x + 2, -2 * x + 1], axis=1)
+        self.dist2d = tfp.distributions.MultivariateNormalDiag(loc=self.y_mean_2d,
+                                                               scale_diag=jnp.array([0.5, 2.]))
+        self.y2d = self.dist2d.sample(seed=key4)
+
+    def test_calib_err_bin(self):
+        assert calibration_error_bin(self.dist, self.y) < 0.01
+        c1 = calibration_error_bin(tfp.distributions.Normal(loc=self.y_mean, scale=2), self.y)
+        c2 = calibration_error_bin(tfp.distributions.Normal(loc=self.y_mean, scale=4), self.y)
+        assert c1 < c2 <= 1.
+
+        c1 = calibration_error_bin(tfp.distributions.Normal(loc=self.y_mean, scale=0.1), self.y)
+        c2 = calibration_error_bin(tfp.distributions.Normal(loc=self.y_mean, scale=0.01), self.y)
+        assert c1 < c2 <= 1.
+
+    def test_calib_err_bin_2d(self):
+        assert calibration_error_bin(self.dist2d_dummy, self.y2d_dummy)
+        assert calibration_error_bin(self.dist2d, self.y2d) < 0.01
+
+        d1 = tfp.distributions.MultivariateNormalDiag(loc=self.y_mean_2d, scale_diag=[0.3, 2.5])
+        d2 = tfp.distributions.MultivariateNormalDiag(loc=self.y_mean_2d, scale_diag=[0.1, 4.0])
+
+        assert 0. < calibration_error_bin(d1, self.y2d) < calibration_error_bin(d2, self.y2d) < 1.
+
+
+    def test_calib_err_cum(self):
+        assert calibration_error_cum(self.dist, self.y) < 0.01
+
+        c1 = calibration_error_cum(tfp.distributions.Normal(loc=self.y_mean, scale=2), self.y)
+        c2 = calibration_error_cum(tfp.distributions.Normal(loc=self.y_mean, scale=4), self.y)
+        assert c1 < c2 <= 1.
+
+        c1 = calibration_error_cum(tfp.distributions.Normal(loc=self.y_mean, scale=0.1), self.y)
+        c2 = calibration_error_cum(tfp.distributions.Normal(loc=self.y_mean, scale=0.01), self.y)
+        assert c1 < c2 <= 1.
+
+    def test_calib_err_cum_2d(self):
+        assert calibration_error_cum(self.dist, self.y) == calibration_error_cum(self.dist2d_dummy, self.y2d_dummy)
+        assert calibration_error_cum(self.dist2d, self.y2d) < 0.01
+
+        d1 = tfp.distributions.MultivariateNormalDiag(loc=self.y_mean_2d, scale_diag=[0.3, 2.5])
+        d2 = tfp.distributions.MultivariateNormalDiag(loc=self.y_mean_2d, scale_diag=[0.1, 4.0])
+
+        assert 0. < calibration_error_cum(d1, self.y2d) < calibration_error_cum(d2, self.y2d) < 1.
+
 
 
 if __name__ == '__main__':
