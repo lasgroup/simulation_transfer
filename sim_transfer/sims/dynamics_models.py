@@ -107,6 +107,9 @@ class Pendulum(DynamicsModel):
 
 class BicycleModel(DynamicsModel):
 
+    def __init__(self, h):
+        super().__init__(h=h, x_dim=6, u_dim=2, params_example=CarParams())
+
     def _accelerations(self, x, u, params: CarParams):
         i_com = self._get_moment_of_intertia(params)
         theta, v_x, v_y, w = x[2], x[3], x[4], x[5]
@@ -135,14 +138,14 @@ class BicycleModel(DynamicsModel):
                          a_max=params.delta_limit)
         d = jnp.clip(d, a_min=-1, a_max=1)
 
-        w_tar = delta * v_x/l
+        w_tar = delta * v_x / l
 
         alpha_f = -jnp.arctan(
-            (w * l_f + v_y)/
+            (w * l_f + v_y) /
             (v_x + 1e-6)
         ) + delta
         alpha_r = jnp.arctan(
-            (w * l_r - v_y)/
+            (w * l_r - v_y) /
             (v_x + 1e-6)
         )
         f_f_y = d_f * jnp.sin(c_f * jnp.arctan(b_f * alpha_f))
@@ -203,13 +206,13 @@ class BicycleModel(DynamicsModel):
 
         delta, d = u[0], u[1]
 
-        d_0 = (c_rr + c_d * (v_x**2))/(c_m_1 - c_m_2 * v_x)
+        d_0 = (c_rr + c_d * (v_x ** 2)) / (c_m_1 - c_m_2 * v_x)
         d_slow = jnp.maximum(d, d_0)
         d_fast = d
 
         slow_ind = v_x <= 0.1
         d_applied = d_slow * slow_ind + d_fast * (~slow_ind)
-        f_r_x = ((c_m_1 - c_m_2 * v_x) * d_applied - c_rr - c_d * (v_x ** 2))/m
+        f_r_x = ((c_m_1 - c_m_2 * v_x) * d_applied - c_rr - c_d * (v_x ** 2)) / m
 
         beta = jnp.arctan(l_r * jnp.arctan(delta) / l)
         p_x_dot = v_x * jnp.cos(beta + theta)  # s_dot
@@ -229,12 +232,14 @@ class BicycleModel(DynamicsModel):
         l = params.l
         l_r = self._get_x_com(params)
 
-        lambda_blend = jnp.min([jnp.max([blend_ratio, 0]), 1])
+        lambda_blend = jnp.min(jnp.asarray([
+            jnp.max(jnp.asarray([blend_ratio, 0])), 1])
+        )
 
         if lambda_blend < 1:
             v_x = x[3]
             v_y = x[4]
-            x_kin = jnp.asarray([x[0], x[1], x[2], jnp.sqrt(v_x**2 + v_y**2)])
+            x_kin = jnp.asarray([x[0], x[1], x[2], jnp.sqrt(v_x ** 2 + v_y ** 2)])
             dxkin = self._ode_kin(x_kin, u, params)
             delta = u[0]
             beta = jnp.arctan(l_r * jnp.tan(delta) / l)
@@ -242,10 +247,10 @@ class BicycleModel(DynamicsModel):
             v_y_state = dxkin[3] * jnp.sin(beta)  # V*sin(beta)
             w = v_x_state * jnp.arctan(delta) / l
 
-            x_kin_full = jnp.asarray([dxkin[0], dxkin[1], dxkin[2], v_x_state, v_y_state, w])
+            dx_kin_full = jnp.asarray([dxkin[0], dxkin[1], dxkin[2], v_x_state, v_y_state, w])
 
             if lambda_blend == 0:
-                return x_kin_full
+                return dx_kin_full
 
         if lambda_blend > 0:
             dxdyn = self._ode_dyn(x=x, u=u, params=params)
@@ -253,8 +258,7 @@ class BicycleModel(DynamicsModel):
             if lambda_blend == 1:
                 return dxdyn
 
-        return lambda_blend * dxdyn + (1-lambda_blend)*dxkin
-
+        return lambda_blend * dxdyn + (1 - lambda_blend) * dx_kin_full
 
 
 if __name__ == "__main__":
@@ -266,3 +270,48 @@ if __name__ == "__main__":
     key = jax.random.PRNGKey(0)
     keys = random.split(key, 4)
     params = vmap(pendulum.sample_params, in_axes=(0, None, None))(keys, upper_bound, lower_bound)
+
+    import matplotlib.patches as patches
+
+
+    def simulate_car(goal=jnp.asarray([2, 2]), init_pos=jnp.zeros(2), k_p=1, k_d=0.6, horizon=200):
+        dt = 0.01
+        car = BicycleModel(dt)
+        params = CarParams()
+        x = jnp.zeros(6)
+        x_traj = jnp.zeros([horizon, 2])
+        x = x.at[0:2].set(init_pos)
+        import matplotlib.pyplot as plt
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        rectangle_size = 0.05
+        for h in range(horizon):
+            pos_error = goal[0:2] - x[0:2]
+            goal_direction = jnp.arctan2(pos_error[1], pos_error[0])
+            goal_dist = jnp.sqrt(pos_error[0] ** 2 + pos_error[1] ** 2)
+            velocity = jnp.sqrt(x[3] ** 2 + x[4] ** 2)
+            s = jnp.clip(0.1 * goal_direction, a_min=-0.1, a_max=0.1)
+            d = jnp.clip(k_p * goal_dist - k_d * velocity, a_min=-1, a_max=1)
+            u = jnp.asarray([s, d])
+            x = car.next_step(x, u, params)
+            x_traj = x_traj.at[h, ...].set(x[0:2])
+            rect = patches.Rectangle(xy=(x[0] - rectangle_size / 2.0, x[1] - rectangle_size / 2.0),
+                                     angle=x[2],
+                                     width=rectangle_size,
+                                     height=rectangle_size,
+                                     alpha=0.5,
+                                     edgecolor='red',
+                                     facecolor='none',
+                                     )
+            ax.add_patch(rect)
+
+        ax.plot(x_traj[:, 0], x_traj[:, 1], label='Car Trajectory')
+        # plt.scatter(env._goal[0], env._goal[1], color='red', label='goal')
+        plt.legend()
+        plt.xlabel('x-distance in [m]')
+        plt.ylabel('y-distance in [m]')
+        plt.title("Simulation of Car for " + str(int(horizon * dt)) + " s")
+        plt.show()
+
+
+    simulate_car()
