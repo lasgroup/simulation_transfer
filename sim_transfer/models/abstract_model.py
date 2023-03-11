@@ -15,20 +15,19 @@ import wandb
 from sim_transfer.modules.nn_modules import BatchedMLP
 from sim_transfer.modules.distribution import AffineTransform
 from sim_transfer.modules.util import RngKeyMixin, aggregate_stats
+from sim_transfer.modules.metrics import calibration_error_cum, calibration_error_bin
 
 
 class AbstractRegressionModel(RngKeyMixin):
 
     def __init__(self, input_size: int, output_size: int, rng_key: jax.random.PRNGKey, normalize_data: bool = True,
-                 normalization_stats: Optional[Dict[str, jnp.ndarray]] = None,
-                 log_wandb: bool = False):
+                 normalization_stats: Optional[Dict[str, jnp.ndarray]] = None):
         super().__init__(rng_key)
 
         self.input_size = input_size
         self.output_size = output_size
         self.normalize_data = normalize_data
         self.need_to_compute_norm_stats = normalize_data and (normalization_stats is None)
-        self.log_wandb = log_wandb
 
         if normalization_stats is None:
             # initialize normalization stats to neutral elements
@@ -167,7 +166,11 @@ class AbstractRegressionModel(RngKeyMixin):
         pred_dist = self.predict_dist(x, include_noise=True)
         nll = - jnp.mean(pred_dist.log_prob(y))
         rmse = jnp.sqrt(jnp.mean(jnp.sum((pred_dist.mean - y) ** 2, axis=-1)))
-        eval_stats = {'nll': nll, 'rmse': rmse}
+        cal_err_cum = calibration_error_cum(pred_dist, y)
+        cal_err_bin = calibration_error_bin(pred_dist, y)
+        avg_std = jnp.mean(pred_dist.stddev)
+        eval_stats = {'nll': nll, 'rmse': rmse, 'avg_std': avg_std,
+                      'cal_err_cum': cal_err_cum, 'cal_err_bin': cal_err_bin}
         # add prefix to stats names
         eval_stats = {f'{prefix}{name}': val for name, val in eval_stats.items()}
         return eval_stats
@@ -248,7 +251,8 @@ class BatchedNeuralNetworkModel(AbstractRegressionModel):
                                         rng_key=self.rng_key)
 
     def fit(self, x_train: jnp.ndarray, y_train: jnp.ndarray, x_eval: Optional[jnp.ndarray] = None,
-            y_eval: Optional[jnp.ndarray] = None, num_steps: Optional[int] = None, log_period: int = 1000):
+            y_eval: Optional[jnp.ndarray] = None, num_steps: Optional[int] = None, log_period: int = 1000,
+            log_to_wandb: bool = False):
         # check whether eval data has been passed
         evaluate = x_eval is not None or y_eval is not None
         assert not evaluate or x_eval.shape[0] == y_eval.shape[0]
@@ -281,8 +285,8 @@ class BatchedNeuralNetworkModel(AbstractRegressionModel):
                 if evaluate:
                     eval_stats = self.eval(x_eval, y_eval, prefix='eval_')
                     stats_agg.update(eval_stats)
-                if self.log_wandb:
-                    wandb.log({f'{n}': float(v) for n, v in stats_agg.items()})
+                if log_to_wandb:
+                    wandb.log({f'{n}': float(v) for n, v in stats_agg.items()}, step=step)
                 stats_msg = ' | '.join([f'{n}: {v:.4f}' for n, v in stats_agg.items()])
                 msg = (f'Step {step}/{num_steps} | {stats_msg} | Duration {duration_sec:.2f} sec | '
                        f'Time per sample {duration_per_sample_ms:.2f} ms')

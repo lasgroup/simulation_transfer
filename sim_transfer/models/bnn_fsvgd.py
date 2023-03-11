@@ -94,7 +94,7 @@ if __name__ == '__main__':
 
     NUM_DIM_X = 1
     NUM_DIM_Y = 1
-    num_train_points = 10
+    num_train_points = 2
 
     if NUM_DIM_X == 1 and NUM_DIM_Y == 1:
         fun = lambda x: (2 * x + 2 * jnp.sin(2 * x)).reshape(-1, 1)
@@ -109,12 +109,13 @@ if __name__ == '__main__':
     x_train = jax.random.uniform(next(key_iter), shape=(num_train_points, NUM_DIM_X), minval=-5, maxval=5)
     y_train = fun(x_train) + 0.1 * jax.random.normal(next(key_iter), shape=(x_train.shape[0], NUM_DIM_Y))
 
-    num_test_points = 100
+    num_test_points = 1000
     x_test = jax.random.uniform(next(key_iter), shape=(num_test_points, NUM_DIM_X), minval=-5, maxval=5)
     y_test = fun(x_test) + 0.1 * jax.random.normal(next(key_iter), shape=(x_test.shape[0], NUM_DIM_Y))
 
     bnn = BNN_FSVGD(NUM_DIM_X, NUM_DIM_Y, domain=domain, rng_key=next(key_iter), num_train_steps=20000,
-                    data_batch_size=10, num_measurement_points=20, normalize_data=True, bandwidth_svgd=0.4,
+                    data_batch_size=10, num_measurement_points=20, normalize_data=True, bandwidth_svgd=0.2,
+                    likelihood_std=0.03,
                     bandwidth_gp_prior=0.2, hidden_layer_sizes=[64, 64, 64],
                     hidden_activation=jax.nn.tanh)
     for i in range(10):

@@ -13,7 +13,9 @@ import tensorflow_probability.substrates.jax.distributions as tfd
 
 from sim_transfer.sims import FunctionSimulator, Domain, HypercubeDomain
 from sim_transfer.models.bnn import AbstractSVGD_BNN, MeasurementSetMixin
-from sim_transfer.modules.util import mmd2, aggregate_stats
+from sim_transfer.modules.util import aggregate_stats
+from sim_transfer.modules.metrics import mmd2
+
 
 class BNN_SVGD_Distill_Prior(AbstractSVGD_BNN, MeasurementSetMixin):
     """ BNN with SVGD inference whose prior is distilled from a simulator """

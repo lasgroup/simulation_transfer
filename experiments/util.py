@@ -109,33 +109,31 @@ def generate_base_command(module, flags: Optional[Dict[str, Any]] = None, unbuff
 
 
 def generate_run_commands(command_list: List[str], num_cpus: int = 1, num_gpus: int = 0,
-                          dry: bool = False, n_hosts: int = 1, mem: int = 6000, long: bool = False,
+                          dry: bool = False, mem: int = 2 * 1028, long: bool = False,
                           mode: str = 'local', promt: bool = True) -> None:
 
     if mode == 'euler':
         cluster_cmds = []
-        bsub_cmd = 'bsub ' + \
-                   f'-W {23 if long else 3}:59 ' + \
-                   f'-R "rusage[mem={mem}]" ' + \
-                   f'-n {num_cpus} ' + \
-                   f'-R "span[hosts={n_hosts}]" '
+        bsub_cmd = 'sbatch ' + \
+                   f'--time {23 if long else 3}:59 ' + \
+                   f'--mem-per-cpu={mem} ' + \
+                   f'-n {num_cpus} '
 
         if num_gpus > 0:
-            bsub_cmd += f'-R "rusage[ngpus_excl_p={num_gpus}]" '
+            bsub_cmd += f'--gpus={num_gpus}]" '
 
-        for python_cmd in command_list:
-            cluster_cmds.append(bsub_cmd + python_cmd)
+        for cmd in command_list:
+            cluster_cmds.append(bsub_cmd + f'--wrap="{cmd}"')
 
-        if promt:
-            answer = input(f"About to submit {len(cluster_cmds)} compute jobs to the cluster. Proceed? [yes/no]")
-        else:
-            answer = 'yes'
-        if answer == 'yes':
+        if dry:
             for cmd in cluster_cmds:
-                if dry:
-                    print(cmd)
-                else:
-                    os.system(cmd)
+                print(cmd)
+        else:
+            tmp_file = os.path.join('/tmp', f'{str(hash_dict(command_list))}.sh')
+            with open(tmp_file, 'w') as f:
+                for cmd in cluster_cmds:
+                    f.writelines(f'{cmd}\n')
+            print(f'Please run script:\nbash {tmp_file}')
 
     elif mode == 'local':
         if promt:
