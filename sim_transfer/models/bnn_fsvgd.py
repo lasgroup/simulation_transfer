@@ -21,6 +21,7 @@ class BNN_FSVGD(AbstractFSVGD_BNN):
                  domain: Domain,
                  rng_key: jax.random.PRNGKey,
                  likelihood_std: float = 0.2,
+                 learn_likelihood_std: bool = False,
                  num_particles: int = 10,
                  bandwidth_svgd: float = 0.2,
                  bandwidth_gp_prior: float = 0.2,
@@ -39,7 +40,7 @@ class BNN_FSVGD(AbstractFSVGD_BNN):
                          hidden_activation=hidden_activation, last_activation=last_activation,
                          normalize_data=normalize_data, normalization_stats=normalization_stats,
                          lr=lr, domain=domain, bandwidth_svgd=bandwidth_svgd,
-                         likelihood_std=likelihood_std)
+                         likelihood_std=likelihood_std, learn_likelihood_std=learn_likelihood_std)
         self.bandwidth_gp_prior = bandwidth_gp_prior
         self.num_measurement_points = num_measurement_points
 
@@ -47,33 +48,43 @@ class BNN_FSVGD(AbstractFSVGD_BNN):
         self.kernel_gp_prior = tfp.math.psd_kernels.ExponentiatedQuadratic(length_scale=self.bandwidth_gp_prior)
 
     @partial(jax.jit, static_argnums=(0,))
-    def _surrogate_loss(self, param_vec_stack: jnp.array, x_batch: jnp.array, y_batch: jnp.array,
+    def _surrogate_loss(self, params: Dict, x_batch: jnp.array, y_batch: jnp.array,
                         num_train_points: int, key: jax.random.PRNGKey) -> [jnp.ndarray, Dict]:
         # combine the training data batch with a batch of sampled measurement points
         train_batch_size = x_batch.shape[0]
         x_domain = self._sample_measurement_points(key, num_points=self.num_measurement_points)
         x_stacked = jnp.concatenate([x_batch, x_domain], axis=0)
 
+        # get likelihood std
+        likelihood_std = self._likelihood_std_transform(params['likelihood_std_raw']) if self.learn_likelihood_std \
+            else self.likelihood_std
+
         # posterior score
-        f_raw = self.batched_model.forward_vec(x_stacked, param_vec_stack)
-        (_, post_stats), grad_post = jax.value_and_grad(self._neg_log_posterior, has_aux=True)(
-            f_raw, x_stacked, y_batch, train_batch_size, num_train_points)
+        f_raw = self.batched_model.forward_vec(x_stacked, params['nn_params_stacked'])
+        (_, post_stats), (grad_post_f, grad_post_lstd) = jax.value_and_grad(
+            self._neg_log_posterior, argnums=[0, 1], has_aux=True)(
+            f_raw, likelihood_std, x_stacked, y_batch, train_batch_size, num_train_points)
 
         # kernel
         grad_k, k = jax.grad(self._evaluate_kernel, has_aux=True)(f_raw)
 
-        surrogate_loss = jnp.sum(f_raw * jax.lax.stop_gradient(jnp.einsum('ij,jkm', k, grad_post)
+        # construct surrogate loss such that the gradient of the surrogate loss is the fsvgd update
+        surrogate_loss = jnp.sum(f_raw * jax.lax.stop_gradient(jnp.einsum('ij,jkm', k, grad_post_f)
                                                                + grad_k / self.num_particles))
+        if self.learn_likelihood_std:
+            surrogate_loss += jnp.sum(likelihood_std * jax.lax.stop_gradient(grad_post_lstd))
         avg_triu_k = jnp.sum(jnp.triu(k, k=1)) / ((self.num_particles - 1) * self.num_particles / 2)
         stats = OrderedDict(**post_stats, avg_triu_k=avg_triu_k)
         return surrogate_loss, stats
 
-    def _neg_log_posterior(self, pred_raw: jnp.ndarray, x_stacked: jnp.ndarray, y_batch: jnp.ndarray,
-                           train_data_till_idx: int, num_train_points: Union[float, int]):
-        nll = self._nll(pred_raw, y_batch, train_data_till_idx)
+    def _neg_log_posterior(self, pred_raw: jnp.ndarray, likelihood_std: jnp.array, x_stacked: jnp.ndarray,
+                           y_batch: jnp.ndarray, train_data_till_idx: int, num_train_points: Union[float, int]):
+        nll = - self._ll(pred_raw, likelihood_std, y_batch, train_data_till_idx)
         neg_log_prior = - self._gp_prior_log_prob(x_stacked, pred_raw, eps=1e-3) / num_train_points
         neg_log_post = nll + neg_log_prior
         stats = OrderedDict(train_nll_loss=nll, neg_log_prior=neg_log_prior)
+        if self.learn_likelihood_std:
+            stats['likelihood_std'] = jnp.mean(likelihood_std)
         return neg_log_post, stats
 
     def _gp_prior_log_prob(self, x: jnp.array, y: jnp.array, eps: float = 1e-3) -> jnp.ndarray:
@@ -115,7 +126,7 @@ if __name__ == '__main__':
 
     bnn = BNN_FSVGD(NUM_DIM_X, NUM_DIM_Y, domain=domain, rng_key=next(key_iter), num_train_steps=20000,
                     data_batch_size=10, num_measurement_points=20, normalize_data=True, bandwidth_svgd=0.2,
-                    likelihood_std=0.03,
+                    likelihood_std=0.1, learn_likelihood_std=False,
                     bandwidth_gp_prior=0.2, hidden_layer_sizes=[64, 64, 64],
                     hidden_activation=jax.nn.tanh)
     for i in range(10):

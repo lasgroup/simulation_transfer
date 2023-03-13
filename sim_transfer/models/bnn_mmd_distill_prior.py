@@ -31,6 +31,7 @@ class BNN_SVGD_Distill_Prior(AbstractSVGD_BNN, MeasurementSetMixin):
                  num_f_samples: int = 64,
                  num_measurement_points: int = 8,
                  likelihood_std: float = 0.2,
+                 learn_likelihood_std: bool = False,
                  bandwith_mmd_range_log2: Tuple[int, int] = (-3, 6),
                  bandwidth_svgd: float = 10.0,
                  data_batch_size: int = 8,
@@ -48,8 +49,8 @@ class BNN_SVGD_Distill_Prior(AbstractSVGD_BNN, MeasurementSetMixin):
                                   num_batched_nns=num_particles, hidden_layer_sizes=hidden_layer_sizes,
                                   hidden_activation=hidden_activation, last_activation=last_activation,
                                   normalize_data=normalize_data, normalization_stats=normalization_stats,
-                                  lr=lr, likelihood_std=likelihood_std, bandwidth_svgd=bandwidth_svgd,
-                                  use_prior=True)
+                                  lr=lr, likelihood_std=likelihood_std, learn_likelihood_std=learn_likelihood_std,
+                                  bandwidth_svgd=bandwidth_svgd, use_prior=True)
         MeasurementSetMixin.__init__(self, domain=domain)
 
         self.num_measurement_points = num_measurement_points

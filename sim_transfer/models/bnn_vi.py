@@ -17,6 +17,7 @@ class BNN_VI(AbstractVariationalBNN):
                  output_size: int,
                  rng_key: jax.random.PRNGKey,
                  likelihood_std: Union[float, jnp.array] = 0.2,
+                 learn_likelihood_std: bool = False,
                  num_post_samples: int = 10,
                  data_batch_size: int = 16,
                  num_train_steps: int = 10000,
@@ -35,7 +36,7 @@ class BNN_VI(AbstractVariationalBNN):
                          num_batched_nns=num_post_samples, hidden_layer_sizes=hidden_layer_sizes,
                          hidden_activation=hidden_activation, last_activation=last_activation,
                          normalize_data=normalize_data, normalization_stats=normalization_stats,
-                         likelihood_std=likelihood_std)
+                         likelihood_std=likelihood_std, learn_likelihood_std=learn_likelihood_std)
         self.use_prior = use_prior
         self.kl_prefactor = kl_prefactor
 
@@ -48,21 +49,23 @@ class BNN_VI(AbstractVariationalBNN):
         # heuristic for setting the initial of the prior on the weights
         weight_std = 4.0 / jnp.sqrt(jnp.sum(jnp.array(hidden_layer_sizes)))
         _prior = self.batched_model.params_prior(weight_prior_std=weight_std, bias_prior_std=0.5)
-        self.posterior_params = {'mean': _prior.mean(), 'std': _prior.stddev()}
+        self.params.update({'posterior_mean': _prior.mean(), 'posterior_std': _prior.stddev()})
 
         # init optimizer for distillation prior
         self.optim = optax.adam(learning_rate=lr)
-        self.opt_state = self.optim.init(self.posterior_params)
+        self.opt_state = self.optim.init(self.params)
 
-    def _loss(self, posterior_params: PyTree, x_batch: jnp.array, y_batch: jnp.array,
+    def _loss(self, params: Dict, x_batch: jnp.array, y_batch: jnp.array,
                     num_train_points: int, key: jax.random.PRNGKey) -> [jnp.ndarray, Dict]:
         # sample NNs from posterior
-        posterior_dist = tfd.MultivariateNormalDiag(posterior_params['mean'], posterior_params['std'])
+        posterior_dist = tfd.MultivariateNormalDiag(params['posterior_mean'], params['posterior_std'])
         params_sample = posterior_dist.sample(seed=key, sample_shape=self.num_post_samples)
 
         # compute data log-likelihood
+        likelihood_std = self._likelihood_std_transform(params['likelihood_std_raw']) if self.learn_likelihood_std \
+            else self.likelihood_std
         pred_raw = self.batched_model.forward_vec(x_batch, self.batched_model.unravel_batch(params_sample))
-        ll = jnp.mean(tfd.MultivariateNormalDiag(pred_raw, self.likelihood_std).log_prob(y_batch))
+        ll = jnp.mean(tfd.MultivariateNormalDiag(pred_raw, likelihood_std).log_prob(y_batch))
 
         if self.use_prior:
             # estimate KL divergence between posterior and prior
@@ -75,11 +78,13 @@ class BNN_VI(AbstractVariationalBNN):
         else:
             loss = - ll
             stats = OrderedDict(loss=loss, train_nll_loss=-ll)
+        if self.learn_likelihood_std:
+            stats['likelihood_std'] = jnp.mean(likelihood_std)
         return loss, stats
 
     @property
     def posterior_dist(self) -> tfd.Distribution:
-        return tfd.MultivariateNormalDiag(self.posterior_params['mean'], self.posterior_params['std'])
+        return tfd.MultivariateNormalDiag(self.params['posterior_mean'], self.params['posterior_std'])
 
     @property
     def prior_dist(self):

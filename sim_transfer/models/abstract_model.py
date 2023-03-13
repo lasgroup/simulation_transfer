@@ -147,14 +147,6 @@ class AbstractRegressionModel(RngKeyMixin):
         ds = tfds.as_numpy(ds)
         return ds
 
-    @property
-    def likelihood_std(self):
-        return jax.nn.softplus(self._likelihood_std_raw)
-
-    @likelihood_std.setter
-    def likelihood_std(self, std: jnp.ndarray):
-        self._likelihood_std_raw = tfp.math.softplus_inverse(std)
-
     def predict_dist(self, x: jnp.ndarray, include_noise: bool = False) -> tfp.distributions.Distribution:
         return False
 

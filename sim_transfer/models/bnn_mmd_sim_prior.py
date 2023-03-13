@@ -24,7 +24,8 @@ class BNN_MMD_SimPrior(AbstractParticleBNN, MeasurementSetMixin):
                  num_particles: int = 10,
                  num_f_samples: int = 64,
                  num_measurement_points: int = 8,
-                 likelihood_std: Union[float, jnp.array] = 0.2,
+                 likelihood_std: Union[float, jnp.array] = 0.1,
+                 learn_likelihood_std: bool = False,
                  bandwith_mmd_range_log2: Tuple[int, int] = (-3, 6),
                  data_batch_size: int = 8,
                  num_train_steps: int = 10000,
@@ -39,7 +40,7 @@ class BNN_MMD_SimPrior(AbstractParticleBNN, MeasurementSetMixin):
                                      num_batched_nns=num_particles, hidden_layer_sizes=hidden_layer_sizes,
                                      hidden_activation=hidden_activation, last_activation=last_activation,
                                      normalize_data=normalize_data, normalization_stats=normalization_stats,
-                                     lr=lr, likelihood_std=likelihood_std)
+                                     lr=lr, likelihood_std=likelihood_std, learn_likelihood_std=learn_likelihood_std)
         MeasurementSetMixin.__init__(self, domain=domain)
         self.num_measurement_points = num_measurement_points
         self.independent_output_dims = independent_output_dims
@@ -59,7 +60,7 @@ class BNN_MMD_SimPrior(AbstractParticleBNN, MeasurementSetMixin):
             self._mmd_fn_vmap = jax.vmap(self._mmd_fn, in_axes=(-1, -1), out_axes=-1)
 
     @partial(jax.jit, static_argnums=(0,))
-    def _surrogate_loss(self, param_vec_stack: jnp.array, x_batch: jnp.array, y_batch: jnp.array,
+    def _surrogate_loss(self, params: jnp.array, x_batch: jnp.array, y_batch: jnp.array,
                         num_train_points: int, key: jax.random.PRNGKey,
                         f_sim_noise_std: float = 0.05) -> [jnp.ndarray, Dict]:
         key1, key2, key3 = jax.random.split(key, num=3)
@@ -69,10 +70,14 @@ class BNN_MMD_SimPrior(AbstractParticleBNN, MeasurementSetMixin):
         x_stacked = jnp.concatenate([x_batch, x_domain], axis=0)
 
         # posterior samples
-        f_raw = self.batched_model.forward_vec(x_stacked, param_vec_stack)
+        f_raw = self.batched_model.forward_vec(x_stacked, params['nn_params_stacked'])
+
+        # get likelihood std
+        likelihood_std = self._likelihood_std_transform(params['likelihood_std_raw']) if self.learn_likelihood_std \
+            else self.likelihood_std
 
         # negative log-likelihood
-        nll = self._nll(f_raw, y_batch, train_batch_size)
+        nll = - self._ll(f_raw, likelihood_std, y_batch, train_batch_size)
 
         # estimate mmd between posterior and prior
         fsim_samples = self._fsim_samples(x_stacked, key=key2)  # sample function values from sim prior
@@ -85,7 +90,7 @@ class BNN_MMD_SimPrior(AbstractParticleBNN, MeasurementSetMixin):
 
         loss = nll + mmd / num_train_points
 
-        stats = OrderedDict(train_nll_loss=nll, mmd=mmd, loss=loss)
+        stats = OrderedDict(train_nll_loss=nll, mmd=mmd, loss=loss, likelihood_std=jnp.mean(likelihood_std))
         return loss, stats
 
     def _fsim_samples(self, x: jnp.array, key: jax.random.PRNGKey) -> jnp.ndarray:
@@ -133,7 +138,7 @@ if __name__ == '__main__':
                                hidden_layer_sizes=[64, 64, 64],
                                num_particles=30,
                                data_batch_size=4,
-                               num_f_samples=400,
+                               num_f_samples=64,
                                num_measurement_points=8,
                                independent_output_dims=False)
         bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=1)
