@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import NamedTuple
+from typing import NamedTuple, Union, Optional
 
 import jax
 import jax.numpy as jnp
@@ -58,14 +58,26 @@ class CarParams(NamedTuple):
 
 
 class DynamicsModel(ABC):
-    def __init__(self, h: float, x_dim: int, u_dim: int, params_example: PyTree):
+    def __init__(self,
+                 h: float,
+                 x_dim: int,
+                 u_dim: int,
+                 params_example: PyTree,
+                 angle_idx: Optional[Union[int, jax.Array]] = None
+                 ):
         self.dt = h
         self.x_dim = x_dim
         self.u_dim = u_dim
         self.params_example = params_example
+        self.angle_idx = angle_idx
 
     def next_step(self, x: jax.Array, u: jax.Array, params: PyTree) -> jax.Array:
-        return x + self.dt * self.ode(x, u, params)
+        next_state = x + self.dt * self.ode(x, u, params)
+        if self.angle_idx is not None:
+            theta = next_state[self.angle_idx]
+            sin_theta, cos_theta = jnp.sin(theta), jnp.cos(theta)
+            next_state = next_state.at[self.angle_idx].set(jnp.arctan2(sin_theta, cos_theta))
+        return next_state
 
     def ode(self, x: jax.Array, u: jax.Array, params) -> jax.Array:
         assert x.shape == (self.x_dim,) and u.shape == (self.u_dim,)
@@ -89,7 +101,7 @@ class DynamicsModel(ABC):
 
 class Pendulum(DynamicsModel):
     def __init__(self, h):
-        super().__init__(h=h, x_dim=2, u_dim=1, params_example=PendulumParams())
+        super().__init__(h=h, x_dim=2, u_dim=1, params_example=PendulumParams(), angle_idx=0)
 
     def _ode(self, x, u, params: PendulumParams):
         # x represents [theta in rad/s, theta_dot in rad/s^2]
@@ -107,8 +119,14 @@ class Pendulum(DynamicsModel):
 
 class BicycleModel(DynamicsModel):
 
-    def __init__(self, h):
-        super().__init__(h=h, x_dim=6, u_dim=2, params_example=CarParams())
+    def __init__(self, h, control_ratio: int = 10):
+        super().__init__(h=h, x_dim=6, u_dim=2, params_example=CarParams(), angle_idx=2)
+        self.control_ratio = control_ratio
+
+    def next_step(self, x, u, params):
+        for step in range(self.control_ratio):
+            x = super().next_step(x, u, params)
+        return x
 
     def _accelerations(self, x, u, params: CarParams):
         i_com = self._get_moment_of_intertia(params)
@@ -274,9 +292,10 @@ if __name__ == "__main__":
     import matplotlib.patches as patches
 
 
-    def simulate_car(goal=jnp.asarray([2, 2]), init_pos=jnp.zeros(2), k_p=1, k_d=0.6, horizon=200):
+    def simulate_car(goal=jnp.asarray([2, 2]), init_pos=jnp.zeros(2), k_p=1, k_d=0.6, horizon=100):
+        control_ratio = 10
         dt = 0.01
-        car = BicycleModel(dt)
+        car = BicycleModel(dt, control_ratio)
         params = CarParams()
         x = jnp.zeros(6)
         x_traj = jnp.zeros([horizon, 2])
@@ -284,7 +303,7 @@ if __name__ == "__main__":
         import matplotlib.pyplot as plt
         fig = plt.figure()
         ax = fig.add_subplot(111)
-        rectangle_size = 0.05
+        rectangle_size = 0.1
         for h in range(horizon):
             pos_error = goal[0:2] - x[0:2]
             goal_direction = jnp.arctan2(pos_error[1], pos_error[0])
@@ -310,7 +329,7 @@ if __name__ == "__main__":
         plt.legend()
         plt.xlabel('x-distance in [m]')
         plt.ylabel('y-distance in [m]')
-        plt.title("Simulation of Car for " + str(int(horizon * dt)) + " s")
+        plt.title("Simulation of Car for " + str(int(horizon * dt * control_ratio)) + " s")
         plt.show()
 
 
