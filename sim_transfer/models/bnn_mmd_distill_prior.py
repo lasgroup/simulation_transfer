@@ -17,7 +17,7 @@ from sim_transfer.modules.util import aggregate_stats
 from sim_transfer.modules.metrics import mmd2
 
 
-class BNN_SVGD_Distill_Prior(AbstractSVGD_BNN, MeasurementSetMixin):
+class BNN_SVGD_DistillPrior(AbstractSVGD_BNN, MeasurementSetMixin):
     """ BNN with SVGD inference whose prior is distilled from a simulator """
 
     def __init__(self,
@@ -230,15 +230,15 @@ if __name__ == '__main__':
     with jax.disable_jit(False):
         # sim = GaussianProcessSim(input_size=1, output_scale=1.0, mean_fn=lambda x: 2 * x)
         sim = SinusoidsSim(input_size=1, output_size=NUM_DIM_Y)
-        bnn = BNN_SVGD_Distill_Prior(NUM_DIM_X, NUM_DIM_Y, domain=domain, rng_key=next(key_iter), function_sim=sim,
-                                   hidden_layer_sizes=[128] * 3,
-                                   num_particles=30,
-                                   data_batch_size=4,
-                                   num_f_samples=400,
-                                   num_measurement_points=8,
-                                   lr_distill_prior=1e-2,
-                                   bandwidth_svgd=0.1,
-                                   independent_output_dims=False)
+        bnn = BNN_SVGD_DistillPrior(NUM_DIM_X, NUM_DIM_Y, domain=domain, rng_key=next(key_iter), function_sim=sim,
+                                    hidden_layer_sizes=[128] * 3,
+                                    num_particles=30,
+                                    data_batch_size=4,
+                                    num_f_samples=400,
+                                    num_measurement_points=8,
+                                    lr_distill_prior=1e-2,
+                                    bandwidth_svgd=0.1,
+                                    independent_output_dims=False)
         print('\n----- Distilling prior...')
         for i in range(5):
             bnn.fit_distill_prior(num_steps=5000, log_period=500)

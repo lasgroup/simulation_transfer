@@ -165,6 +165,8 @@ class AbstractRegressionModel(RngKeyMixin):
                       'cal_err_cum': cal_err_cum, 'cal_err_bin': cal_err_bin}
         # add prefix to stats names
         eval_stats = {f'{prefix}{name}': val for name, val in eval_stats.items()}
+        # make sure that all stats are python native floats
+        eval_stats = {name: float(val) for name, val in eval_stats.items()}
         return eval_stats
 
     def plot_1d(self, x_train: jnp.ndarray, y_train: jnp.ndarray,

@@ -90,7 +90,9 @@ class BNN_MMD_SimPrior(AbstractParticleBNN, MeasurementSetMixin):
 
         loss = nll + mmd / num_train_points
 
-        stats = OrderedDict(train_nll_loss=nll, mmd=mmd, loss=loss, likelihood_std=jnp.mean(likelihood_std))
+        stats = OrderedDict(train_nll_loss=nll, mmd=mmd, loss=loss)
+        if self.learn_likelihood_std:
+            stats['likelihood_std'] = jnp.mean(likelihood_std)
         return loss, stats
 
     def _fsim_samples(self, x: jnp.array, key: jax.random.PRNGKey) -> jnp.ndarray:
@@ -139,7 +141,7 @@ if __name__ == '__main__':
                                num_particles=30,
                                data_batch_size=4,
                                num_f_samples=64,
-                               num_measurement_points=8,
+                               num_measurement_points=64,
                                independent_output_dims=False)
         bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=1)
         bnn.plot_1d(x_train, y_train, true_fun=fun, title=f'iter 1', domain_l=-7, domain_u=7)

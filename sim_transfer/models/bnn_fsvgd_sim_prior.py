@@ -11,7 +11,7 @@ from sim_transfer.score_estimation import SSGE
 from sim_transfer.sims import FunctionSimulator, Domain, HypercubeDomain
 
 
-class BNN_FSVGD_Sim_Prior(AbstractFSVGD_BNN):
+class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
 
     def __init__(self,
                  input_size: int,
@@ -155,13 +155,11 @@ if __name__ == '__main__':
     x_test = jax.random.uniform(next(key_iter), shape=(num_test_points, NUM_DIM_X), minval=-5, maxval=5)
     y_test = fun(x_test) + 0.1 * jax.random.normal(next(key_iter), shape=(x_test.shape[0], NUM_DIM_Y))
 
-    # sim = GaussianProcessSim(input_size=1, output_scale=3.0, mean_fn=lambda x: 2 * x)
     sim = SinusoidsSim(input_size=1, output_size=NUM_DIM_Y)
-    # sim = GaussianProcessSim(input_size=1, output_size=NUM_DIM_Y, output_scale=1.0, mean_fn=lambda x: 2 * x)
-    bnn = BNN_FSVGD_Sim_Prior(NUM_DIM_X, NUM_DIM_Y, domain=domain, rng_key=next(key_iter), function_sim=sim,
-                              hidden_layer_sizes=[64, 64, 64], num_train_steps=20000, data_batch_size=4,
-                              learn_likelihood_std=True,
-                              independent_output_dims=True)
+    bnn = BNN_FSVGD_SimPrior(NUM_DIM_X, NUM_DIM_Y, domain=domain, rng_key=next(key_iter), function_sim=sim,
+                             hidden_layer_sizes=[64, 64, 64], num_train_steps=20000, data_batch_size=4,
+                             learn_likelihood_std=True, num_f_samples=64,
+                             independent_output_dims=True)
     for i in range(10):
         bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=5000)
         if NUM_DIM_X == 1:
