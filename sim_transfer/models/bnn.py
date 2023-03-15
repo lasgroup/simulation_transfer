@@ -53,7 +53,7 @@ class LikelihoodMixin:
 class AbstractParticleBNN(BatchedNeuralNetworkModel, LikelihoodMixin):
 
     def __init__(self, likelihood_std: Union[float, jnp.array] = 0.2, learn_likelihood_std: bool = False,
-                 lr: float = 1e-3, **kwargs):
+                 lr: float = 1e-3, weight_decay: float = 0.0, **kwargs):
         self.params = {}  # this must happen before super().__init__ is called
         BatchedNeuralNetworkModel.__init__(self, **kwargs)
         LikelihoodMixin.__init__(self, likelihood_std=likelihood_std, learn_likelihood_std=learn_likelihood_std)
@@ -62,7 +62,10 @@ class AbstractParticleBNN(BatchedNeuralNetworkModel, LikelihoodMixin):
         self.params.update({'nn_params_stacked': self.batched_model.param_vectors_stacked})
 
         # initialize optimizer
-        self.optim = optax.adam(learning_rate=lr)
+        if weight_decay > 0:
+            self.optim = optax.adamw(learning_rate=lr, weight_decay=weight_decay)
+        else:
+            self.optim = optax.adam(learning_rate=lr)
         self.opt_state = self.optim.init(self.params)
 
 

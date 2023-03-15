@@ -30,6 +30,7 @@ class BNN_MMD_SimPrior(AbstractParticleBNN, MeasurementSetMixin):
                  data_batch_size: int = 8,
                  num_train_steps: int = 10000,
                  lr: float = 1e-3,
+                 weight_decay: float = 1e-3,
                  normalize_data: bool = True,
                  normalization_stats: Optional[Dict[str, jnp.ndarray]] = None,
                  hidden_layer_sizes: List[int] = (32, 32, 32),
@@ -40,7 +41,8 @@ class BNN_MMD_SimPrior(AbstractParticleBNN, MeasurementSetMixin):
                                      num_batched_nns=num_particles, hidden_layer_sizes=hidden_layer_sizes,
                                      hidden_activation=hidden_activation, last_activation=last_activation,
                                      normalize_data=normalize_data, normalization_stats=normalization_stats,
-                                     lr=lr, likelihood_std=likelihood_std, learn_likelihood_std=learn_likelihood_std)
+                                     lr=lr, weight_decay=weight_decay,
+                                     likelihood_std=likelihood_std, learn_likelihood_std=learn_likelihood_std)
         MeasurementSetMixin.__init__(self, domain=domain)
         self.num_measurement_points = num_measurement_points
         self.independent_output_dims = independent_output_dims
@@ -135,7 +137,7 @@ if __name__ == '__main__':
     domain = sim.domain
     x_measurement = jnp.linspace(domain.l[0], domain.u[0], 50).reshape(-1, 1)
 
-    num_train_points = 2
+    num_train_points = 10
 
     x_train = jax.random.uniform(key=next(key_iter), shape=(num_train_points,),
                                  minval=domain.l, maxval=domain.u).reshape(-1, 1)
@@ -144,11 +146,14 @@ if __name__ == '__main__':
     x_test = jnp.linspace(domain.l, domain.u, 100).reshape(-1, 1)
     y_test = fun(x_test)
 
-    bnn = BNN_MMD_SimPrior(input_size=NUM_DIM_X, output_size=NUM_DIM_Y, domain=domain, rng_key=next(key_iter),
-                           function_sim=sim, num_particles=20,
-                           normalize_data=True, normalization_stats=sim.normalization_stats,
-                           num_measurement_points=8,
-                           independent_output_dims=True)
+    # bnn = BNN_MMD_SimPrior(input_size=NUM_DIM_X, output_size=NUM_DIM_Y, domain=domain, rng_key=next(key_iter),
+    #                        function_sim=sim, num_particles=20,
+    #                        normalize_data=True, normalization_stats=sim.normalization_stats,
+    #                        num_measurement_points=32, weight_decay=0.1, num_f_samples=128,
+    #                        independent_output_dims=True,
+    #                        likelihood_std=0.05)
+    from sim_transfer.models import BNN_SVGD
+    bnn = BNN_SVGD(input_size=NUM_DIM_X, output_size=NUM_DIM_Y, rng_key=next(key_iter), likelihood_std=0.05)
 
     bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=1)
     bnn.plot_1d(x_train, y_train, true_fun=fun, title=f'iter 1', domain_l=domain.l[0], domain_u=domain.u[0])

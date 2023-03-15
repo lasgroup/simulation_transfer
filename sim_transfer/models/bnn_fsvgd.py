@@ -29,6 +29,7 @@ class BNN_FSVGD(AbstractFSVGD_BNN):
                  num_measurement_points: int = 16,
                  num_train_steps: int = 10000,
                  lr: float = 1e-3,
+                 weight_decay: float = 1e-3,
                  normalize_data: bool = True,
                  normalization_stats: Optional[Dict[str, jnp.ndarray]] = None,
                  hidden_layer_sizes: List[int] = (32, 32, 32),
@@ -39,7 +40,7 @@ class BNN_FSVGD(AbstractFSVGD_BNN):
                          num_batched_nns=num_particles, hidden_layer_sizes=hidden_layer_sizes,
                          hidden_activation=hidden_activation, last_activation=last_activation,
                          normalize_data=normalize_data, normalization_stats=normalization_stats,
-                         lr=lr, domain=domain, bandwidth_svgd=bandwidth_svgd,
+                         lr=lr, weight_decay=weight_decay, domain=domain, bandwidth_svgd=bandwidth_svgd,
                          likelihood_std=likelihood_std, learn_likelihood_std=learn_likelihood_std)
         self.bandwidth_gp_prior = bandwidth_gp_prior
         self.num_measurement_points = num_measurement_points

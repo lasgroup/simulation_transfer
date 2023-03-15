@@ -30,6 +30,7 @@ class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
                  data_batch_size: int = 8,
                  num_train_steps: int = 10000,
                  lr: float = 1e-3,
+                 weight_decay: float = 1e-3,
                  normalize_data: bool = True,
                  normalization_stats: Optional[Dict[str, jnp.ndarray]] = None,
                  hidden_layer_sizes: List[int] = (32, 32, 32),
@@ -40,7 +41,8 @@ class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
                          num_batched_nns=num_particles, hidden_layer_sizes=hidden_layer_sizes,
                          hidden_activation=hidden_activation, last_activation=last_activation,
                          normalize_data=normalize_data, normalization_stats=normalization_stats,
-                         lr=lr, likelihood_std=likelihood_std, learn_likelihood_std=learn_likelihood_std,
+                         lr=lr, weight_decay=weight_decay,
+                         likelihood_std=likelihood_std, learn_likelihood_std=learn_likelihood_std,
                          domain=domain, bandwidth_svgd=bandwidth_svgd)
         self.num_measurement_points = num_measurement_points
 
@@ -123,7 +125,7 @@ class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
 
 
 if __name__ == '__main__':
-    from sim_transfer.sims import SinusoidsSim
+    from sim_transfer.sims import SinusoidsSim, QuadraticSim
 
 
     def key_iter():
@@ -136,32 +138,42 @@ if __name__ == '__main__':
     key_iter = key_iter()
     NUM_DIM_X = 1
     NUM_DIM_Y = 1
-    num_train_points = 2
+    SIM_TYPE = 'SinusoidsSim'
 
-    if NUM_DIM_X == 1 and NUM_DIM_Y == 1:
-        fun = lambda x: (2 * x + 2 * jnp.sin(2 * x)).reshape(-1, 1)
-    elif NUM_DIM_X == 1 and NUM_DIM_Y == 2:
-        fun = lambda x: jnp.concatenate([(2 * x + 2 * jnp.sin(2 * x)).reshape(-1, 1),
-                                         (- 2 * x + 2 * jnp.cos(1.5 * x)).reshape(-1, 1)], axis=-1)
+    if SIM_TYPE == 'QuadraticSim':
+        sim = QuadraticSim()
+        fun = lambda x: (x - 2) ** 2
+    elif SIM_TYPE == 'SinusoidsSim':
+        sim = SinusoidsSim(output_size=NUM_DIM_Y)
+
+        if NUM_DIM_X == 1 and NUM_DIM_Y == 1:
+            fun = lambda x: (2 * x + 2 * jnp.sin(2 * x)).reshape(-1, 1)
+        elif NUM_DIM_X == 1 and NUM_DIM_Y == 2:
+            fun = lambda x: jnp.concatenate([(2 * x + 2 * jnp.sin(2 * x)).reshape(-1, 1),
+                                             (- 2 * x + 2 * jnp.cos(1.5 * x)).reshape(-1, 1)], axis=-1)
+        else:
+            raise NotImplementedError
     else:
         raise NotImplementedError
 
-    domain = HypercubeDomain(lower=jnp.array([-7.] * NUM_DIM_X), upper=jnp.array([7.] * NUM_DIM_X))
+    domain = sim.domain
+    x_measurement = jnp.linspace(domain.l[0], domain.u[0], 50).reshape(-1, 1)
 
-    x_train = jax.random.uniform(next(key_iter), shape=(num_train_points, NUM_DIM_X), minval=-5, maxval=5)
-    y_train = fun(x_train) + 0.1 * jax.random.normal(next(key_iter), shape=(x_train.shape[0], NUM_DIM_Y))
+    num_train_points = 10
 
-    num_test_points = 100
-    x_test = jax.random.uniform(next(key_iter), shape=(num_test_points, NUM_DIM_X), minval=-5, maxval=5)
-    y_test = fun(x_test) + 0.1 * jax.random.normal(next(key_iter), shape=(x_test.shape[0], NUM_DIM_Y))
+    x_train = jax.random.uniform(key=next(key_iter), shape=(num_train_points,),
+                                 minval=domain.l, maxval=domain.u).reshape(-1, 1)
+    y_train = fun(x_train)
 
-    sim = SinusoidsSim(input_size=1, output_size=NUM_DIM_Y)
+    x_test = jnp.linspace(domain.l, domain.u, 100).reshape(-1, 1)
+    y_test = fun(x_test)
+
     bnn = BNN_FSVGD_SimPrior(NUM_DIM_X, NUM_DIM_Y, domain=domain, rng_key=next(key_iter), function_sim=sim,
                              hidden_layer_sizes=[64, 64, 64], num_train_steps=20000, data_batch_size=4,
-                             learn_likelihood_std=True, num_f_samples=64,
-                             independent_output_dims=True)
+                             learn_likelihood_std=False, num_f_samples=64, bandwidth_svgd=0.05, bandwidth_ssge=0.2,
+                             normalization_stats=sim.normalization_stats)
     for i in range(10):
         bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=5000)
         if NUM_DIM_X == 1:
             bnn.plot_1d(x_train, y_train, true_fun=fun, title=f'iter {(i + 1) * 5000}',
-                        domain_l=-7, domain_u=7)
+                        domain_l=domain.l[0], domain_u=domain.u[0])

@@ -38,6 +38,7 @@ class BNN_SVGD_DistillPrior(AbstractSVGD_BNN, MeasurementSetMixin):
                  num_train_steps: int = 10000,
                  num_distill_steps: int = 10000,
                  lr: float = 1e-3,
+                 weight_decay: float = 1e-3,
                  lr_distill_prior: float = 1e-3,
                  normalize_data: bool = True,
                  normalization_stats: Optional[Dict[str, jnp.ndarray]] = None,
@@ -49,7 +50,8 @@ class BNN_SVGD_DistillPrior(AbstractSVGD_BNN, MeasurementSetMixin):
                                   num_batched_nns=num_particles, hidden_layer_sizes=hidden_layer_sizes,
                                   hidden_activation=hidden_activation, last_activation=last_activation,
                                   normalize_data=normalize_data, normalization_stats=normalization_stats,
-                                  lr=lr, likelihood_std=likelihood_std, learn_likelihood_std=learn_likelihood_std,
+                                  lr=lr, weight_decay=weight_decay,
+                                  likelihood_std=likelihood_std, learn_likelihood_std=learn_likelihood_std,
                                   bandwidth_svgd=bandwidth_svgd, use_prior=True)
         MeasurementSetMixin.__init__(self, domain=domain)
 
