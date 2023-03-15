@@ -314,11 +314,12 @@ if __name__ == "__main__":
             u = jnp.asarray([s, d])
             x = car.next_step(x, u, params)
             x_traj = x_traj.at[h, ...].set(x[0:2])
-            rect = patches.Rectangle(xy=(x[0] - rectangle_size / 2.0, x[1] - rectangle_size / 2.0),
-                                     angle=x[2],
-                                     width=rectangle_size,
+            rect = patches.Rectangle(xy=(x[0] - rectangle_size, x[1] - rectangle_size / 2.0),
+                                     angle=x[2]*180.0/jnp.pi,
+                                     width=rectangle_size*2.0,
                                      height=rectangle_size,
                                      alpha=0.5,
+                                     rotation_point='center',
                                      edgecolor='red',
                                      facecolor='none',
                                      )
