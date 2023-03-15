@@ -27,9 +27,9 @@ class AbstractRegressionModel(RngKeyMixin):
         self.input_size = input_size
         self.output_size = output_size
         self.normalize_data = normalize_data
-        self.need_to_compute_norm_stats = normalize_data and (normalization_stats is None)
+        self._need_to_compute_norm_stats = normalize_data and (normalization_stats is None)
 
-        if normalization_stats is None:
+        if (not normalize_data) or normalization_stats is None:
             # initialize normalization stats to neutral elements
             self._x_mean, self._x_std = jnp.zeros(input_size), jnp.ones(input_size)
             self._y_mean, self._y_std = jnp.zeros(output_size), jnp.ones(output_size)
@@ -42,7 +42,7 @@ class AbstractRegressionModel(RngKeyMixin):
             # set the stats
             self._x_mean, self._x_std = _n_stats['x_mean'], _n_stats['x_std']
             self._y_mean, self._y_std = _n_stats['y_mean'], _n_stats['y_std']
-        self.affine_transform_y = lambda dist: AffineTransform(shift=self._y_mean, scale=self._y_std)
+        self.affine_transform_y = AffineTransform(shift=self._y_mean, scale=self._y_std)
 
         # disable some stupid tensorflow probability warnings
         self._add_checktypes_logging_filter()
@@ -126,7 +126,7 @@ class AbstractRegressionModel(RngKeyMixin):
     def _preprocess_train_data(self, x_train: jnp.ndarray, y_train: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
         """ Convert data to float32, ensure 2d shape and normalize if necessary"""
         if self.normalize_data:
-            if self.need_to_compute_norm_stats:
+            if self._need_to_compute_norm_stats:
                 self._compute_normalization_stats(x_train, y_train)
             x_train, y_train = self._normalize_data(x_train, y_train)
             self.affine_transform_y = AffineTransform(shift=self._y_mean, scale=self._y_std)

@@ -202,7 +202,7 @@ class MeasurementSetMixin:
         """ Samples measurement points from the domain """
         x_samples = self.domain.sample_uniformly(key, sample_shape=(num_points,))
         if normalize:
-            x_domain = self._normalize_data(x_samples)
+            x_samples = self._normalize_data(x_samples)
         assert x_samples.shape == (num_points, self.input_size)
         return x_samples
 
