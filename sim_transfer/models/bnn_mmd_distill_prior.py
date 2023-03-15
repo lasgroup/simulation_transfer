@@ -77,7 +77,7 @@ class BNN_SVGD_DistillPrior(AbstractSVGD_BNN, MeasurementSetMixin):
             length_scale=2. ** jnp.arange(*bandwith_mmd_range_log2))
 
         # setup vectorized MMD functon
-        self._mmd_fn = partial(mmd2, kernel=self.kernel_mmd)
+        self._mmd_fn = partial(mmd2, kernel=self.kernel_mmd, include_diag=True)
         if self.independent_output_dims:
             self._mmd_fn_vmap = jax.vmap(self._mmd_fn, in_axes=(-1, -1), out_axes=-1)
 

@@ -8,7 +8,7 @@ from tensorflow_probability.substrates import jax as tfp
 
 def mmd2(x: jnp.ndarray, y: jnp.ndarray,
          kernel: tfp.math.psd_kernels.PositiveSemidefiniteKernel,
-         include_diag: bool = False) -> Union[jnp.ndarray, float]:
+         include_diag: bool = True) -> Union[jnp.ndarray, float]:
     """ Computes the MMD^2 between two samples x and y """
     assert x.ndim == y.ndim >= 2, 'x and y must be at least 2-dimensional'
     assert x.shape[-1] == y.shape[-1], 'x and y must have the same diimensionality'

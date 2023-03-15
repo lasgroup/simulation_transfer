@@ -26,7 +26,7 @@ class BNN_MMD_SimPrior(AbstractParticleBNN, MeasurementSetMixin):
                  num_measurement_points: int = 8,
                  likelihood_std: Union[float, jnp.array] = 0.1,
                  learn_likelihood_std: bool = False,
-                 bandwith_mmd_range_log2: Tuple[int, int] = (-3, 6),
+                 bandwith_mmd_range_log: Tuple[int, int] = (-2., 5.),
                  data_batch_size: int = 8,
                  num_train_steps: int = 10000,
                  lr: float = 1e-3,
@@ -52,10 +52,10 @@ class BNN_MMD_SimPrior(AbstractParticleBNN, MeasurementSetMixin):
 
         # initialize MMD kernel
         self.kernel_mmd = tfp.math.psd_kernels.ExponentiatedQuadratic(
-            length_scale=2. ** jnp.arange(*bandwith_mmd_range_log2))
+            length_scale=jnp.exp(jnp.linspace(*bandwith_mmd_range_log, num=16)))
 
         # setup vectorized MMD functon
-        self._mmd_fn = partial(mmd2, kernel=self.kernel_mmd)
+        self._mmd_fn = partial(mmd2, kernel=self.kernel_mmd, include_diag=True)
         if self.independent_output_dims:
             self._mmd_fn_vmap = jax.vmap(self._mmd_fn, in_axes=(-1, -1), out_axes=-1)
 
@@ -64,10 +64,11 @@ class BNN_MMD_SimPrior(AbstractParticleBNN, MeasurementSetMixin):
                         num_train_points: int, key: jax.random.PRNGKey,
                         f_sim_noise_std: float = 0.05) -> [jnp.ndarray, Dict]:
         key1, key2, key3 = jax.random.split(key, num=3)
+
         # combine the training data batch with a batch of sampled measurement points
         train_batch_size = x_batch.shape[0]
-        x_domain = self._sample_measurement_points(key1, num_points=self.num_measurement_points)
-        x_stacked = jnp.concatenate([x_batch, x_domain], axis=0)
+        x_measurement = self._sample_measurement_points(key1, num_points=self.num_measurement_points)
+        x_stacked = jnp.concatenate([x_batch, x_measurement], axis=0)
 
         # posterior samples
         f_raw = self.batched_model.forward_vec(x_stacked, params['nn_params_stacked'])
@@ -80,13 +81,13 @@ class BNN_MMD_SimPrior(AbstractParticleBNN, MeasurementSetMixin):
         nll = - self._ll(f_raw, likelihood_std, y_batch, train_batch_size)
 
         # estimate mmd between posterior and prior
-        fsim_samples = self._fsim_samples(x_stacked, key=key2)  # sample function values from sim prior
-        f_raw_noisy = f_raw + f_sim_noise_std * jax.random.normal(key2, shape=f_raw.shape)  # add noise to sim prior samples
+        f_sim_samples = self._fsim_samples(x_measurement, key=key2)
+        f_nn_m = f_raw[:, train_batch_size:]
         if self.independent_output_dims:
-            mmd = jnp.sum(self._mmd_fn_vmap(f_raw_noisy, fsim_samples))
+            mmd = jnp.sum(self._mmd_fn_vmap(f_nn_m, f_sim_samples))
         else:
-            mmd = jnp.sum(self._mmd_fn(f_raw_noisy.reshape(f_raw_noisy.shape[0], -1),
-                                       fsim_samples.reshape(fsim_samples.shape[0], -1)))
+            mmd = jnp.sum(self._mmd_fn(f_nn_m.reshape(f_nn_m.shape[0], -1),
+                                       f_sim_samples.reshape(f_sim_samples.shape[0], -1)))
 
         loss = nll + mmd / num_train_points
 
@@ -103,50 +104,55 @@ class BNN_MMD_SimPrior(AbstractParticleBNN, MeasurementSetMixin):
 
 
 if __name__ == '__main__':
-    from sim_transfer.sims import GaussianProcessSim, SinusoidsSim
-
+    from sim_transfer.sims import GaussianProcessSim, SinusoidsSim, QuadraticSim
     def key_iter():
-        key = jax.random.PRNGKey(9836)
+        key = jax.random.PRNGKey(45656)
         while True:
             key, new_key = jax.random.split(key)
             yield new_key
 
     key_iter = key_iter()
     NUM_DIM_X = 1
-    NUM_DIM_Y = 2
-    num_train_points = 2
+    NUM_DIM_Y = 1
+    SIM_TYPE = 'QuadraticSim'
 
-    if NUM_DIM_X == 1 and NUM_DIM_Y == 1:
-        fun = lambda x: (2 * x + 2 * jnp.sin(2 * x)).reshape(-1, 1)
-    elif NUM_DIM_X == 1 and NUM_DIM_Y == 2:
-        fun = lambda x: jnp.concatenate([(2 * x + 2 * jnp.sin(2 * x)).reshape(-1, 1),
-                                         (- 2 * x + 2 * jnp.cos(1.5 * x)).reshape(-1, 1)], axis=-1)
+    if SIM_TYPE == 'QuadraticSim':
+        sim = QuadraticSim()
+        fun = lambda x: (x-2)**2
+    elif SIM_TYPE == 'SinusoidsSim':
+        sim = SinusoidsSim(output_size=NUM_DIM_Y)
+
+        if NUM_DIM_X == 1 and NUM_DIM_Y == 1:
+            fun = lambda x: (2 * x + 2 * jnp.sin(2 * x)).reshape(-1, 1)
+        elif NUM_DIM_X == 1 and NUM_DIM_Y == 2:
+            fun = lambda x: jnp.concatenate([(2 * x + 2 * jnp.sin(2 * x)).reshape(-1, 1),
+                                             (- 2 * x + 2 * jnp.cos(1.5 * x)).reshape(-1, 1)], axis=-1)
+        else:
+            raise NotImplementedError
     else:
         raise NotImplementedError
 
-    domain = HypercubeDomain(lower=jnp.array([-7.] * NUM_DIM_X), upper=jnp.array([7.] * NUM_DIM_X))
+    domain = sim.domain
+    x_measurement = jnp.linspace(domain.l[0], domain.u[0], 50).reshape(-1, 1)
 
-    x_train = jax.random.uniform(next(key_iter), shape=(num_train_points, NUM_DIM_X), minval=-5, maxval=5)
-    y_train = fun(x_train) + 0.01 * jax.random.normal(next(key_iter), shape=(x_train.shape[0], NUM_DIM_Y))
+    num_train_points = 2
 
-    num_test_points = 1000
-    x_test = jax.random.uniform(next(key_iter), shape=(num_test_points, NUM_DIM_X), minval=-5, maxval=5)
-    y_test = fun(x_test) + 0.1 * jax.random.normal(next(key_iter), shape=(x_test.shape[0], NUM_DIM_Y))
+    x_train = jax.random.uniform(key=next(key_iter), shape=(num_train_points,),
+                                 minval=domain.l, maxval=domain.u).reshape(-1, 1)
+    y_train = fun(x_train)
 
-    with jax.disable_jit(False):
-        # sim = GaussianProcessSim(input_size=1, output_scale=1.0, mean_fn=lambda x: 2 * x)
-        sim = SinusoidsSim(input_size=1, output_size=NUM_DIM_Y)
-        bnn = BNN_MMD_SimPrior(NUM_DIM_X, NUM_DIM_Y, domain=domain, rng_key=next(key_iter), function_sim=sim,
-                               hidden_layer_sizes=[64, 64, 64],
-                               num_particles=30,
-                               data_batch_size=4,
-                               num_f_samples=64,
-                               num_measurement_points=64,
-                               independent_output_dims=False)
-        bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=1)
-        bnn.plot_1d(x_train, y_train, true_fun=fun, title=f'iter 1', domain_l=-7, domain_u=7)
-        for i in range(10):
-            bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=5000)
-            if NUM_DIM_X == 1:
-                bnn.plot_1d(x_train, y_train, true_fun=fun, title=f'iter {(i + 1) * 5000}',
-                            domain_l=-7, domain_u=7)
+    x_test = jnp.linspace(domain.l, domain.u, 100).reshape(-1, 1)
+    y_test = fun(x_test)
+
+    bnn = BNN_MMD_SimPrior(input_size=NUM_DIM_X, output_size=NUM_DIM_Y, domain=domain, rng_key=next(key_iter),
+                           function_sim=sim, num_particles=20,
+                           normalize_data=True, normalization_stats=sim.normalization_stats,
+                           num_measurement_points=8,
+                           independent_output_dims=True)
+
+    bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=1)
+    bnn.plot_1d(x_train, y_train, true_fun=fun, title=f'iter 1', domain_l=domain.l[0], domain_u=domain.u[0])
+    for i in range(10):
+        bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=5000)
+        bnn.plot_1d(x_train, y_train, true_fun=fun, title=f'iter {i * 5000}',
+                    domain_l=domain.l[0], domain_u=domain.u[0])

@@ -105,7 +105,7 @@ if __name__ == '__main__':
 
     NUM_DIM_X = 1
     NUM_DIM_Y = 1
-    num_train_points = 2
+    num_train_points = 5
 
     if NUM_DIM_X == 1 and NUM_DIM_Y == 1:
         fun = lambda x: (2 * x + 2 * jnp.sin(2 * x)).reshape(-1, 1)
@@ -126,7 +126,7 @@ if __name__ == '__main__':
 
     bnn = BNN_FSVGD(NUM_DIM_X, NUM_DIM_Y, domain=domain, rng_key=next(key_iter), num_train_steps=20000,
                     data_batch_size=10, num_measurement_points=20, normalize_data=True, bandwidth_svgd=0.2,
-                    likelihood_std=0.1, learn_likelihood_std=False,
+                    likelihood_std=0.2, learn_likelihood_std=False,
                     bandwidth_gp_prior=0.2, hidden_layer_sizes=[64, 64, 64],
                     hidden_activation=jax.nn.tanh)
     for i in range(10):

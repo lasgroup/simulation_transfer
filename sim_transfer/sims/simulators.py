@@ -163,17 +163,29 @@ class SinusoidsSim(FunctionSimulator):
                 'y_std': 8 * jnp.ones(self.output_size)}
 
 
-
 class QuadraticSim(FunctionSimulator):
     def __init__(self):
         super().__init__(input_size=1, output_size=1)
 
     def sample_function_vals(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
         assert x.ndim == 2 and x.shape[-1] == self.input_size
-        ks = jax.random.uniform(rng_key, shape=(num_samples,), minval=0.9, maxval=1.1)
+        ks = jax.random.uniform(rng_key, shape=(num_samples,), minval=0.8, maxval=1.2)
         f = ks[:, None, None] * (x - 2) ** 2
         assert f.shape == (num_samples, x.shape[0], self.output_size)
         return f
+
+    @property
+    def domain(self) -> Domain:
+        lower = jnp.array([0.] * self.input_size)
+        upper = jnp.array([4.] * self.input_size)
+        return HypercubeDomain(lower=lower, upper=upper)
+
+    @property
+    def normalization_stats(self) -> Dict[str, jnp.ndarray]:
+        return {'x_mean': (self.domain.u + self.domain.l) / 2,
+                'x_std': (self.domain.u - self.domain.l) / 2,
+                'y_mean': 2 * jnp.ones(self.output_size),
+                'y_std': 1.5 * jnp.ones(self.output_size)}
 
 
 class PendulumSim(FunctionSimulator):
@@ -207,13 +219,13 @@ if __name__ == '__main__':
 
     key = jax.random.PRNGKey(984)
     # sim = GaussianProcessSim(input_size=1, output_scale=3.0, mean_fn=lambda x: 2 * x)
-    sim = SinusoidsSim()
-    x_plot = jnp.linspace(-5, 5, 200).reshape((-1, 1))
+    sim = QuadraticSim()
+    x_plot = jnp.linspace(0, 4, 200).reshape((-1, 1))
 
     y_samples = sim.sample_function_vals(x_plot, 10, key)
     for y in y_samples:
         plt.plot(x_plot, y, alpha=0.2)
 
-    x, y = sim.sample_dataset(key, 100, obs_noise_std=0.1, x_support_mode='partial', param_mode='random')
-    plt.scatter(x, y)
+    #x, y = sim.sample_dataset(key, 100, obs_noise_std=0.1, x_support_mode='partial', param_mode='random')
+    #plt.scatter(x, y)
     plt.show()
