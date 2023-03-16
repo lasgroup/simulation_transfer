@@ -188,6 +188,35 @@ class QuadraticSim(FunctionSimulator):
                 'y_std': 1.5 * jnp.ones(self.output_size)}
 
 
+class LinearSim(FunctionSimulator):
+
+    def __init__(self):
+        super().__init__(input_size=1, output_size=1)
+
+    def sample_function_vals(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
+        assert x.ndim == 2 and x.shape[-1] == self.input_size
+        slopes = jax.random.uniform(rng_key, shape=(num_samples,), minval=-1, maxval=1.0)
+        f = self._f(x, slopes[:, None, None])
+        assert f.shape == (num_samples, x.shape[0], self.output_size)
+        return f
+
+    def _f(self, x, slope):
+        return slope * x
+
+    @property
+    def domain(self) -> Domain:
+        lower = jnp.array([-2.] * self.input_size)
+        upper = jnp.array([2.] * self.input_size)
+        return HypercubeDomain(lower=lower, upper=upper)
+
+    @property
+    def normalization_stats(self) -> Dict[str, jnp.ndarray]:
+        return {'x_mean': (self.domain.u + self.domain.l) / 2,
+                'x_std': (self.domain.u - self.domain.l) / 2,
+                'y_mean': jnp.zeros(self.output_size),
+                'y_std': 1.5 * jnp.ones(self.output_size)}
+
+
 class PendulumSim(FunctionSimulator):
     def __init__(self, h: float = 0.01, upper_bound: Optional[PendulumParams] = None,
                  lower_bound: Optional[PendulumParams] = None):
@@ -219,8 +248,8 @@ if __name__ == '__main__':
 
     key = jax.random.PRNGKey(984)
     # sim = GaussianProcessSim(input_size=1, output_scale=3.0, mean_fn=lambda x: 2 * x)
-    sim = QuadraticSim()
-    x_plot = jnp.linspace(0, 4, 200).reshape((-1, 1))
+    sim = LinearSim()
+    x_plot = jnp.linspace(sim.domain.l, sim.domain.u, 200).reshape((-1, 1))
 
     y_samples = sim.sample_function_vals(x_plot, 10, key)
     for y in y_samples:
