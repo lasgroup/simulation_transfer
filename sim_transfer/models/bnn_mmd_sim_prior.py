@@ -73,22 +73,21 @@ class BNN_MMD_SimPrior(AbstractParticleBNN, MeasurementSetMixin):
         x_stacked = jnp.concatenate([x_batch, x_measurement], axis=0)
 
         # posterior samples
-        f_raw = self.batched_model.forward_vec(x_stacked, params['nn_params_stacked'])
+        f_nn = self.batched_model.forward_vec(x_stacked, params['nn_params_stacked'])
 
         # get likelihood std
         likelihood_std = self._likelihood_std_transform(params['likelihood_std_raw']) if self.learn_likelihood_std \
             else self.likelihood_std
 
         # negative log-likelihood
-        nll = - self._ll(f_raw, likelihood_std, y_batch, train_batch_size)
+        nll = - self._ll(f_nn, likelihood_std, y_batch, train_batch_size)
 
         # estimate mmd between posterior and prior
-        f_sim_samples = self._fsim_samples(x_measurement, key=key2)
-        f_nn_m = f_raw[:, train_batch_size:]
+        f_sim_samples = self._fsim_samples(x_stacked, key=key2)
         if self.independent_output_dims:
-            mmd = jnp.sum(self._mmd_fn_vmap(f_nn_m, f_sim_samples))
+            mmd = jnp.sum(self._mmd_fn_vmap(f_nn, f_sim_samples))
         else:
-            mmd = jnp.sum(self._mmd_fn(f_nn_m.reshape(f_nn_m.shape[0], -1),
+            mmd = jnp.sum(self._mmd_fn(f_nn.reshape(f_nn.shape[0], -1),
                                        f_sim_samples.reshape(f_sim_samples.shape[0], -1)))
 
         loss = nll + mmd / num_train_points
@@ -106,9 +105,9 @@ class BNN_MMD_SimPrior(AbstractParticleBNN, MeasurementSetMixin):
 
 
 if __name__ == '__main__':
-    from sim_transfer.sims import GaussianProcessSim, SinusoidsSim, QuadraticSim
+    from sim_transfer.sims import GaussianProcessSim, SinusoidsSim, QuadraticSim, LinearSim
     def key_iter():
-        key = jax.random.PRNGKey(45656)
+        key = jax.random.PRNGKey(7644)
         while True:
             key, new_key = jax.random.split(key)
             yield new_key
@@ -116,11 +115,14 @@ if __name__ == '__main__':
     key_iter = key_iter()
     NUM_DIM_X = 1
     NUM_DIM_Y = 1
-    SIM_TYPE = 'QuadraticSim'
+    SIM_TYPE = 'LinearSim'
 
     if SIM_TYPE == 'QuadraticSim':
         sim = QuadraticSim()
         fun = lambda x: (x-2)**2
+    elif SIM_TYPE == 'LinearSim':
+        sim = LinearSim()
+        fun = lambda x: x
     elif SIM_TYPE == 'SinusoidsSim':
         sim = SinusoidsSim(output_size=NUM_DIM_Y)
 
@@ -137,7 +139,7 @@ if __name__ == '__main__':
     domain = sim.domain
     x_measurement = jnp.linspace(domain.l[0], domain.u[0], 50).reshape(-1, 1)
 
-    num_train_points = 10
+    num_train_points = 3
 
     x_train = jax.random.uniform(key=next(key_iter), shape=(num_train_points,),
                                  minval=domain.l, maxval=domain.u).reshape(-1, 1)
@@ -146,14 +148,12 @@ if __name__ == '__main__':
     x_test = jnp.linspace(domain.l, domain.u, 100).reshape(-1, 1)
     y_test = fun(x_test)
 
-    # bnn = BNN_MMD_SimPrior(input_size=NUM_DIM_X, output_size=NUM_DIM_Y, domain=domain, rng_key=next(key_iter),
-    #                        function_sim=sim, num_particles=20,
-    #                        normalize_data=True, normalization_stats=sim.normalization_stats,
-    #                        num_measurement_points=32, weight_decay=0.1, num_f_samples=128,
-    #                        independent_output_dims=True,
-    #                        likelihood_std=0.05)
-    from sim_transfer.models import BNN_SVGD
-    bnn = BNN_SVGD(input_size=NUM_DIM_X, output_size=NUM_DIM_Y, rng_key=next(key_iter), likelihood_std=0.05)
+    bnn = BNN_MMD_SimPrior(input_size=NUM_DIM_X, output_size=NUM_DIM_Y, domain=domain, rng_key=next(key_iter),
+                           function_sim=sim, num_particles=20,
+                           normalize_data=True, normalization_stats=sim.normalization_stats,
+                           num_measurement_points=16, weight_decay=0.1, num_f_samples=256,
+                           independent_output_dims=True,
+                           likelihood_std=0.05)
 
     bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=1)
     bnn.plot_1d(x_train, y_train, true_fun=fun, title=f'iter 1', domain_l=domain.l[0], domain_u=domain.u[0])
