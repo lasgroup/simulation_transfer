@@ -8,6 +8,7 @@ from sim_transfer.models.bnn import AbstractFSVGD_BNN
 from sim_transfer.score_estimation import SSGE
 from sim_transfer.sims import FunctionSimulator, Domain
 from tensorflow_probability.substrates import jax as tfp
+from tensorflow_probability.substrates.jax.math.psd_kernels.internal.util import pairwise_square_distance_matrix
 import tensorflow_probability.substrates.jax.distributions as tfd
 
 
@@ -27,6 +28,7 @@ class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
                  learn_likelihood_std: bool = False,
                  score_estimator: str = 'SSGE',
                  bandwidth_ssge: float = 1.,
+                 bandwidth_kde: Optional[float] = None,  # if None, use Scott's rule of thumb for choosing the bandwidth
                  bandwidth_svgd: float = 0.2,
                  data_batch_size: int = 8,
                  num_train_steps: int = 10000,
@@ -61,9 +63,14 @@ class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
             # create estimate gradient function over the output dims
             if self.independent_output_dims:
                 self.estimate_gradients_s_x_vectorized = jax.vmap(lambda y, f: self.ssge.estimate_gradients_s_x(y, f),
-                                                                  in_axes=-1,out_axes=-1)
+                                                                  in_axes=-1, out_axes=-1)
         elif score_estimator in ['GP', 'gp']:
             pass
+        elif score_estimator in ['KDE', 'kde']:
+            self.bandwidth_kde = bandwidth_kde
+            if self.independent_output_dims:
+                self._squared_dist_vmap = jax.vmap(lambda x, y: pairwise_square_distance_matrix(x, y, 1),
+                                                   in_axes=-1, out_axes=-1)
         else:
             raise ValueError(f'Unknown score_estimator {score_estimator}. Must be either SSGE or GP')
 
@@ -76,6 +83,9 @@ class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
             neg_log_post = nll - jnp.sum(jnp.mean(pred_raw * jax.lax.stop_gradient(prior_score), axis=-2))
         elif self.score_estimator in ['GP', 'gp']:
             prior_logprob = self._prior_log_prob_gp_approx(pred_raw, x_stacked, key)
+            neg_log_post = nll - prior_logprob / num_train_points
+        elif self.score_estimator in ['KDE', 'kde']:
+            prior_logprob = self._prior_log_prob_kde_approx(pred_raw, x_stacked, key)
             neg_log_post = nll - prior_logprob / num_train_points
         else:
             raise NotImplementedError
@@ -124,6 +134,25 @@ class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
             prior_logprob = jnp.sum(prior_gp_approx.log_prob(pred_raw.reshape(pred_raw.shape[0], -1)), axis=0)
         return prior_logprob
 
+    def _prior_log_prob_kde_approx(self, pred_raw: jnp.ndarray, x: jnp.ndarray, key: jax.random.PRNGKey) -> jnp.ndarray:
+        """
+        Uses kernel density estimation (KDE) with Gaussian / RBF kernels to approximate the prior score
+        """
+        f_samples = self._fsim_samples(x, key)
+        n, d = f_samples.shape[0], f_samples.shape[1]
+        if self.bandwidth_kde == None:
+            bandwidth = n ** (-1. / (d + 4))  # Scott's rule of thumb
+        else:
+            bandwidth = self.bandwidth_kde
+        if self.independent_output_dims:
+            dists = self._squared_dist_vmap(pred_raw, f_samples) / (2 * bandwidth ** 2)
+        else:
+            dists = pairwise_square_distance_matrix(pred_raw.reshape((pred_raw.shape[0], -1)),
+                                                    f_samples.reshape((f_samples.shape[0], -1)), 1)
+        prior_logprob = jnp.sum(jax.scipy.special.logsumexp(-dists, axis=1) - jnp.log(n * bandwidth)
+                                - 0.5 * jnp.log(2 * jnp.pi))
+        return prior_logprob
+
     def _fsim_samples(self, x: jnp.array, key: jax.random.PRNGKey) -> jnp.ndarray:
         x_unnormalized = self._unnormalize_data(x)
         f_prior = self.function_sim.sample_function_vals(x=x_unnormalized, num_samples=self.num_f_samples, rng_key=key)
@@ -140,7 +169,6 @@ if __name__ == '__main__':
         while True:
             key, new_key = jax.random.split(key)
             yield new_key
-
 
     key_iter = key_iter()
     NUM_DIM_X = 1
@@ -184,7 +212,7 @@ if __name__ == '__main__':
                              normalization_stats=sim.normalization_stats,
                              score_estimator='gp')
     for i in range(10):
-        bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=1000)
+        bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=2000)
         if NUM_DIM_X == 1:
-            bnn.plot_1d(x_train, y_train, true_fun=fun, title=f'iter {(i + 1) * 1000}',
+            bnn.plot_1d(x_train, y_train, true_fun=fun, title=f'iter {(i + 1) * 2000}',
                         domain_l=domain.l[0], domain_u=domain.u[0])
