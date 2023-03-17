@@ -6,9 +6,10 @@ import unittest
 import numpy as np
 
 
-from sim_transfer.score_estimation import SSGE
+from sim_transfer.score_estimation.ssge import SSGE
+from sim_transfer.score_estimation.kde import KDE
 from sim_transfer.score_estimation.abstract import AbstractScoreEstimator
-
+from sim_transfer.modules.metrics import avg_cosine_distance
 
 dist = tfp.distributions.Normal(loc=jnp.array([0.]), scale=jnp.array([1.0]))
 dist = tfp.distributions.Independent(dist, reinterpreted_batch_ndims=1)
@@ -101,6 +102,38 @@ class TestSSGE(unittest.TestCase):
         score, logp = jax.grad(self.logprob, has_aux=True)(self.x_samples[:-3])
         cos_dist = np.mean([spatial.distance.cosine(s1, s2) for s1, s2 in zip(score, score_estimate)])
         assert cos_dist < 0.05, f'cos-dist = {cos_dist}'
+
+
+class TestKDE(unittest.TestCase):
+
+    def setUp(self) -> None:
+        key = jax.random.PRNGKey(9234)
+        key1, key2 = jax.random.split(key)
+        self.loc = jnp.array([0.0, 0.0])
+        self.scale_diag = jnp.array([2.0, 2.0])
+        self.dist = tfp.distributions.MultivariateNormalDiag(loc=self.loc, scale_diag=self.scale_diag)
+        self.x_samples = self.dist.sample(1000, seed=key1)
+        self.x1, self.x2 = jnp.meshgrid(jnp.linspace(-4, 4, 10), jnp.linspace(-4, 4, 10))
+        self.x_query = jnp.stack([self.x1.flatten(), self.x2.flatten()], axis=-1)
+        self.logprob = lambda x: (self.dist.log_prob(x).sum(), self.dist.log_prob(x))
+
+    def test_score_estimation_x_s(self):
+        kde = KDE()
+        score_estimate = kde.estimate_gradients_s_x(self.x_query, self.x_samples)
+        score, logp = jax.grad(self.logprob, has_aux=True)(self.x_query)
+        cos_dist = avg_cosine_distance(score, score_estimate)
+        assert cos_dist < 0.1, f'cos-dist = {cos_dist}'
+
+    def test_kde_integates_to_1(self):
+        dist = tfp.distributions.MultivariateNormalDiag(loc=[-2.], scale_diag=[0.5])
+        samples = dist.sample(seed=jax.random.PRNGKey(24234), sample_shape=10)
+        kde = KDE()
+        query = jnp.linspace(-7, 5, num=200)[:, None]
+        ps = jnp.exp(kde.density_estimates_log_prob(query, samples))
+        integral = jnp.trapz(x=query.squeeze(-1), y=ps)
+        assert (abs(integral) - 1) < 0.01
+
+
 
 
 if __name__ == '__main__':
