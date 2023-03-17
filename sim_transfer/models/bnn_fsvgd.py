@@ -66,42 +66,58 @@ class BNN_FSVGD(AbstractFSVGD_BNN):
 
 
 if __name__ == '__main__':
+    from sim_transfer.sims import SinusoidsSim, QuadraticSim, LinearSim
+
     def key_iter():
-        key = jax.random.PRNGKey(3453)
+        key = jax.random.PRNGKey(7644)
         while True:
             key, new_key = jax.random.split(key)
             yield new_key
 
-
     key_iter = key_iter()
-
     NUM_DIM_X = 1
-    NUM_DIM_Y = 1
-    num_train_points = 5
+    NUM_DIM_Y = 2
+    SIM_TYPE = 'SinusoidsSim'
 
-    if NUM_DIM_X == 1 and NUM_DIM_Y == 1:
-        fun = lambda x: (2 * x + 2 * jnp.sin(2 * x)).reshape(-1, 1)
-    elif NUM_DIM_X == 2 and NUM_DIM_Y == 1:
-        fun = lambda x: (2 * x[..., 0] - x[..., 1] + 2 * jnp.sin(2 * x[..., 0]) * jnp.cos(x[..., 1])).reshape(-1, 1)
-    elif NUM_DIM_X == 1 and NUM_DIM_Y == 2:
-        fun = lambda x: jnp.concatenate([(2 * x + 2 * jnp.sin(2 * x)).reshape(-1, 1),
-                                         (- x + 3 * jnp.cos(x)).reshape(-1, 1)], axis=-1)
+    if SIM_TYPE == 'QuadraticSim':
+        sim = QuadraticSim()
+        fun = lambda x: (x - 2) ** 2
+    elif SIM_TYPE == 'LinearSim':
+        sim = LinearSim()
+        fun = lambda x: x
+    elif SIM_TYPE == 'SinusoidsSim':
+        sim = SinusoidsSim(output_size=NUM_DIM_Y)
 
-    domain = HypercubeDomain(lower=jnp.array([-7.] * NUM_DIM_X), upper=jnp.array([7.] * NUM_DIM_X))
+        if NUM_DIM_X == 1 and NUM_DIM_Y == 1:
+            fun = lambda x: (2 * x + 2 * jnp.sin(2 * x)).reshape(-1, 1)
+        elif NUM_DIM_X == 1 and NUM_DIM_Y == 2:
+            fun = lambda x: jnp.concatenate([(2 * x + 2 * jnp.sin(2 * x)).reshape(-1, 1),
+                                             (- 2 * x + 2 * jnp.cos(1.5 * x)).reshape(-1, 1)], axis=-1)
+        else:
+            raise NotImplementedError
+    else:
+        raise NotImplementedError
 
-    x_train = jax.random.uniform(next(key_iter), shape=(num_train_points, NUM_DIM_X), minval=-5, maxval=5)
-    y_train = fun(x_train) + 0.1 * jax.random.normal(next(key_iter), shape=(x_train.shape[0], NUM_DIM_Y))
+    domain = sim.domain
+    x_measurement = jnp.linspace(domain.l[0], domain.u[0], 50).reshape(-1, 1)
 
-    num_test_points = 1000
-    x_test = jax.random.uniform(next(key_iter), shape=(num_test_points, NUM_DIM_X), minval=-5, maxval=5)
-    y_test = fun(x_test) + 0.1 * jax.random.normal(next(key_iter), shape=(x_test.shape[0], NUM_DIM_Y))
+    num_train_points = 3
+
+    x_train = jax.random.uniform(key=next(key_iter), shape=(num_train_points,),
+                                 minval=domain.l, maxval=domain.u).reshape(-1, 1)
+    y_train = fun(x_train)
+
+    x_test = jnp.linspace(domain.l, domain.u, 100).reshape(-1, 1)
+    y_test = fun(x_test)
 
     bnn = BNN_FSVGD(NUM_DIM_X, NUM_DIM_Y, domain=domain, rng_key=next(key_iter), num_train_steps=20000,
-                    data_batch_size=10, num_measurement_points=20, normalize_data=True, bandwidth_svgd=0.2,
+                    data_batch_size=10, num_measurement_points=16, normalize_data=True, bandwidth_svgd=1.0,
                     likelihood_std=0.2, learn_likelihood_std=False,
                     bandwidth_gp_prior=0.2, hidden_layer_sizes=[64, 64, 64],
+                    normalization_stats=sim.normalization_stats,
                     hidden_activation=jax.nn.tanh)
     for i in range(10):
         bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=2000)
         if NUM_DIM_X == 1:
-            bnn.plot_1d(x_train, y_train, true_fun=fun, title=f'iter {(i + 1) * 2000}')
+            bnn.plot_1d(x_train, y_train, true_fun=fun, title=f'iter {(i + 1) * 2000}',
+                        domain_l=domain.l[0], domain_u=domain.u[0])

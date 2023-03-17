@@ -151,7 +151,7 @@ if __name__ == '__main__':
     bnn = BNN_MMD_SimPrior(input_size=NUM_DIM_X, output_size=NUM_DIM_Y, domain=domain, rng_key=next(key_iter),
                            function_sim=sim, num_particles=20,
                            normalize_data=True, normalization_stats=sim.normalization_stats,
-                           num_measurement_points=16, weight_decay=0.1, num_f_samples=256,
+                           num_measurement_points=16, weight_decay=0.0, num_f_samples=256,
                            independent_output_dims=True,
                            likelihood_std=0.05)
 
@@ -159,5 +159,5 @@ if __name__ == '__main__':
     bnn.plot_1d(x_train, y_train, true_fun=fun, title=f'iter 1', domain_l=domain.l[0], domain_u=domain.u[0])
     for i in range(10):
         bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=5000)
-        bnn.plot_1d(x_train, y_train, true_fun=fun, title=f'iter {i * 5000}',
+        bnn.plot_1d(x_train, y_train, true_fun=fun, title=f'FSVGD + MMD, iter {i * 5000}',
                     domain_l=domain.l[0], domain_u=domain.u[0])

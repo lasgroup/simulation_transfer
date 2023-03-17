@@ -163,7 +163,6 @@ class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
 if __name__ == '__main__':
     from sim_transfer.sims import SinusoidsSim, QuadraticSim, LinearSim
 
-
     def key_iter():
         key = jax.random.PRNGKey(7644)
         while True:
@@ -198,6 +197,7 @@ if __name__ == '__main__':
     x_measurement = jnp.linspace(domain.l[0], domain.u[0], 50).reshape(-1, 1)
 
     num_train_points = 3
+    score_estimator = 'ssge'
 
     x_train = jax.random.uniform(key=next(key_iter), shape=(num_train_points,),
                                  minval=domain.l, maxval=domain.u).reshape(-1, 1)
@@ -208,11 +208,12 @@ if __name__ == '__main__':
 
     bnn = BNN_FSVGD_SimPrior(NUM_DIM_X, NUM_DIM_Y, domain=domain, rng_key=next(key_iter), function_sim=sim,
                              hidden_layer_sizes=[64, 64, 64], num_train_steps=20000, data_batch_size=4,
-                             learn_likelihood_std=False, num_f_samples=128, bandwidth_svgd=1.0, bandwidth_ssge=1.0,
-                             normalization_stats=sim.normalization_stats,
-                             score_estimator='gp')
+                             num_particles=20, num_f_samples=512, num_measurement_points=8,
+                             bandwidth_svgd=0.2, bandwidth_ssge=0.01,
+                             normalization_stats=sim.normalization_stats, likelihood_std=0.05,
+                             score_estimator=score_estimator)
     for i in range(10):
         bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=2000)
         if NUM_DIM_X == 1:
-            bnn.plot_1d(x_train, y_train, true_fun=fun, title=f'iter {(i + 1) * 2000}',
+            bnn.plot_1d(x_train, y_train, true_fun=fun, title=f'FSVGD SimPrior {score_estimator}, iter {(i + 1) * 2000}',
                         domain_l=domain.l[0], domain_u=domain.u[0])

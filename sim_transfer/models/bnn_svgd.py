@@ -52,6 +52,9 @@ class BNN_SVGD(AbstractSVGD_BNN):
 
 
 if __name__ == '__main__':
+    from sim_transfer.sims import SinusoidsSim, QuadraticSim, LinearSim
+
+
     def key_iter():
         key = jax.random.PRNGKey(7644)
         while True:
@@ -60,20 +63,44 @@ if __name__ == '__main__':
 
 
     key_iter = key_iter()
+    NUM_DIM_X = 1
+    NUM_DIM_Y = 2
+    SIM_TYPE = 'SinusoidsSim'
 
-    fun = lambda x: 2 * x + 2 * jnp.sin(2 * x)
+    if SIM_TYPE == 'QuadraticSim':
+        sim = QuadraticSim()
+        fun = lambda x: (x - 2) ** 2
+    elif SIM_TYPE == 'LinearSim':
+        sim = LinearSim()
+        fun = lambda x: x
+    elif SIM_TYPE == 'SinusoidsSim':
+        sim = SinusoidsSim(output_size=NUM_DIM_Y)
 
-    num_train_points = 10
-    x_train = jax.random.uniform(next(key_iter), shape=(num_train_points, 1), minval=-5, maxval=5)
-    y_train = fun(x_train) + 0.1 * jax.random.normal(next(key_iter), shape=x_train.shape)
+        if NUM_DIM_X == 1 and NUM_DIM_Y == 1:
+            fun = lambda x: (2 * x + 2 * jnp.sin(2 * x)).reshape(-1, 1)
+        elif NUM_DIM_X == 1 and NUM_DIM_Y == 2:
+            fun = lambda x: jnp.concatenate([(2 * x + 2 * jnp.sin(2 * x)).reshape(-1, 1),
+                                             (- 2 * x + 2 * jnp.cos(1.5 * x)).reshape(-1, 1)], axis=-1)
+        else:
+            raise NotImplementedError
+    else:
+        raise NotImplementedError
 
-    num_test_points = 100
-    x_test = jax.random.uniform(next(key_iter), shape=(num_test_points, 1), minval=-5, maxval=5)
-    y_test = fun(x_test) + 0.1 * jax.random.normal(next(key_iter), shape=x_test.shape)
+    domain = sim.domain
+    x_measurement = jnp.linspace(domain.l[0], domain.u[0], 50).reshape(-1, 1)
 
-    bnn = BNN_SVGD(1, 1, next(key_iter), num_train_steps=20000, bandwidth_svgd=0.2, data_batch_size=50, use_prior=True,
-                   learn_likelihood_std=True, likelihood_std=0.1)
+    num_train_points = 3
+
+    x_train = jax.random.uniform(key=next(key_iter), shape=(num_train_points,),
+                                 minval=domain.l, maxval=domain.u).reshape(-1, 1)
+    y_train = fun(x_train)
+
+    x_test = jnp.linspace(domain.l, domain.u, 100).reshape(-1, 1)
+    y_test = fun(x_test)
+
+    bnn = BNN_SVGD(NUM_DIM_X, NUM_DIM_Y, next(key_iter), num_train_steps=20000, bandwidth_svgd=10., likelihood_std=0.05)
     # bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=20000)
     for i in range(10):
         bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=2000)
-        bnn.plot_1d(x_train, y_train, true_fun=fun, title=f'iter {(i + 1) * 2000}')
+        bnn.plot_1d(x_train, y_train, true_fun=fun, title=f'SVGD, iter {(i + 1) * 2000}',
+                    domain_l=domain.l[0], domain_u=domain.u[0])
