@@ -2,9 +2,6 @@ from typing import Union, Callable
 
 import jax.numpy as jnp
 from jax import jit
-from ott.geometry import pointcloud
-from ott.problems.linear import linear_problem
-from ott.solvers.linear import sinkhorn
 from tensorflow_probability.substrates import jax as tfp
 
 """ Statistical distance measures """
@@ -31,6 +28,9 @@ def mmd2(x: jnp.ndarray, y: jnp.ndarray,
 
 @jit
 def wasserstein_distance(x, y):
+    from ott.geometry import pointcloud
+    from ott.problems.linear import linear_problem
+    from ott.solvers.linear import sinkhorn
     assert x.ndim == y.ndim == 2, '1st dimension is batch, 2nd dimension is space dimension'
     assert x.shape[-1] == y.shape[-1], 'x and y must have the same dimensionality'
     geom = pointcloud.PointCloud(x, y)
