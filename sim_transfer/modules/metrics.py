@@ -41,6 +41,16 @@ def wasserstein_distance(x, y):
     return ot.reg_ot_cost
 
 
+""" Cosine similarity and distance """
+
+def avg_cosine_similariy(x: jnp.array, y: jnp.array) -> Union[float, jnp.array]:
+    assert x.ndim == y.ndim == 2 and x.shape == y.shape
+    return jnp.mean(jnp.sum(x * y, axis=-1) /
+                    (jnp.linalg.norm(x, axis=-1) * jnp.linalg.norm(y, axis=-1)))
+
+def avg_cosine_distance(x: jnp.array, y: jnp.array) -> Union[float, jnp.array]:
+    return 1 - avg_cosine_similariy(x, y)
+
 
 """ Calibration metrics """
 
