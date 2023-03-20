@@ -2,7 +2,7 @@ import unittest
 import jax
 import jax.numpy as jnp
 
-from sim_transfer.sims.domain import HypercubeDomain
+from sim_transfer.sims.domain import HypercubeDomain, HypercubeDomainWithAngles
 
 class TestHypercubeDomain(unittest.TestCase):
 
@@ -24,10 +24,10 @@ class TestHypercubeDomain(unittest.TestCase):
     def test_boundaries_full_support_mode(self):
         key = jax.random.PRNGKey(790234)
         samples = self.domain1d.sample_uniformly(key, sample_shape=1000, support_mode='full')
-        assert jnp.all((self.domain1d.lower < samples) & (samples < self.domain1d.upper))
+        assert jnp.all((self.domain1d._lower < samples) & (samples < self.domain1d._upper))
 
         samples = self.domain2d.sample_uniformly(key, sample_shape=1000, support_mode='full')
-        assert jnp.all((self.domain2d.lower < samples) & (samples < self.domain2d.upper))
+        assert jnp.all((self.domain2d._lower < samples) & (samples < self.domain2d._upper))
 
     def test_boundaries_partial_support_mode(self):
         key = jax.random.PRNGKey(3456)
@@ -42,9 +42,27 @@ class TestHypercubeDomain(unittest.TestCase):
         assert jnp.all(jnp.linalg.norm((samples - self.mid2d) / self.scale2d, ord=jnp.inf, axis=-1) > 0.05)
 
 
+class TestHypercubeDomainWithAngles(unittest.TestCase):
 
+    def test_correct_shapes1(self):
+        domain = HypercubeDomainWithAngles(angle_indices=0,
+                                           lower=jnp.array([- jnp.pi, 10.]), upper=jnp.array([jnp.pi, 15.]))
+        key = jax.random.PRNGKey(23454)
+        samples = domain.sample_uniformly(key, sample_shape=5)
+        assert samples.shape == (5, 3)
 
+    def test_correct_shapes2(self):
+        domain = HypercubeDomainWithAngles(angle_indices=[0, 2], lower=jnp.array([- jnp.pi, -5., - jnp.pi]),
+                                            upper=jnp.array([jnp.pi, 5., jnp.pi]))
+        key = jax.random.PRNGKey(23454)
+        samples = domain.sample_uniformly(key, sample_shape=(5, 6))
+        assert samples.shape == (5, 6, 5)
 
+    def test_bounds(self):
+        domain = HypercubeDomainWithAngles(angle_indices=[0, 2], lower=jnp.array([- jnp.pi, -5., - jnp.pi]),
+                                            upper=jnp.array([jnp.pi, 5., jnp.pi]))
+        assert jnp.array_equal(domain.l, jnp.array([-1., -1., -5, -1., -1.]))
+        assert jnp.array_equal(domain.u, jnp.array([1., 1., 5, 1., 1.]))
 
 
 if __name__ == '__main__':
