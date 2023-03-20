@@ -1,19 +1,21 @@
 from abc import ABC, abstractmethod
-from typing import NamedTuple, Union, Optional
+from typing import NamedTuple, Union, Optional, Tuple
 
 import jax
 import jax.numpy as jnp
+import os
 import jax.tree_util as jtu
+import numpy as np
 from jax import random, vmap
 from jaxtyping import PyTree
 
 
 class PendulumParams(NamedTuple):
-    m: jax.Array = jnp.array(0.15)
-    l: jax.Array = jnp.array(0.5)
+    m: jax.Array = jnp.array(1.0)
+    l: jax.Array = jnp.array(1.0)
     g: jax.Array = jnp.array(9.81)
-    nu: jax.Array = jnp.array(0.1)
-    c_d: jax.Array = jnp.array(0.1)
+    nu: jax.Array = jnp.array(0.0)
+    c_d: jax.Array = jnp.array(0.0)
 
 
 class CarParams(NamedTuple):
@@ -59,20 +61,28 @@ class CarParams(NamedTuple):
 
 class DynamicsModel(ABC):
     def __init__(self,
-                 h: float,
+                 dt: float,
                  x_dim: int,
                  u_dim: int,
-                 params_example: PyTree,
-                 angle_idx: Optional[Union[int, jax.Array]] = None
+                 params: PyTree,
+                 angle_idx: Optional[Union[int, jax.Array]] = None,
+                 dt_integration: float = 0.01,
                  ):
-        self.dt = h
+        self.dt = dt
         self.x_dim = x_dim
         self.u_dim = u_dim
-        self.params_example = params_example
+        self.params = params
         self.angle_idx = angle_idx
 
+        self.dt_integration = dt_integration
+        assert dt >= dt_integration
+        assert (dt / dt_integration - int(dt / dt_integration)) < 1e-4, 'dt must be multiple of dt_integration'
+        self._num_steps_integrate = int(dt / dt_integration)
+
     def next_step(self, x: jax.Array, u: jax.Array, params: PyTree) -> jax.Array:
-        next_state = x + self.dt * self.ode(x, u, params)
+        for _ in range(self._num_steps_integrate):
+            x = x + self.dt_integration * self.ode(x, u, params)
+        next_state = x
         if self.angle_idx is not None:
             theta = next_state[self.angle_idx]
             sin_theta, cos_theta = jnp.sin(theta), jnp.cos(theta)
@@ -80,47 +90,191 @@ class DynamicsModel(ABC):
         return next_state
 
     def ode(self, x: jax.Array, u: jax.Array, params) -> jax.Array:
-        assert x.shape == (self.x_dim,) and u.shape == (self.u_dim,)
+        assert x.shape[-1] == self.x_dim and u.shape[-1] == self.u_dim
         return self._ode(x, u, params)
 
     @abstractmethod
     def _ode(self, x: jax.Array, u: jax.Array, params) -> jax.Array:
         pass
 
-    def random_split_like_tree(self, key):
-        treedef = jtu.tree_structure(self.params_example)
+    def _split_key_like_tree(self, key: jax.random.PRNGKey):
+        treedef = jtu.tree_structure(self.params)
         keys = jax.random.split(key, treedef.num_leaves)
         return jtu.tree_unflatten(treedef, keys)
 
-    def sample_params(self, key, upper_bound, lower_bound):
-        keys = self.random_split_like_tree(key)
-        return jtu.tree_map(
-            lambda key, l_bound, u_bound: jax.random.uniform(key, shape=l_bound.shape, minval=l_bound,
-                                                             maxval=u_bound), keys, lower_bound, upper_bound)
+    def sample_params(self, key: jax.random.PRNGKey, sample_shape: Union[int, Tuple[int]],
+                      upper_bound: NamedTuple, lower_bound: NamedTuple):
+        keys = self._split_key_like_tree(key)
+        if isinstance(sample_shape, int):
+            sample_shape = (sample_shape,)
+        return jtu.tree_map(lambda key, l, u: jax.random.uniform(key, shape=sample_shape + l.shape, minval=l, maxval=u),
+                            keys, lower_bound, upper_bound)
 
 
 class Pendulum(DynamicsModel):
-    def __init__(self, h):
-        super().__init__(h=h, x_dim=2, u_dim=1, params_example=PendulumParams(), angle_idx=0)
+    _metadata = {
+        "render_modes": ["human", "rgb_array"],
+        "render_fps": 30,
+    }
+
+    def __init__(self, dt: float, params: PendulumParams = PendulumParams(), dt_integration: float = 0.005,
+                 encode_angle: bool = True):
+        super().__init__(dt=dt, x_dim=2, u_dim=1, params=params, angle_idx=0, dt_integration=dt_integration)
+        self.encode_angle = encode_angle
+
+        # attributes for rendering
+        self.render_mode = 'human'
+        self.screen_dim = 500
+        self.screen = None
+        self.clock = None
+        self.isopen = True
+
+        self.state = None
+        self.last_u = None
 
     def _ode(self, x, u, params: PendulumParams):
         # x represents [theta in rad/s, theta_dot in rad/s^2]
         # u represents [torque]
 
-        x0_dot = x[1]
+        x0_dot = x[..., 1]
         # We add drag force: https://www.scirp.org/journal/paperinformation.aspx?paperid=73856
-        f_drag_linear = - params.nu * x[1] / (params.m * params.l)
-        f_drag_second_order = - params.c_d / params.m * (x[1]) ** 2
+        f_drag_linear = - params.nu * x[..., 1] / (params.m * params.l)
+        f_drag_second_order = - params.c_d / params.m * (x[..., 1]) ** 2
         f_drag = f_drag_linear + f_drag_second_order
-        x1_dot = params.g / params.l * jnp.sin(x[0]) + + u[0] \
-                 / (params.m * params.l ** 2) + f_drag
-        return jnp.array([x0_dot, x1_dot])
+        x1_dot = params.g / params.l * jnp.sin(x[..., 0]) + u[..., 0] / (params.m * params.l ** 2) + f_drag
+        return jnp.stack([x0_dot, x1_dot], axis=-1)
+
+    def next_step(self, x: jax.Array, u: jax.Array, params: PyTree, encode_angle: Optional[bool] = None) -> jax.Array:
+        if encode_angle is None:
+            encode_angle = self.encode_angle
+        if encode_angle:
+            assert x.shape[-1] == 3
+            theta = jnp.arctan2(x[..., 0], x[..., 1])
+            x_radian = jnp.stack([theta, x[..., -1]], axis=-1)
+            theta_new, theta_dot_new = jnp.split(super().next_step(x_radian, u, params), 2, axis=-1)
+            next_state = jnp.concatenate([jnp.sin(theta_new), jnp.cos(theta_new), theta_dot_new], axis=-1)
+            assert next_state.shape == x.shape
+            return next_state
+        else:
+            return super().next_step(x, u, params)
+
+    def reset(self, key: jax.random.PRNGKey = jax.random.PRNGKey(34565)):
+        theta_diff = jax.random.uniform(key, shape=(), minval=-0.1, maxval=0.1)
+        theta = np.pi + theta_diff
+        theta = jnp.arctan2(jnp.sin(theta), jnp.cos(theta))
+        self.state = jnp.array([theta, 0.0])
+        if self.encode_angle:
+            return jnp.array([jnp.sin(theta), jnp.cos(theta), 0.0])
+        else:
+            return self.state
+
+    def step(self, u: Union[jnp.array, float]):
+        self.last_u = u
+        self.state = self.next_step(self.state, u, self.params, encode_angle=False)
+        if self.encode_angle:
+            theta, theta_dot = self.state[..., 0], self.state[..., 1]
+            return jnp.stack([jnp.sin(theta), jnp.cos(theta),theta_dot], axis=-1)
+        else:
+            return self.state
+
+    def render(self):
+        try:
+            import pygame
+            from pygame import gfxdraw
+        except ImportError:
+            raise RuntimeError("pygame is not installed, run `pip install pygame`")
+
+        if self.screen is None:
+            pygame.init()
+            if self.render_mode == "human":
+                pygame.display.init()
+                self.screen = pygame.display.set_mode(
+                    (self.screen_dim, self.screen_dim)
+                )
+            else:  # mode in "rgb_array"
+                self.screen = pygame.Surface((self.screen_dim, self.screen_dim))
+        if self.clock is None:
+            self.clock = pygame.time.Clock()
+
+        self.surf = pygame.Surface((self.screen_dim, self.screen_dim))
+        self.surf.fill((255, 255, 255))
+
+        bound = 2.2
+        scale = self.screen_dim / (bound * 2)
+        offset = self.screen_dim // 2
+
+        rod_length = 1 * scale
+        rod_width = 0.2 * scale
+        l, r, t, b = 0, rod_length, rod_width / 2, -rod_width / 2
+        coords = [(l, b), (l, t), (r, t), (r, b)]
+        transformed_coords = []
+        for c in coords:
+            c = pygame.math.Vector2(c).rotate_rad(self.state[0] + jnp.pi / 2)
+            c = (c[0] + offset, c[1] + offset)
+            transformed_coords.append(c)
+        gfxdraw.aapolygon(self.surf, transformed_coords, (204, 77, 77))
+        gfxdraw.filled_polygon(self.surf, transformed_coords, (204, 77, 77))
+
+        gfxdraw.aacircle(self.surf, offset, offset, int(rod_width / 2), (204, 77, 77))
+        gfxdraw.filled_circle(self.surf, offset, offset, int(rod_width / 2), (204, 77, 77))
+
+        rod_end = (rod_length, 0)
+        rod_end = pygame.math.Vector2(rod_end).rotate_rad(self.state[0] + jnp.pi / 2)
+        rod_end = (int(rod_end[0] + offset), int(rod_end[1] + offset))
+        gfxdraw.aacircle(
+            self.surf, rod_end[0], rod_end[1], int(rod_width / 2), (204, 77, 77)
+        )
+        gfxdraw.filled_circle(
+            self.surf, rod_end[0], rod_end[1], int(rod_width / 2), (204, 77, 77)
+        )
+
+        from gym.envs.classic_control import pendulum
+        fname = os.path.join(os.path.dirname(pendulum.__file__), "assets/clockwise.png")
+        img = pygame.image.load(fname)
+        if self.last_u is not None:
+            scale_img = pygame.transform.smoothscale(
+                img,
+                (scale * abs(float(self.last_u)) / 2, scale * float(abs(self.last_u)) / 2),
+            )
+            is_flip = bool(self.last_u > 0)
+            scale_img = pygame.transform.flip(scale_img, is_flip, True)
+            self.surf.blit(
+                scale_img,
+                (
+                    offset - scale_img.get_rect().centerx,
+                    offset - scale_img.get_rect().centery,
+                ),
+            )
+
+        # drawing axle
+        gfxdraw.aacircle(self.surf, offset, offset, int(0.05 * scale), (0, 0, 0))
+        gfxdraw.filled_circle(self.surf, offset, offset, int(0.05 * scale), (0, 0, 0))
+
+        self.surf = pygame.transform.flip(self.surf, False, True)
+        self.screen.blit(self.surf, (0, 0))
+        if self.render_mode == "human":
+            pygame.event.pump()
+            self.clock.tick(self._metadata["render_fps"])
+            pygame.display.flip()
+
+        else:  # mode == "rgb_array":
+            return jnp.transpose(
+                jnp.array(pygame.surfarray.pixels3d(self.screen)), axes=(1, 0, 2)
+            )
+
+    def close(self):
+        if self.screen is not None:
+            import pygame
+
+            pygame.display.quit()
+            pygame.quit()
+            self.isopen = False
 
 
 class BicycleModel(DynamicsModel):
 
-    def __init__(self, h, control_ratio: int = 10):
-        super().__init__(h=h, x_dim=6, u_dim=2, params_example=CarParams(), angle_idx=2)
+    def __init__(self, dt, control_ratio: int = 10):
+        super().__init__(dt=dt, x_dim=6, u_dim=2, params=CarParams(), angle_idx=2)
         self.control_ratio = control_ratio
 
     def next_step(self, x, u, params):
