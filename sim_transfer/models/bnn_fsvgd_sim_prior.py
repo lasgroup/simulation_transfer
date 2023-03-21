@@ -35,6 +35,7 @@ class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
                  lr: float = 1e-3,
                  weight_decay: float = 1e-3,
                  normalize_data: bool = True,
+                 normalize_likelihood_std: bool = False,
                  normalization_stats: Optional[Dict[str, jnp.ndarray]] = None,
                  hidden_layer_sizes: List[int] = (32, 32, 32),
                  hidden_activation: Optional[Callable] = jax.nn.leaky_relu,
@@ -44,6 +45,7 @@ class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
                          num_batched_nns=num_particles, hidden_layer_sizes=hidden_layer_sizes,
                          hidden_activation=hidden_activation, last_activation=last_activation,
                          normalize_data=normalize_data, normalization_stats=normalization_stats,
+                         normalize_likelihood_std=normalize_likelihood_std,
                          lr=lr, weight_decay=weight_decay,
                          likelihood_std=likelihood_std, learn_likelihood_std=learn_likelihood_std,
                          domain=domain, bandwidth_svgd=bandwidth_svgd)

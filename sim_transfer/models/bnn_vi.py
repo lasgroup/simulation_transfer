@@ -25,6 +25,7 @@ class BNN_VI(AbstractVariationalBNN):
                  kl_prefactor: float = 1.0,
                  normalize_data: bool = True,
                  normalization_stats: Optional[Dict[str, jnp.ndarray]] = None,
+                 normalize_likelihood_std: bool = False,
                  hidden_layer_sizes: List[int] = (32, 32, 32),
                  hidden_activation: Optional[Callable] = jax.nn.leaky_relu,
                  last_activation: Optional[Callable] = None,
@@ -36,6 +37,7 @@ class BNN_VI(AbstractVariationalBNN):
                          num_batched_nns=num_post_samples, hidden_layer_sizes=hidden_layer_sizes,
                          hidden_activation=hidden_activation, last_activation=last_activation,
                          normalize_data=normalize_data, normalization_stats=normalization_stats,
+                         normalize_likelihood_std=normalize_likelihood_std,
                          likelihood_std=likelihood_std, learn_likelihood_std=learn_likelihood_std)
         self.use_prior = use_prior
         self.kl_prefactor = kl_prefactor

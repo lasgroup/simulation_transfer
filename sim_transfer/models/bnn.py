@@ -15,9 +15,20 @@ from sim_transfer.models.abstract_model import BatchedNeuralNetworkModel
 
 class LikelihoodMixin:
 
-    def __init__(self, likelihood_std: Union[float, jnp.array] = 0.2, learn_likelihood_std: bool = False):
+    def __init__(self, likelihood_std: Union[float, jnp.array] = 0.2,
+                 learn_likelihood_std: bool = False,
+                 normalize_likelihood_std: bool = False):
         self.learn_likelihood_std = learn_likelihood_std
-        self.likelihood_std = likelihood_std
+
+        if normalize_likelihood_std:
+            assert hasattr(self, '_y_std') and self._y_std is not None and self.normalize_data, \
+                'normalize_likelihood_std requires normalization'
+            assert self._y_std.shape == (self.output_size, )
+            self.likelihood_std = likelihood_std / self._y_std
+        else:
+            self.likelihood_std = likelihood_std
+
+
         assert hasattr(self, 'params'), 'super class must have params attribute'
 
     @property
@@ -53,10 +64,11 @@ class LikelihoodMixin:
 class AbstractParticleBNN(BatchedNeuralNetworkModel, LikelihoodMixin):
 
     def __init__(self, likelihood_std: Union[float, jnp.array] = 0.2, learn_likelihood_std: bool = False,
-                 lr: float = 1e-3, weight_decay: float = 0.0, **kwargs):
+                 lr: float = 1e-3, weight_decay: float = 0.0, normalize_likelihood_std: bool = False, **kwargs):
         self.params = {}  # this must happen before super().__init__ is called
         BatchedNeuralNetworkModel.__init__(self, **kwargs)
-        LikelihoodMixin.__init__(self, likelihood_std=likelihood_std, learn_likelihood_std=learn_likelihood_std)
+        LikelihoodMixin.__init__(self, likelihood_std=likelihood_std, learn_likelihood_std=learn_likelihood_std,
+                                 normalize_likelihood_std=normalize_likelihood_std)
 
         # initialize batched NN
         self.params.update({'nn_params_stacked': self.batched_model.param_vectors_stacked})
@@ -106,10 +118,12 @@ class AbstractParticleBNN(BatchedNeuralNetworkModel, LikelihoodMixin):
 
 class AbstractVariationalBNN(BatchedNeuralNetworkModel, LikelihoodMixin):
 
-    def __init__(self, likelihood_std: Union[float, jnp.array] = 0.2, learn_likelihood_std: bool = False, **kwargs):
+    def __init__(self, likelihood_std: Union[float, jnp.array] = 0.2, learn_likelihood_std: bool = False,
+                 normalize_likelihood_std: bool = False, **kwargs):
         self.params = {} # this must happen before super().__init__ is called
         BatchedNeuralNetworkModel.__init__(self, **kwargs)
-        LikelihoodMixin.__init__(self, likelihood_std=likelihood_std, learn_likelihood_std=learn_likelihood_std)
+        LikelihoodMixin.__init__(self, likelihood_std=likelihood_std, learn_likelihood_std=learn_likelihood_std,
+                                 normalize_likelihood_std=normalize_likelihood_std)
 
         # need to be implemented by subclass
         self.optim = None

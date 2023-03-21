@@ -31,6 +31,7 @@ class BNN_FSVGD(AbstractFSVGD_BNN):
                  lr: float = 1e-3,
                  weight_decay: float = 1e-3,
                  normalize_data: bool = True,
+                 normalize_likelihood_std: bool = False,
                  normalization_stats: Optional[Dict[str, jnp.ndarray]] = None,
                  hidden_layer_sizes: List[int] = (32, 32, 32),
                  hidden_activation: Optional[Callable] = jax.nn.leaky_relu,
@@ -41,7 +42,8 @@ class BNN_FSVGD(AbstractFSVGD_BNN):
                          hidden_activation=hidden_activation, last_activation=last_activation,
                          normalize_data=normalize_data, normalization_stats=normalization_stats,
                          lr=lr, weight_decay=weight_decay, domain=domain, bandwidth_svgd=bandwidth_svgd,
-                         likelihood_std=likelihood_std, learn_likelihood_std=learn_likelihood_std)
+                         likelihood_std=likelihood_std, learn_likelihood_std=learn_likelihood_std,
+                         normalize_likelihood_std=normalize_likelihood_std)
         self.bandwidth_gp_prior = bandwidth_gp_prior
         self.num_measurement_points = num_measurement_points
 
@@ -49,8 +51,8 @@ class BNN_FSVGD(AbstractFSVGD_BNN):
         self.kernel_gp_prior = tfp.math.psd_kernels.ExponentiatedQuadratic(length_scale=self.bandwidth_gp_prior)
 
     def _neg_log_posterior(self, pred_raw: jnp.ndarray, likelihood_std: jnp.array, x_stacked: jnp.ndarray,
-                                     y_batch: jnp.ndarray, train_data_till_idx: int,
-                                     num_train_points: Union[float, int], key: jax.random.PRNGKey):
+                           y_batch: jnp.ndarray, train_data_till_idx: int,
+                           num_train_points: Union[float, int], key: jax.random.PRNGKey):
         nll = - self._ll(pred_raw, likelihood_std, y_batch, train_data_till_idx)
         neg_log_prior = - self._gp_prior_log_prob(x_stacked, pred_raw, eps=1e-3) / num_train_points
         neg_log_post = nll + neg_log_prior
