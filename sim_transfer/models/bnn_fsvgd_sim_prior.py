@@ -81,7 +81,7 @@ class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
                             num_train_points: Union[float, int], key: jax.random.PRNGKey):
         nll = - self._ll(pred_raw, likelihood_std, y_batch, train_data_till_idx)
         if self.score_estimator in ['SSGE', 'ssge']:
-            prior_score = self._estimate_prior_score(x_stacked, pred_raw, key) / num_train_points
+            prior_score = self._estimate_prior_score(pred_raw, x_stacked, key) / num_train_points
             neg_log_post = nll - jnp.sum(jnp.mean(pred_raw * jax.lax.stop_gradient(prior_score), axis=-2))
         elif self.score_estimator in ['GP', 'gp']:
             prior_logprob = self._prior_log_prob_gp_approx(pred_raw, x_stacked, key)
@@ -96,22 +96,22 @@ class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
             stats['likelihood_std'] = jnp.mean(likelihood_std)
         return neg_log_post, stats
 
-    def _estimate_prior_score(self, x: jnp.array, y: jnp.array, key: jax.random.PRNGKey) -> jnp.ndarray:
+    def _estimate_prior_score(self, pred_raw: jnp.ndarray, x: jnp.ndarray, key: jax.random.PRNGKey) -> jnp.ndarray:
         """
         Uses SSGE to estimate the prior marginals' score of the function simulator.
         """
         f_samples = self._fsim_samples(x, key)
         if self.independent_output_dims:
             # performs score estimation for each output dimension independently
-            ssge_score = self._estimate_gradients_s_x_vectorized(y, f_samples)
+            ssge_score = self._estimate_gradients_s_x_vectorized(pred_raw, f_samples)
         else:
             # performs score estimation for all output dimensions jointly
             # befor score estimation call, flatten the output dimensions
-            ssge_score = self.ssge.estimate_gradients_s_x(y.reshape((y.shape[0], -1)),
+            ssge_score = self.ssge.estimate_gradients_s_x(pred_raw.reshape((pred_raw.shape[0], -1)),
                                                           f_samples.reshape((f_samples.shape[0], -1)))
             # add back the output dimensions
-            ssge_score = ssge_score.reshape(y.shape)
-        assert ssge_score.shape == y.shape
+            ssge_score = ssge_score.reshape(pred_raw.shape)
+        assert ssge_score.shape == pred_raw.shape
         return ssge_score
 
     def _prior_log_prob_gp_approx(self, pred_raw: jnp.ndarray, x: jnp.ndarray, key: jax.random.PRNGKey,
@@ -203,7 +203,7 @@ if __name__ == '__main__':
 
     bnn = BNN_FSVGD_SimPrior(NUM_DIM_X, NUM_DIM_Y, domain=domain, rng_key=next(key_iter), function_sim=sim,
                              hidden_layer_sizes=[64, 64, 64], num_train_steps=20000, data_batch_size=4,
-                             num_particles=20, num_f_samples=256, num_measurement_points=8,
+                             num_particles=20, num_f_samples=128, num_measurement_points=8,
                              bandwidth_svgd=0.2, bandwidth_ssge=None,
                              normalization_stats=sim.normalization_stats, likelihood_std=0.05,
                              score_estimator=score_estimator)
