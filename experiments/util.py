@@ -3,6 +3,7 @@ import os
 import json
 import glob
 import numpy as np
+import hashlib
 import pandas as pd
 
 from typing import Dict, Optional, Any, List
@@ -108,36 +109,44 @@ def generate_base_command(module, flags: Optional[Dict[str, Any]] = None, unbuff
     return base_cmd
 
 
-def generate_run_commands(command_list: List[str], num_cpus: int = 1, num_gpus: int = 0,
+def generate_run_commands(command_list: List[str], output_file_list: Optional[List[str]] = None,
+                          num_cpus: int = 1, num_gpus: int = 0,
                           dry: bool = False, mem: int = 2 * 1028, long: bool = False,
                           mode: str = 'local', promt: bool = True) -> None:
 
     if mode == 'euler':
         cluster_cmds = []
         bsub_cmd = 'sbatch ' + \
-                   f'--time {23 if long else 3}:59 ' + \
+                   f'--time={23 if long else 3}:59:00 ' + \
                    f'--mem-per-cpu={mem} ' + \
                    f'-n {num_cpus} '
 
         if num_gpus > 0:
             bsub_cmd += f'--gpus={num_gpus}]" '
 
-        for cmd in command_list:
-            cluster_cmds.append(bsub_cmd + f'--wrap="{cmd}"')
+        assert output_file_list is None or len(command_list) == len(output_file_list)
+        if output_file_list is None:
+            for cmd in command_list:
+                cluster_cmds.append(bsub_cmd + f'--wrap="{cmd}"')
+        else:
+            for cmd, output_file in zip(command_list, output_file_list):
+                cluster_cmds.append(bsub_cmd + f'--output={output_file} --wrap="{cmd}"')
 
         if dry:
             for cmd in cluster_cmds:
                 print(cmd)
         else:
-            tmp_file = os.path.join('/tmp', f'{str(hash_dict(command_list))}.sh')
-            with open(tmp_file, 'w') as f:
+            if promt:
+                answer = input(f"about to launch {len(command_list)} jobs with {num_cpus} cores each. proceed? [yes/no]")
+            else:
+                answer = 'yes'
+            if answer == 'yes':
                 for cmd in cluster_cmds:
-                    f.writelines(f'{cmd}\n')
-            print(f'Please run script:\nbash {tmp_file}')
+                    os.system(cmd)
 
     elif mode == 'local':
         if promt:
-            answer = input(f"About to run {len(command_list)} jobs in a loop. Proceed? [yes/no]")
+            answer = input(f"about to run {len(command_list)} jobs in a loop. proceed? [yes/no]")
         else:
             answer = 'yes'
 
@@ -150,7 +159,7 @@ def generate_run_commands(command_list: List[str], num_cpus: int = 1, num_gpus: 
 
     elif mode == 'local_async':
         if promt:
-            answer = input(f"About to launch {len(command_list)} commands in {num_cpus} local processes. Proceed? [yes/no]")
+            answer = input(f"about to launch {len(command_list)} commands in {num_cpus} local processes. proceed? [yes/no]")
         else:
             answer = 'yes'
 
@@ -180,8 +189,11 @@ class NumpyArrayEncoder(json.JSONEncoder):
         else:
             return super(NumpyArrayEncoder, self).default(obj)
 
-def hash_dict(d):
-    return str(abs(json.dumps(d, sort_keys=True, cls=NumpyArrayEncoder).__hash__()))
+def hash_dict(d: Dict) -> str:
+    dhash = hashlib.md5()
+    dhash.update(json.dumps(d, sort_keys=True, cls=NumpyArrayEncoder, indent=4).encode())
+    return dhash.hexdigest()
+
 
 """ Randomly sampling flags """
 
@@ -202,6 +214,29 @@ def sample_flag(sample_spec, rds=None):
     else:
         raise NotImplementedError
 
+
+def sample_param_flags(hyperparam_spec: Dict[str, Dict], rds: Optional[np.random.RandomState] = None) -> Dict[str, Any]:
+    if rds is None:
+        rds = np.random
+    flags_dict = {}
+    for flag, flag_spec in hyperparam_spec.items():
+        if 'value' in flag_spec:
+            flags_dict[flag] = flag_spec['value']
+        elif 'values' in flag_spec:
+            flags_dict[flag] = rds.choice(flag_spec['values'])
+        elif 'distribution' in flag_spec:
+            if flag_spec['distribution'] == 'uniform':
+                flags_dict[flag] = rds.uniform(flag_spec['min'], flag_spec['max'])
+            elif flag_spec['distribution'] == 'log_uniform_10':
+                flags_dict[flag] = 10**rds.uniform(flag_spec['min'], flag_spec['max'])
+            elif flag_spec['distribution'] == 'log_uniform':
+                flags_dict[flag] = np.exp(rds.uniform(flag_spec['min'], flag_spec['max']))
+            else:
+                raise ValueError(f"Unknown distribution {flag_spec['distribution']}")
+        else:
+            raise NotImplementedError(f'Unable to process hyperparam spec {flag_spec}')
+    assert flags_dict.keys() == hyperparam_spec.keys()
+    return flags_dict
 
 """ Collecting the exp result"""
 
@@ -245,17 +280,20 @@ def collect_exp_results(exp_name: str, dir_tree_depth: int = 3, verbose: bool = 
 """ Some aggregation functions """
 
 def ucb(row):
-    assert row.shape[0] > 1
+    if row.shape[0] > 1:
+        return np.nan
     return np.quantile(row, q=0.95, axis=0)
 
 
 def lcb(row):
-    assert row.shape[0] > 1
+    if row.shape[0] > 1:
+        return np.nan
     return np.quantile(row, q=0.05, axis=0)
 
 
 def median(row):
-    assert row.shape[0] > 1
+    if row.shape[0] > 1:
+        return np.nan
     return np.quantile(row, q=0.5, axis=0)
 
 
