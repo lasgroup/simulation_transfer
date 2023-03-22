@@ -2,6 +2,7 @@ from typing import Callable, Tuple, Dict, Optional
 
 import jax
 import jax.numpy as jnp
+import jax.tree_util as jtu
 import tensorflow_probability.substrates.jax.distributions as tfd
 from jax import vmap, random
 from tensorflow_probability.substrates import jax as tfp
@@ -234,14 +235,16 @@ class PendulumSim(FunctionSimulator):
                  encode_angle: bool = True):
         super().__init__(input_size=4 if encode_angle else 3, output_size=3 if encode_angle else 2)
         self.model = Pendulum(dt=dt, dt_integration=0.005, encode_angle=encode_angle)
-        if upper_bound is None:
-            upper_bound = PendulumParams(m=jnp.array(.5), l=jnp.array(.5), g=jnp.array(5.0), nu=jnp.array(0.0),
-                                         c_d=jnp.array(0.0))
         if lower_bound is None:
-            lower_bound = PendulumParams(m=jnp.array(1.5), l=jnp.array(1.5), g=jnp.array(15.0), nu=jnp.array(0.0),
+            lower_bound = PendulumParams(m=jnp.array(.5), l=jnp.array(.5), g=jnp.array(5.0), nu=jnp.array(0.0),
+                                         c_d=jnp.array(0.0))
+        if upper_bound is None:
+            upper_bound = PendulumParams(m=jnp.array(1.5), l=jnp.array(1.5), g=jnp.array(15.0), nu=jnp.array(0.0),
                                          c_d=jnp.array(0.0))
         self._upper_bound_params = upper_bound
         self._lower_bound_params = lower_bound
+        assert jnp.all(jnp.stack(jtu.tree_flatten(jtu.tree_map(lambda l, u: l <= u, lower_bound, upper_bound))[0])), \
+            'lower bounds have to be smaller than upper bounds'
 
         self.encode_angle = encode_angle
         self._state_action_spit_idx = 3 if encode_angle else 2

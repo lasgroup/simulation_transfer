@@ -103,7 +103,7 @@ class DynamicsModel(ABC):
         return jtu.tree_unflatten(treedef, keys)
 
     def sample_params(self, key: jax.random.PRNGKey, sample_shape: Union[int, Tuple[int]],
-                      upper_bound: NamedTuple, lower_bound: NamedTuple):
+                      lower_bound: NamedTuple, upper_bound: NamedTuple):
         keys = self._split_key_like_tree(key)
         if isinstance(sample_shape, int):
             sample_shape = (sample_shape,)
