@@ -65,10 +65,10 @@ def score_matching_exp(
     t = time.time()
     if score_estim == 'ssge':
         ssge = SSGE(bandwidth=bandwidth, eta=eta_ssge, add_linear_kernel=add_linear_kernel)
-        score_estimates = ssge.estimate_gradients_s_x(x_query=samples_test, x_sample=samples_train)
+        score_estimates = ssge.estimate_gradients_s_x(queries=samples_test, samples=samples_train)
     elif score_estim == 'kde':
         kde = KDE(bandwidth=bandwidth)
-        score_estimates = kde.estimate_gradients_s_x(query=samples_test, samples=samples_train)
+        score_estimates = kde.estimate_gradients_s_x(queries=samples_test, samples=samples_train)
     elif score_estim == 'nu_method':
         from non_param_estim.kscore.estimators.nu_method import NuMethod
         nu_method = NuMethod(lam=lambda_nu, fixed_bandwidth=bandwidth)

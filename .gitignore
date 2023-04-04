@@ -6,6 +6,8 @@ log/
 tf_summaries/
 time_lines/
 
+mars/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

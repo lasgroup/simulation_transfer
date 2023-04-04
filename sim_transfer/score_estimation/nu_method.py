@@ -2,11 +2,11 @@ import jax
 import jax.numpy as jnp
 
 from typing import Optional, Callable, Union, Tuple, List
-from sim_transfer.score_estimation.matrix_kernels import CurlFreeIMQKernel, CurlFreeSEKernel, BaseMatrixKernel
+from sim_transfer.score_estimation.matrix_kernels import CurlFreeIMQKernel, CurlFreeSEKernel
 from sim_transfer.score_estimation.abstract import AbstractScoreEstimator
 
 
-class NuMethod:
+class NuMethod(AbstractScoreEstimator):
 
     def __init__(self,
                  lam: Optional[float] = 1e-4,
@@ -14,6 +14,7 @@ class NuMethod:
                  kernel_type: str = 'curl_free_imq',
                  bandwidth: float = 1.0,
                  nu: float = 1.0):
+        super().__init__()
 
         if lam is not None and num_iter is not None:
             raise ValueError('Cannot specify `lam` and `iternum` simultaneously.')
@@ -37,15 +38,13 @@ class NuMethod:
         self.bandwidth = bandwidth
         self.name = "Nu_method"
 
-    def estimate_gradients_s(self, x_sample: jnp.ndarray) -> jnp.array:
-        return self.estimate_gradients_s_x(x_query=x_sample, x_sample=x_sample)
-
-    def estimate_gradients_s_x(self, x_query: jnp.ndarray, x_sample: jnp.ndarray) -> jnp.array:
-        a, c = self.fit(x_sample)
-        score_estimate = self._compute_gradients(queries=x_query, samples=x_sample, a=a, c=c)
+    def estimate_gradients_s_x(self, queries: jnp.ndarray, samples: jnp.ndarray) -> jnp.array:
+        a, c = self.fit(samples)
+        score_estimate = self._compute_gradients(queries=queries, samples=samples, a=a, c=c)
+        assert queries.shape == score_estimate.shape
         return score_estimate
 
-    def fit(self, samples) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    def fit(self, samples: jnp.array) -> Tuple[jnp.ndarray, jnp.ndarray]:
         """ Compute the nu-iteration coefficient a and vector c through fixed point iteration."""
         if self.bandwidth is None:
             kernel_hyperparams = self._kernel.heuristic_hyperparams(samples, samples)

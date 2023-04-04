@@ -1,5 +1,6 @@
 from tensorflow_probability.substrates import jax as tfp
 from scipy import spatial
+from typing import Union
 import jax
 import jax.numpy as jnp
 import unittest
@@ -9,14 +10,11 @@ import numpy as np
 from sim_transfer.score_estimation.ssge import SSGE
 from sim_transfer.score_estimation.nu_method import NuMethod
 from sim_transfer.score_estimation.kde import KDE
-from sim_transfer.score_estimation.abstract import AbstractScoreEstimator
+from sim_transfer.score_estimation.abstract import GramMatrixMixin
 from sim_transfer.modules.metrics import avg_cosine_distance
 
-# dist = tfp.distributions.Normal(loc=jnp.array([0.]), scale=jnp.array([1.0]))
-# dist = tfp.distributions.Independent(dist, reinterpreted_batch_ndims=1)
 
-
-class TestAbstractScoreEstimator(unittest.TestCase):
+class TestGramMatrixMixin(unittest.TestCase):
 
     def setUp(self) -> None:
         key = jax.random.PRNGKey(68)
@@ -25,13 +23,17 @@ class TestAbstractScoreEstimator(unittest.TestCase):
         self.x2 = jax.random.normal(key2, shape=(2, 2))
 
     @staticmethod
-    def rbf_kernel(x1, x2, length_scale):
+    def rbf_kernel(x1: jnp.array, x2: jnp.array, length_scale: Union[float, jnp.array]) -> jnp.array:
         return jnp.exp(- jnp.linalg.norm((x1 - x2) / length_scale) ** 2 / 2)
 
-    def test_gram_matrix(self) -> None:
+    @staticmethod
+    def imq_kernel(x1: jnp.array, x2: jnp.array, length_scale: Union[float, jnp.array]) -> jnp.array:
+        return jax.lax.rsqrt(1 + jnp.linalg.norm((x1 - x2) / length_scale) ** 2)
+
+    def test_gram_matrix_se(self) -> None:
         for add_linear_kernel in [True, False]:
             length_scale = 0.4
-            score_estimator = AbstractScoreEstimator(add_linear_kernel=add_linear_kernel)
+            score_estimator = GramMatrixMixin(kernel_type='se', add_linear_kernel=add_linear_kernel)
 
             def kernel(x1, x2):
                 k = self.rbf_kernel(x1, x2, length_scale)
@@ -46,29 +48,53 @@ class TestAbstractScoreEstimator(unittest.TestCase):
                     k = kernel(self.x1[i], self.x2[j])
                     assert jnp.isclose(k, K[i,j]), f'{k}, {K[i, j]}'
 
-    def test_gram_matrix_grads(self) -> None:
-
+    def test_gram_matrix_imq(self) -> None:
         for add_linear_kernel in [True, False]:
-            length_scale = 2.
-            score_estimator = AbstractScoreEstimator(add_linear_kernel=add_linear_kernel)
+            length_scale = 0.4
+            score_estimator = GramMatrixMixin(kernel_type='imq', add_linear_kernel=add_linear_kernel)
 
             def kernel(x1, x2):
-                k = self.rbf_kernel(x1, x2, length_scale)
+                k = self.imq_kernel(x1, x2, length_scale)
                 if add_linear_kernel:
-                    k = k + jnp.dot(x1, x2)
+                    k += jnp.dot(x1, x2)
                 return k
 
-            kernel_grad = jax.grad(kernel, argnums=(0, 1))
-
-            K, grad1, grad2 = score_estimator.grad_gram(self.x1, self.x2, length_scale)
+            K = score_estimator.gram(self.x1, self.x2, length_scale)
 
             for i in range(self.x1.shape[0]):
                 for j in range(self.x2.shape[0]):
                     k = kernel(self.x1[i], self.x2[j])
-                    dx1_k, dx2_k = kernel_grad(self.x1[i], self.x2[j])
-                    assert jnp.isclose(k, K[i, j]), f'{k}, {K[i, j]}'
-                    assert jnp.all(jnp.isclose(dx1_k, grad1[i, j])), f'{dx1_k}, {grad1[i, j]}'
-                    assert jnp.all(jnp.isclose(dx2_k, grad2[i, j])), f'{dx2_k}, {grad2[i, j]}'
+                    assert jnp.isclose(k, K[i,j]), f'{k}, {K[i, j]}'
+
+    def test_gram_matrix_grads(self) -> None:
+
+        for kernel_type in ['se', 'imq']:
+            for add_linear_kernel in [False, True]:
+                length_scale = 2.
+                score_estimator = GramMatrixMixin(kernel_type=kernel_type, add_linear_kernel=add_linear_kernel)
+
+                def kernel(x1, x2):
+                    if kernel_type == 'se':
+                        k = self.rbf_kernel(x1, x2, length_scale)
+                    elif kernel_type == 'imq':
+                        k = self.imq_kernel(x1, x2, length_scale)
+                    else:
+                        raise NotImplementedError
+                    if add_linear_kernel:
+                        k = k + jnp.dot(x1, x2)
+                    return k
+
+                kernel_grad = jax.grad(kernel, argnums=(0, 1))
+
+                K, grad1, grad2 = score_estimator.grad_gram(self.x1, self.x2, length_scale)
+
+                for i in range(self.x1.shape[0]):
+                    for j in range(self.x2.shape[0]):
+                        k = kernel(self.x1[i], self.x2[j])
+                        dx1_k, dx2_k = kernel_grad(self.x1[i], self.x2[j])
+                        assert jnp.isclose(k, K[i, j]), f'{k}, {K[i, j]}'
+                        assert jnp.all(jnp.isclose(dx1_k, grad1[i, j])), f'{dx1_k}, {grad1[i, j]}'
+                        assert jnp.all(jnp.isclose(dx2_k, grad2[i, j])), f'{dx2_k}, {grad2[i, j]}'
 
 
 class TestSSGE(unittest.TestCase):
@@ -119,14 +145,14 @@ class TestNuMethod(unittest.TestCase):
 
     def test_score_estimation_x_s(self):
         nu_method = NuMethod(lam=1e-4, bandwidth=10.)
-        score_estimate = nu_method.estimate_gradients_s_x(x_query=self.x_query, x_sample=self.x_samples)
+        score_estimate = nu_method.estimate_gradients_s_x(queries=self.x_query, samples=self.x_samples)
         score, logp = jax.grad(self.logprob, has_aux=True)(self.x_query)
         cos_dist = np.mean([spatial.distance.cosine(s1, s2) for s1, s2 in zip(score, score_estimate)])
         assert cos_dist < 0.05, f'cos-dist = {cos_dist}'
 
     def test_score_estimation_x(self):
         nu_method = NuMethod(lam=1e-4, bandwidth=10.)
-        score_estimate = nu_method.estimate_gradients_s(x_sample=self.x_samples)
+        score_estimate = nu_method.estimate_gradients_s(x=self.x_samples)
         score, logp = jax.grad(self.logprob, has_aux=True)(self.x_samples)
         cos_dist = np.mean([spatial.distance.cosine(s1, s2) for s1, s2 in zip(score, score_estimate)])
         assert cos_dist < 0.05, f'cos-dist = {cos_dist}'
@@ -160,8 +186,6 @@ class TestKDE(unittest.TestCase):
         ps = jnp.exp(kde.density_estimates_log_prob(query, samples))
         integral = jnp.trapz(x=query.squeeze(-1), y=ps)
         assert (abs(integral) - 1) < 0.01
-
-
 
 
 if __name__ == '__main__':

@@ -26,9 +26,10 @@ MODEL_SPECIFIC_CONFIG = {
     },
     'BNN_FSVGD_SimPrior_ssge': {
         'bandwidth_svgd': {'distribution': 'log_uniform', 'min': -2., 'max': 2.},
-        'num_train_steps': {'values': [20000, 40000]},
-        'num_measurement_points': {'values': [8, 16, 32, 64]},
+        'num_train_steps': {'values': [20000]},
+        'num_measurement_points': {'values': [8, 16, 32]},
         'num_f_samples': {'values': [128, 256, 512]},
+        'bandwidth_ssge': {'distribution': 'log_uniform', 'min': -2., 'max': 1.},
     },
     'BNN_FSVGD_SimPrior_kde': {
         'bandwidth_svgd': {'distribution': 'log_uniform', 'min': -2., 'max': 2.},

@@ -1,17 +1,18 @@
 from typing import Optional, Union
-from tensorflow_probability.substrates.jax.math.psd_kernels.internal.util import pairwise_square_distance_matrix
+from .abstract import AbstractScoreEstimator
 
 import jax.numpy as jnp
 import jax
 
-class KDE:
+class KDE(AbstractScoreEstimator):
     """ Simple Kernel Density Estimator """
 
     def __init__(self, bandwidth: Optional[float] = None):
+        super().__init__()
         self.bandwidth = bandwidth
 
-    def estimate_gradients_s_x(self, query: jnp.ndarray, samples: jnp.ndarray) -> jnp.ndarray:
-        return jax.grad(lambda query: jnp.sum(self.__call__(query, samples)))(query)
+    def estimate_gradients_s_x(self, queries: jnp.ndarray, samples: jnp.ndarray) -> jnp.ndarray:
+        return jax.grad(lambda query: jnp.sum(self.__call__(query, samples)))(queries)
 
     def density_estimates_log_prob(self, query: jnp.array, samples: jnp.array) -> jnp.array:
         return self.__call__(query, samples)

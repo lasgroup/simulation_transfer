@@ -67,7 +67,7 @@ def main(args):
     # I just run some super simple random optimization methods on a target function and evaluate the results
 
     if args.method == 'random_search':
-        x_best, f_best = global_random_search_minimize(fun, uniform=args.uniform, loc=args.loc, scale=args.scale,
+        x_best, f_best = global_random_search_minimize(fun, uniform=args.uniform, loc=args.loc, scale=args.scale2d,
                                                        num_samples=args.num_samples, rds=rds)
     elif args.method == 'hill_search':
         x_best, f_best = greedy_hillclimb_minimize(fun, pertubation_std=args.pertubation_std,

@@ -134,7 +134,7 @@ def regression_experiment(
         raise NotImplementedError('Model {model} not implemented')
 
     # train model
-    model.fit(x_train, y_train, x_test, y_test, log_to_wandb=use_wandb, log_period=5)
+    model.fit(x_train, y_train, x_test, y_test, log_to_wandb=use_wandb, log_period=1000)
 
     # eval model
     eval_metrics = model.eval(x_test, y_test)
