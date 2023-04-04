@@ -7,12 +7,13 @@ import numpy as np
 
 
 from sim_transfer.score_estimation.ssge import SSGE
+from sim_transfer.score_estimation.nu_method import NuMethod
 from sim_transfer.score_estimation.kde import KDE
 from sim_transfer.score_estimation.abstract import AbstractScoreEstimator
 from sim_transfer.modules.metrics import avg_cosine_distance
 
-dist = tfp.distributions.Normal(loc=jnp.array([0.]), scale=jnp.array([1.0]))
-dist = tfp.distributions.Independent(dist, reinterpreted_batch_ndims=1)
+# dist = tfp.distributions.Normal(loc=jnp.array([0.]), scale=jnp.array([1.0]))
+# dist = tfp.distributions.Independent(dist, reinterpreted_batch_ndims=1)
 
 
 class TestAbstractScoreEstimator(unittest.TestCase):
@@ -81,7 +82,7 @@ class TestSSGE(unittest.TestCase):
         self.x_samples = self.dist.sample(100, seed=key1)
         self.x1, self.x2 = jnp.meshgrid(jnp.linspace(-3, 3, 10), jnp.linspace(-3, 3, 10))
         self.x_query = jnp.stack([self.x1.flatten(), self.x2.flatten()], axis=-1)
-        self.logprob = lambda x: (dist.log_prob(x).sum(), dist.log_prob(x))
+        self.logprob = lambda x: (self.dist.log_prob(x).sum(), self.dist.log_prob(x))
 
     def test_score_estimation_x_s(self):
         for add_linear_kernel in [True, False]:
@@ -100,6 +101,33 @@ class TestSSGE(unittest.TestCase):
 
         score_estimate = ssge.estimate_gradients_s(self.x_samples[:-3])
         score, logp = jax.grad(self.logprob, has_aux=True)(self.x_samples[:-3])
+        cos_dist = np.mean([spatial.distance.cosine(s1, s2) for s1, s2 in zip(score, score_estimate)])
+        assert cos_dist < 0.05, f'cos-dist = {cos_dist}'
+
+
+class TestNuMethod(unittest.TestCase):
+
+    def setUp(self) -> None:
+        key = jax.random.PRNGKey(56756)
+        key1, key2 = jax.random.split(key)
+        self.loc = jnp.array([10., -5.])
+        self.scale_diag = jnp.array([0.5, 2.0])
+        self.dist = tfp.distributions.MultivariateNormalDiag(loc=self.loc, scale_diag=self.scale_diag)
+        self.x_samples = self.dist.sample(100, seed=key1)
+        self.x_query = self.dist.sample(400, seed=key2)
+        self.logprob = lambda x: (self.dist.log_prob(x).sum(), self.dist.log_prob(x))
+
+    def test_score_estimation_x_s(self):
+        nu_method = NuMethod(lam=1e-4, bandwidth=10.)
+        score_estimate = nu_method.estimate_gradients_s_x(x_query=self.x_query, x_sample=self.x_samples)
+        score, logp = jax.grad(self.logprob, has_aux=True)(self.x_query)
+        cos_dist = np.mean([spatial.distance.cosine(s1, s2) for s1, s2 in zip(score, score_estimate)])
+        assert cos_dist < 0.05, f'cos-dist = {cos_dist}'
+
+    def test_score_estimation_x(self):
+        nu_method = NuMethod(lam=1e-4, bandwidth=10.)
+        score_estimate = nu_method.estimate_gradients_s(x_sample=self.x_samples)
+        score, logp = jax.grad(self.logprob, has_aux=True)(self.x_samples)
         cos_dist = np.mean([spatial.distance.cosine(s1, s2) for s1, s2 in zip(score, score_estimate)])
         assert cos_dist < 0.05, f'cos-dist = {cos_dist}'
 
