@@ -263,6 +263,10 @@ class BatchedNeuralNetworkModel(AbstractRegressionModel):
         stats_list = []
         t_start_period = time.time()
 
+        # do callback before training loop starts in case the specific method wants to do something for
+        # which it needs the normalization stats of the data
+        self._before_training_loop_callback()
+
         # training loop
         for step, (x_batch, y_batch) in enumerate(train_loader, 1):
             samples_cum_period += x_batch.shape[0]
@@ -293,6 +297,12 @@ class BatchedNeuralNetworkModel(AbstractRegressionModel):
 
             if step >= num_steps:
                 break
+
+    def _before_training_loop_callback(self) -> None:
+        """
+        Called right before the training loop starts.
+        """
+        pass
 
     def _construct_nn_param_prior(self, weight_prior_std: float, bias_prior_std: float) -> tfd.MultivariateNormalDiag:
         return self.batched_model.params_prior(weight_prior_std=weight_prior_std, bias_prior_std=bias_prior_std)

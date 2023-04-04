@@ -5,10 +5,9 @@ import jax
 import jax.numpy as jnp
 
 from sim_transfer.models.bnn import AbstractFSVGD_BNN
-from sim_transfer.score_estimation import SSGE, KDE
+from sim_transfer.score_estimation import SSGE, KDE, NuMethod
 from sim_transfer.sims import FunctionSimulator, Domain
 from tensorflow_probability.substrates import jax as tfp
-from tensorflow_probability.substrates.jax.math.psd_kernels.internal.util import pairwise_square_distance_matrix
 import tensorflow_probability.substrates.jax.distributions as tfd
 
 
@@ -27,6 +26,8 @@ class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
                  likelihood_std: Union[float, jnp.array] = 0.2,
                  learn_likelihood_std: bool = False,
                  score_estimator: str = 'SSGE',
+                 ssge_kernel_type: str = 'IMQ',
+                 bandwidth_nu_method: float = 1.0,
                  bandwidth_ssge: Optional[float] = None,
                  bandwidth_kde: Optional[float] = None,  # if None, use Scott's rule of thumb for choosing the bandwidth
                  bandwidth_svgd: float = 0.2,
@@ -59,13 +60,12 @@ class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
         self.score_estimator = score_estimator
         self.independent_output_dims = independent_output_dims
         if score_estimator in ['SSGE', 'ssge']:
-            # initialize ssge algo
-            self.ssge = SSGE(bandwidth=bandwidth_ssge)
-
-            # create estimate gradient function over the output dims
-            if self.independent_output_dims:
-                self._estimate_gradients_s_x_vectorized = jax.vmap(lambda y, f: self.ssge.estimate_gradients_s_x(y, f),
-                                                                   in_axes=-1, out_axes=-1)
+            self.ssge_kernel_type = ssge_kernel_type
+            self.bandwidth_ssge = bandwidth_ssge
+            # SSGE algo is initialized in the _before_training_loop_callback
+        elif score_estimator in ['nu_method', 'nu-method']:
+            # initialize nu-method algo
+            self._score_estim = NuMethod(lam=1e-4, bandwidth=bandwidth_nu_method)
         elif score_estimator in ['GP', 'gp']:
             pass
         elif score_estimator in ['KDE', 'kde']:
@@ -76,11 +76,12 @@ class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
         else:
             raise ValueError(f'Unknown score_estimator {score_estimator}. Must be either SSGE or GP')
 
+
     def _neg_log_posterior(self, pred_raw: jnp.ndarray, likelihood_std: jnp.array, x_stacked: jnp.ndarray,
                             y_batch: jnp.ndarray, train_data_till_idx: int,
                             num_train_points: Union[float, int], key: jax.random.PRNGKey):
         nll = - self._ll(pred_raw, likelihood_std, y_batch, train_data_till_idx)
-        if self.score_estimator in ['SSGE', 'ssge']:
+        if self.score_estimator in ['SSGE', 'ssge', 'nu_method', 'nu-method']:
             prior_score = self._estimate_prior_score(pred_raw, x_stacked, key) / num_train_points
             neg_log_post = nll - jnp.sum(jnp.mean(pred_raw * jax.lax.stop_gradient(prior_score), axis=-2))
         elif self.score_estimator in ['GP', 'gp']:
@@ -103,16 +104,16 @@ class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
         f_samples = self._fsim_samples(x, key)
         if self.independent_output_dims:
             # performs score estimation for each output dimension independently
-            ssge_score = self._estimate_gradients_s_x_vectorized(pred_raw, f_samples)
+            score_estimate = self._estimate_gradients_s_x_vectorized(pred_raw, f_samples)
         else:
             # performs score estimation for all output dimensions jointly
-            # befor score estimation call, flatten the output dimensions
-            ssge_score = self.ssge.estimate_gradients_s_x(pred_raw.reshape((pred_raw.shape[0], -1)),
-                                                          f_samples.reshape((f_samples.shape[0], -1)))
+            # before score estimation call, flatten the output dimensions
+            score_estimate = self._score_estim.estimate_gradients_s_x(pred_raw.reshape((pred_raw.shape[0], -1)),
+                                                                     f_samples.reshape((f_samples.shape[0], -1)))
             # add back the output dimensions
-            ssge_score = ssge_score.reshape(pred_raw.shape)
-        assert ssge_score.shape == pred_raw.shape
-        return ssge_score
+            score_estimate = score_estimate.reshape(pred_raw.shape)
+        assert score_estimate.shape == pred_raw.shape
+        return score_estimate
 
     def _prior_log_prob_gp_approx(self, pred_raw: jnp.ndarray, x: jnp.ndarray, key: jax.random.PRNGKey,
                                   eps: float = 1e-4) -> jnp.ndarray:
@@ -154,6 +155,41 @@ class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
         f_prior_normalized = self._normalize_y(f_prior)
         return f_prior_normalized
 
+    def _before_training_loop_callback(self) -> None:
+        """
+        Called right before the training loop starts.
+        """
+
+        if self.score_estimator in ['ssge', 'SSGE']:
+            if self.bandwidth_ssge is None:
+                self.bandwidth_ssge = self._ssge_bandwidth_heuristic()
+                print('Estimated bandwidth for SSGE via median heuristic: ', self.bandwidth_ssge)
+            self._score_estim = SSGE(bandwidth=self.bandwidth_ssge, kernel_type=self.ssge_kernel_type)
+
+        # set up vectorized version of the score estimation function
+        if self.score_estimator in ['SSGE', 'ssge', 'nu_method', 'nu-method']:
+            # create estimate gradient function over the output dims
+            if self.independent_output_dims:
+                self._estimate_gradients_s_x_vectorized = jax.vmap(
+                    lambda y, f: self._score_estim.estimate_gradients_s_x(y, f),
+                    in_axes=-1, out_axes=-1)
+
+    def _ssge_bandwidth_heuristic(self) -> Union[float, jnp.array]:
+        """
+        Estimates the median distance between f_samples from the sim prior to use as bandwidth for SSGE.
+        """
+        bandwidth_median_list = []
+        for i in range(50):
+            x = self._sample_measurement_points(self.rng_key, num_points=self.num_measurement_points)
+            f_samples = self._fsim_samples(x, key=self.rng_key)
+            if self.independent_output_dims:
+                bandwidth_median = jnp.mean(
+                    jax.vmap(SSGE.bandwith_median_heuristic, in_axes=-1, out_axes=-1)(f_samples))
+            else:
+                bandwidth_median = SSGE.bandwith_median_heuristic(f_samples.reshape(f_samples.shape[0], -1))
+            bandwidth_median_list.append(bandwidth_median)
+        return jnp.mean(jnp.stack(bandwidth_median_list))
+
 
 if __name__ == '__main__':
     from sim_transfer.sims import SinusoidsSim, QuadraticSim, LinearSim
@@ -192,7 +228,7 @@ if __name__ == '__main__':
     x_measurement = jnp.linspace(domain.l[0], domain.u[0], 50).reshape(-1, 1)
 
     num_train_points = 3
-    score_estimator = 'kde'
+    score_estimator = 'ssge'
 
     x_train = jax.random.uniform(key=next(key_iter), shape=(num_train_points,),
                                  minval=domain.l, maxval=domain.u).reshape(-1, 1)
@@ -204,7 +240,7 @@ if __name__ == '__main__':
     bnn = BNN_FSVGD_SimPrior(NUM_DIM_X, NUM_DIM_Y, domain=domain, rng_key=next(key_iter), function_sim=sim,
                              hidden_layer_sizes=[64, 64, 64], num_train_steps=20000, data_batch_size=4,
                              num_particles=20, num_f_samples=128, num_measurement_points=8,
-                             bandwidth_svgd=0.2, bandwidth_ssge=None,
+                             bandwidth_svgd=0.1, bandwidth_ssge=None, ssge_kernel_type='IMQ',
                              normalization_stats=sim.normalization_stats, likelihood_std=0.05,
                              score_estimator=score_estimator)
     for i in range(10):

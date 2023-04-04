@@ -56,12 +56,7 @@ class SSGE(AbstractScoreEstimator, GramMatrixMixin):
         m = samples.shape[-2]
 
         if self.bandwidth is None:
-            if samples is None:
-                samples = queries
-                length_scale = self._median_heuristic(samples, samples)
-            else:
-                _xm = jnp.concatenate((queries, samples), axis=-2)
-                length_scale = self._median_heuristic(_xm, _xm)
+            length_scale = self.bandwith_median_heuristic(samples)
         else:
             length_scale = self.bandwidth
 

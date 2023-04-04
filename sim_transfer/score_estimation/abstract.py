@@ -91,15 +91,21 @@ class GramMatrixMixin:
             kxx += jnp.matmul(x1, x2.T)
         return kxx, grad_1, grad_2
 
-    def _median_heuristic(self, x1: jnp.ndarray, x2: jnp.ndarray) -> jnp.ndarray:
+    @staticmethod
+    def bandwith_median_heuristic(samples: jnp.ndarray) -> jnp.ndarray:
         """
-        x: [..., N, D]
-        xm: [..., M, D]
-        returns: [..., 1, 1, d]
-        """
-        x1 = jnp.expand_dims(x1, -2)
-        x2 = jnp.expand_dims(x2, -3)
+        Calculates the median distance between pairs of points in a given dataset using a pairwise distance matrix.
+        This heuristic is often used to estimate the bandwidth parameter in kernel density estimation
+        and other non-parametric methods.
 
-        pdist_mat = jnp.sum(jnp.sqrt((x1 - x2) ** 2), axis=-1)  # [N x M]
+        Args:
+            samples (jnp.ndarray): A 2D array-like object (N x M) containing the data points,
+            where N is the number of samples and M is the number of features.
+
+        Returns:
+            jnp.ndarray: A scalar value representing the median distance between pairs of points in the dataset.
+        """
+        pdist_mat = jnp.sqrt(pairwise_square_distance_matrix(samples, samples, feature_ndims=1))  # [N x M]
         median_distance = jnp.median(jnp.ravel(pdist_mat))
         return median_distance
+
