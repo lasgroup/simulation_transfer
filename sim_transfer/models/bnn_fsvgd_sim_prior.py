@@ -12,6 +12,7 @@ import tensorflow_probability.substrates.jax.distributions as tfd
 
 
 class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
+    _score_estimator_types = ['SSGE', 'ssge', 'nu_method', 'nu-method', 'GP', 'gp', 'KDE', 'kde']
 
     def __init__(self,
                  input_size: int,
@@ -27,9 +28,7 @@ class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
                  learn_likelihood_std: bool = False,
                  score_estimator: str = 'SSGE',
                  ssge_kernel_type: str = 'IMQ',
-                 bandwidth_nu_method: float = 1.0,
-                 bandwidth_ssge: Optional[float] = None,
-                 bandwidth_kde: Optional[float] = None,  # if None, use Scott's rule of thumb for choosing the bandwidth
+                 bandwidth_score_estim: Optional[float] = None,  # if None, a bandiwidth heuristic is used
                  bandwidth_svgd: float = 0.2,
                  data_batch_size: int = 8,
                  num_train_steps: int = 10000,
@@ -57,25 +56,12 @@ class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
         assert function_sim.output_size == self.output_size and function_sim.input_size == self.input_size
         self.num_f_samples = num_f_samples
 
+        assert score_estimator in self._score_estimator_types, \
+            f'score_estimator must be one of {self._score_estimator_types}'
         self.score_estimator = score_estimator
         self.independent_output_dims = independent_output_dims
-        if score_estimator in ['SSGE', 'ssge']:
-            self.ssge_kernel_type = ssge_kernel_type
-            self.bandwidth_ssge = bandwidth_ssge
-            # SSGE algo is initialized in the _before_training_loop_callback
-        elif score_estimator in ['nu_method', 'nu-method']:
-            # initialize nu-method algo
-            self._score_estim = NuMethod(lam=1e-4, bandwidth=bandwidth_nu_method)
-        elif score_estimator in ['GP', 'gp']:
-            pass
-        elif score_estimator in ['KDE', 'kde']:
-            self.kde = KDE(bandwidth=bandwidth_kde)
-            if self.independent_output_dims:
-                self._estimate_log_probs_vectorized = jax.vmap(lambda y, f: self.kde.density_estimates_log_prob(y, f),
-                                                               in_axes=-1, out_axes=-1)
-        else:
-            raise ValueError(f'Unknown score_estimator {score_estimator}. Must be either SSGE or GP')
-
+        self.bandwidth_score_estim = bandwidth_score_estim
+        self.ssge_kernel_type = ssge_kernel_type
 
     def _neg_log_posterior(self, pred_raw: jnp.ndarray, likelihood_std: jnp.array, x_stacked: jnp.ndarray,
                             y_batch: jnp.ndarray, train_data_till_idx: int,
@@ -99,7 +85,7 @@ class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
 
     def _estimate_prior_score(self, pred_raw: jnp.ndarray, x: jnp.ndarray, key: jax.random.PRNGKey) -> jnp.ndarray:
         """
-        Uses SSGE to estimate the prior marginals' score of the function simulator.
+        Uses a non-parametric score estimator to estimate the prior marginals' score of the function simulator.
         """
         f_samples = self._fsim_samples(x, key)
         if self.independent_output_dims:
@@ -157,26 +143,47 @@ class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
 
     def _before_training_loop_callback(self) -> None:
         """
-        Called right before the training loop starts.
+        Called right before the training loop starts. Is used to
+        1) estimate the bandwidth of the score estimator if necessary
+        2) initialize the score estimator
+        3) set up vectorized score estimation if necessary
         """
 
-        if self.score_estimator in ['ssge', 'SSGE']:
-            if self.bandwidth_ssge is None:
-                self.bandwidth_ssge = self._ssge_bandwidth_heuristic()
-                print('Estimated bandwidth for SSGE via median heuristic: ', self.bandwidth_ssge)
-            self._score_estim = SSGE(bandwidth=self.bandwidth_ssge, kernel_type=self.ssge_kernel_type)
+        # in case of SSGE or Nu-method, estimate bandwidth with mean heuristic if not provided
+        if self.score_estimator in ['ssge', 'SSGE', 'nu_method', 'nu-method'] and self.bandwidth_score_estim is None:
+            self.bandwidth_score_estim = self._bandwidth_heuristic()
+            if self.score_estimator in ['nu_method', 'nu-method']:
+                # heuristic for nu-method since curl-free kernels require larger bandwidth
+                self.bandwidth_score_estim *= 4
+            print('Estimated bandwidth via median heuristic: ', self.bandwidth_score_estim)
 
-        # set up vectorized version of the score estimation function
-        if self.score_estimator in ['SSGE', 'ssge', 'nu_method', 'nu-method']:
-            # create estimate gradient function over the output dims
-            if self.independent_output_dims:
+        # initialize score estimator
+        if self.score_estimator in ['SSGE', 'ssge']:
+            self._score_estim = SSGE(bandwidth=self.bandwidth_score_estim, kernel_type=self.ssge_kernel_type)
+        elif score_estimator in ['nu_method', 'nu-method']:
+            self._score_estim = NuMethod(lam=1e-4, bandwidth=self.bandwidth_score_estim)
+        elif score_estimator in ['GP', 'gp']:
+            pass
+        elif score_estimator in ['KDE', 'kde']:
+            self.kde = KDE(bandwidth=self.bandwidth_score_estim)
+        else:
+            raise ValueError(f'Unknown score_estimator {score_estimator}. Must be either SSGE or GP')
+
+        # in case of independent output dimensions, vectorize the score estimation function over the output dimension
+        if self.independent_output_dims:
+            # set up vectorized version of the score estimation function
+            if self.score_estimator in ['SSGE', 'ssge', 'nu_method', 'nu-method']:
+                # create estimate gradient function over the output dims
                 self._estimate_gradients_s_x_vectorized = jax.vmap(
-                    lambda y, f: self._score_estim.estimate_gradients_s_x(y, f),
-                    in_axes=-1, out_axes=-1)
+                    lambda y, f: self._score_estim.estimate_gradients_s_x(y, f), in_axes=-1, out_axes=-1)
+            elif self.score_estimator in ['GP', 'gp']:
+                    self._estimate_log_probs_vectorized = jax.vmap(
+                        lambda y, f: self.kde.density_estimates_log_prob(y, f), in_axes=-1, out_axes=-1)
 
-    def _ssge_bandwidth_heuristic(self) -> Union[float, jnp.array]:
+    def _bandwidth_heuristic(self) -> Union[float, jnp.array]:
         """
-        Estimates the median distance between f_samples from the sim prior to use as bandwidth for SSGE.
+        Estimates the median distance between f_samples from the sim prior to use as bandwidth
+        for SSGE or the nu-method.
         """
         bandwidth_median_list = []
         for i in range(50):
@@ -240,11 +247,11 @@ if __name__ == '__main__':
     bnn = BNN_FSVGD_SimPrior(NUM_DIM_X, NUM_DIM_Y, domain=domain, rng_key=next(key_iter), function_sim=sim,
                              hidden_layer_sizes=[64, 64, 64], num_train_steps=20000, data_batch_size=4,
                              num_particles=20, num_f_samples=128, num_measurement_points=8,
-                             bandwidth_svgd=0.1, bandwidth_ssge=None, ssge_kernel_type='IMQ',
+                             bandwidth_svgd=1., bandwidth_score_estim=None, ssge_kernel_type='IMQ',
                              normalization_stats=sim.normalization_stats, likelihood_std=0.05,
                              score_estimator=score_estimator)
     for i in range(10):
-        bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=2000)
+        bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=1000)
         if NUM_DIM_X == 1:
             bnn.plot_1d(x_train, y_train, true_fun=fun, title=f'FSVGD SimPrior {score_estimator}, iter {(i + 1) * 2000}',
                         domain_l=domain.l[0], domain_u=domain.u[0])
