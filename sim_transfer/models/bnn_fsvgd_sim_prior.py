@@ -160,14 +160,14 @@ class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
         # initialize score estimator
         if self.score_estimator in ['SSGE', 'ssge']:
             self._score_estim = SSGE(bandwidth=self.bandwidth_score_estim, kernel_type=self.ssge_kernel_type)
-        elif score_estimator in ['nu_method', 'nu-method']:
+        elif self.score_estimator in ['nu_method', 'nu-method']:
             self._score_estim = NuMethod(lam=1e-4, bandwidth=self.bandwidth_score_estim)
-        elif score_estimator in ['GP', 'gp']:
+        elif self.score_estimator in ['GP', 'gp']:
             pass
-        elif score_estimator in ['KDE', 'kde']:
+        elif self.score_estimator in ['KDE', 'kde']:
             self.kde = KDE(bandwidth=self.bandwidth_score_estim)
         else:
-            raise ValueError(f'Unknown score_estimator {score_estimator}. Must be either SSGE or GP')
+            raise ValueError(f'Unknown score_estimator {self.score_estimator}. Must be either SSGE or GP')
 
         # in case of independent output dimensions, vectorize the score estimation function over the output dimension
         if self.independent_output_dims:
@@ -235,7 +235,7 @@ if __name__ == '__main__':
     x_measurement = jnp.linspace(domain.l[0], domain.u[0], 50).reshape(-1, 1)
 
     num_train_points = 3
-    score_estimator = 'ssge'
+    score_estimator = 'nu-method'
 
     x_train = jax.random.uniform(key=next(key_iter), shape=(num_train_points,),
                                  minval=domain.l, maxval=domain.u).reshape(-1, 1)
@@ -246,12 +246,12 @@ if __name__ == '__main__':
 
     bnn = BNN_FSVGD_SimPrior(NUM_DIM_X, NUM_DIM_Y, domain=domain, rng_key=next(key_iter), function_sim=sim,
                              hidden_layer_sizes=[64, 64, 64], num_train_steps=20000, data_batch_size=4,
-                             num_particles=20, num_f_samples=128, num_measurement_points=8,
-                             bandwidth_svgd=1., bandwidth_score_estim=None, ssge_kernel_type='IMQ',
+                             num_particles=20, num_f_samples=128, num_measurement_points=16,
+                             bandwidth_svgd=1., bandwidth_score_estim=1.0, ssge_kernel_type='IMQ',
                              normalization_stats=sim.normalization_stats, likelihood_std=0.05,
                              score_estimator=score_estimator)
     for i in range(10):
-        bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=1000)
+        bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=2000)
         if NUM_DIM_X == 1:
             bnn.plot_1d(x_train, y_train, true_fun=fun, title=f'FSVGD SimPrior {score_estimator}, iter {(i + 1) * 2000}',
                         domain_l=domain.l[0], domain_u=domain.u[0])
