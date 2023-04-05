@@ -176,7 +176,7 @@ class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
                 # create estimate gradient function over the output dims
                 self._estimate_gradients_s_x_vectorized = jax.vmap(
                     lambda y, f: self._score_estim.estimate_gradients_s_x(y, f), in_axes=-1, out_axes=-1)
-            elif self.score_estimator in ['GP', 'gp']:
+            elif self.score_estimator in ['KDE', 'kde']:
                     self._estimate_log_probs_vectorized = jax.vmap(
                         lambda y, f: self.kde.density_estimates_log_prob(y, f), in_axes=-1, out_axes=-1)
 
@@ -235,7 +235,7 @@ if __name__ == '__main__':
     x_measurement = jnp.linspace(domain.l[0], domain.u[0], 50).reshape(-1, 1)
 
     num_train_points = 3
-    score_estimator = 'nu-method'
+    score_estimator = 'kde'
 
     x_train = jax.random.uniform(key=next(key_iter), shape=(num_train_points,),
                                  minval=domain.l, maxval=domain.u).reshape(-1, 1)
