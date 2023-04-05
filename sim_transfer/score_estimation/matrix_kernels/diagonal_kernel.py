@@ -4,7 +4,7 @@ from typing import Optional, Tuple
 
 import jax
 from jax import numpy as jnp
-from non_param_estim.kscore.utils import median_heuristic
+from .utils import median_heuristic
 
 from sim_transfer.score_estimation.matrix_kernels import DiagonalKernel
 

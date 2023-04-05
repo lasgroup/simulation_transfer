@@ -13,3 +13,4 @@ wandb
 tensorflow-probability
 tensorflow-datasets
 tensorflow
+pytest

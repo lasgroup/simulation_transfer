@@ -18,7 +18,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v2
       with:
-        python-version: 3.x
+        python-version: 3.9
 
     - name: Install dependencies
       run: |
@@ -27,5 +27,6 @@ jobs:
 
     - name: Run tests
       run: |
-        cd sim_transfer/tests
-        python -m unittest
+        pytest sim_transfer/tests
+      env:
+        PYTHONPATH: ${{ github.workspace }}
