@@ -235,6 +235,11 @@ class PendulumSim(FunctionSimulator):
                  encode_angle: bool = True):
         super().__init__(input_size=4 if encode_angle else 3, output_size=3 if encode_angle else 2)
         self.model = Pendulum(dt=dt, dt_integration=0.005, encode_angle=encode_angle)
+
+        self.encode_angle = encode_angle
+        self._state_action_spit_idx = 3 if encode_angle else 2
+
+        """ Bounds for uniform sampling of the parameters"""
         if lower_bound is None:
             lower_bound = PendulumParams(m=jnp.array(.5), l=jnp.array(.5), g=jnp.array(5.0), nu=jnp.array(0.0),
                                          c_d=jnp.array(0.0))
@@ -246,8 +251,7 @@ class PendulumSim(FunctionSimulator):
         assert jnp.all(jnp.stack(jtu.tree_flatten(jtu.tree_map(lambda l, u: l <= u, lower_bound, upper_bound))[0])), \
             'lower bounds have to be smaller than upper bounds'
 
-        self.encode_angle = encode_angle
-        self._state_action_spit_idx = 3 if encode_angle else 2
+
 
         if self.encode_angle:
             self._domain = HypercubeDomainWithAngles(angle_indices=[0], lower=self._domain_lower,
@@ -261,8 +265,8 @@ class PendulumSim(FunctionSimulator):
 
     def sample_function_vals(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
         assert x.ndim == 2 and x.shape[-1] == self.input_size
-        params = self.model.sample_params(rng_key, sample_shape=(num_samples,),
-                                          lower_bound=self._lower_bound_params, upper_bound=self._upper_bound_params)
+        params = self.model.sample_params_uniform(rng_key, sample_shape=(num_samples,),
+                                                  lower_bound=self._lower_bound_params, upper_bound=self._upper_bound_params)
         def batched_fun(z, params):
             x, u = self._split_state_action(z)
             return vmap(self.model.next_step, in_axes=(0, 0, None))(x, u, params)
@@ -293,20 +297,91 @@ class PendulumSim(FunctionSimulator):
         return self.model.next_step(x=s, u=u, params=self._typical_params)
 
 
+class PendulumBiModalSim(PendulumSim):
+
+    def __init__(self, dt: float = 0.05, encode_angle: bool = True):
+        FunctionSimulator.__init__(self, input_size=4 if encode_angle else 3, output_size=3 if encode_angle else 2)
+        self.model = Pendulum(dt=dt, dt_integration=0.005, encode_angle=encode_angle)
+
+        self.encode_angle = encode_angle
+        self._state_action_spit_idx = 3 if encode_angle else 2
+
+        # parameter bounds for the 1st part of the dist
+        self._lower_bound_params1 = PendulumParams(
+            m=jnp.array(.5), l=jnp.array(.5), g=jnp.array(10.), nu=jnp.array(0.0), c_d=jnp.array(0.0))
+        self._upper_bound_params1 = PendulumParams(
+            m=jnp.array(0.7), l=jnp.array(0.7), g=jnp.array(10.), nu=jnp.array(0.0), c_d=jnp.array(0.0))
+
+        assert jnp.all(jnp.stack(jtu.tree_flatten(
+            jtu.tree_map(lambda l, u: l <= u, self._lower_bound_params1, self._upper_bound_params1))[0])), \
+            'lower bounds have to be smaller than upper bounds'
+
+        # parameter bounds for the 2nd part of the dist
+        self._lower_bound_params2 = PendulumParams(
+            m=jnp.array(1.3), l=jnp.array(1.3), g=jnp.array(10.), nu=jnp.array(0.0), c_d=jnp.array(0.0))
+        self._upper_bound_params2 = PendulumParams(
+            m=jnp.array(1.5), l=jnp.array(1.5), g=jnp.array(10.), nu=jnp.array(0.0), c_d=jnp.array(0.0))
+
+        assert jnp.all(jnp.stack(jtu.tree_flatten(
+            jtu.tree_map(lambda l, u: l <= u, self._lower_bound_params2, self._upper_bound_params2))[0])), \
+            'lower bounds have to be smaller than upper bounds'
+
+        # setup domain
+        if self.encode_angle:
+            self._domain = HypercubeDomainWithAngles(angle_indices=[0], lower=self._domain_lower,
+                                                     upper=self._domain_upper)
+        else:
+            self._domain = HypercubeDomain(lower=self._domain_lower, upper=self._domain_upper)
+
+    def _split_state_action(self, z: jnp.array) -> Tuple[jnp.array, jnp.array]:
+        assert z.shape[-1] == self.domain.num_dims
+        return z[..., :self._state_action_spit_idx], z[..., self._state_action_spit_idx:]
+
+    def sample_function_vals(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
+        assert x.ndim == 2 and x.shape[-1] == self.input_size
+
+        # split num_samples samples across the two modes
+        num_samples1 = int(num_samples/2)
+        num_samples2 = num_samples - num_samples1
+        assert num_samples1 + num_samples2 == num_samples
+
+        # samples parameters from the two modes / distribution parts
+        params1 = self.model.sample_params_uniform(rng_key, sample_shape=(num_samples1,),
+                                                   lower_bound=self._lower_bound_params1,
+                                                   upper_bound=self._upper_bound_params1)
+
+        params2 = self.model.sample_params_uniform(rng_key, sample_shape=(num_samples2,),
+                                                   lower_bound=self._lower_bound_params2,
+                                                   upper_bound=self._upper_bound_params2)
+
+        # concatenate the samples
+        params = jax.tree_map(lambda x, y: jnp.concatenate([x, y], axis=-1), params1, params2)
+
+        def batched_fun(z, params):
+            x, u = self._split_state_action(z)
+            return vmap(self.model.next_step, in_axes=(0, 0, None))(x, u, params)
+
+        f = vmap(batched_fun, in_axes=(None, 0))(x, params)
+        assert f.shape == (num_samples, x.shape[0], self.output_size)
+        return f
+
+    def _typical_f(self, x: jnp.array) -> jnp.array:
+        raise NotImplementedError('Does not make sense for bi-modal simulator')
 
 if __name__ == '__main__':
     from matplotlib import pyplot as plt
 
     key = jax.random.PRNGKey(675)
     # sim = GaussianProcessSim(input_size=1, output_scale=3.0, mean_fn=lambda x: 2 * x)
-    sim = LinearSim()
+    sim = PendulumBiModalSim()
+    sim.sample_function_vals(x=jnp.zeros((1, sim.input_size)), num_samples=5, rng_key=key)
 
-    plt, axes = plt.subplots(ncols=1, figsize=(4.5, 4))
-    for i in range(1):
-        x_plot = jnp.linspace(sim.domain.l, sim.domain.u, 200).reshape((-1, 1))
-        y_samples = sim.sample_function_vals(x_plot, 10, key)
-        for y in y_samples:
-            axes.plot(x_plot, y[:, i])
+    # plt, axes = plt.subplots(ncols=1, figsize=(4.5, 4))
+    # for i in range(1):
+    #     x_plot = jnp.linspace(sim.domain.l, sim.domain.u, 200).reshape((-1, 1))
+    #     y_samples = sim.sample_function_vals(x_plot, 10, key)
+    #     for y in y_samples:
+    #         axes.plot(x_plot, y[:, i])
 
     #axes[0].set_title('Output dimension 1')
     #axes[1].set_title('Output dimension 2')

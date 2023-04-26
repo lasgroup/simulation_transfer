@@ -25,6 +25,10 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
         from sim_transfer.sims.simulators import PendulumSim
         sim = PendulumSim(encode_angle=True)
         assert {'num_samples_train'} <= set(data_spec.keys()) <= {'num_samples_train'}.union(DEFAULTS_PENDULUM.keys())
+    elif data_source == 'pendulum_bimodal':
+        from sim_transfer.sims.simulators import PendulumBiModalSim
+        sim = PendulumBiModalSim(encode_angle=True)
+        assert {'num_samples_train'} <= set(data_spec.keys()) <= {'num_samples_train'}.union(DEFAULTS_PENDULUM.keys())
     else:
         raise ValueError('Unknown data source %s' % data_source)
 
@@ -36,5 +40,4 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
         x_support_mode_train=data_spec.get('x_support_mode_train', DEFAULTS_SINUSOIDS['x_support_mode_train']),
         param_mode=data_spec.get('param_mode', DEFAULTS_SINUSOIDS['param_mode'])
     )
-
     return x_train, y_train, x_test, y_test, sim
