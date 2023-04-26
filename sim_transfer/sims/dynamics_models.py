@@ -102,8 +102,8 @@ class DynamicsModel(ABC):
         keys = jax.random.split(key, treedef.num_leaves)
         return jtu.tree_unflatten(treedef, keys)
 
-    def sample_params(self, key: jax.random.PRNGKey, sample_shape: Union[int, Tuple[int]],
-                      lower_bound: NamedTuple, upper_bound: NamedTuple):
+    def sample_params_uniform(self, key: jax.random.PRNGKey, sample_shape: Union[int, Tuple[int]],
+                              lower_bound: NamedTuple, upper_bound: NamedTuple):
         keys = self._split_key_like_tree(key)
         if isinstance(sample_shape, int):
             sample_shape = (sample_shape,)
@@ -441,7 +441,7 @@ if __name__ == "__main__":
                                  c_d=jnp.array(0.1))
     key = jax.random.PRNGKey(0)
     keys = random.split(key, 4)
-    params = vmap(pendulum.sample_params, in_axes=(0, None, None))(keys, upper_bound, lower_bound)
+    params = vmap(pendulum.sample_params_uniform, in_axes=(0, None, None))(keys, upper_bound, lower_bound)
 
     import matplotlib.patches as patches
 
