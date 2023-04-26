@@ -29,6 +29,22 @@ class TestRandomInvertedPendulumEnv(unittest.TestCase):
         for i in range(self.num_samples):
             self.assertTrue(jnp.allclose(result[i, 0, :], result[i, 1, :]))
 
+    def test_sample_datasets_shapes(self):
+        x_train, y_train, x_test, y_test = self.env.sample_datasets(
+            self.rng_key, num_samples_train=5, num_samples_test=10, param_mode='random')
+        assert x_train.shape == (5, self.env.input_size)
+        assert y_train.shape == (5, self.env.output_size)
+        assert x_test.shape == (10, self.env.input_size)
+        assert y_test.shape == (10, self.env.output_size)
+
+    def test_sample_datasets_seed_consistency(self):
+        data_arrays1 = self.env.sample_datasets(
+            self.rng_key, num_samples_train=5, num_samples_test=10, param_mode='random')
+        data_arrays2 = self.env.sample_datasets(
+            self.rng_key, num_samples_train=5, num_samples_test=10, param_mode='random')
+        assert all([jnp.allclose(arr1, arr2) for arr1, arr2 in zip(data_arrays1, data_arrays2)])
+
+
 
 if __name__ == '__main__':
     unittest.main()

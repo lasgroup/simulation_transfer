@@ -8,7 +8,7 @@ from brax.base import System
 from brax.envs.inverted_pendulum import InvertedPendulum
 
 from sim_transfer.sims.simulators import FunctionSimulator
-from sim_transfer.sims.domain import Domain
+from sim_transfer.sims.domain import Domain, HypercubeDomain
 
 
 def _brax_write_sys(sys, attr, val):
@@ -92,9 +92,10 @@ class RandomInvertedPendulumEnv(InvertedPendulum, BraxFunctionSimualtor):
         InvertedPendulum.__init__(self, backend=backend, **kwargs)
         BraxFunctionSimualtor.__init__(self, input_size=4 + 1, output_size=4)
 
-    @property
-    def domain(self) -> Domain:
-        raise NotImplementedError
+        self._domain = HypercubeDomain(
+            lower=jnp.array([-1, -2 * jnp.pi, -10, - 4 * jnp.pi, -1.]),
+            upper=jnp.array([1., 2 * jnp.pi, 10, 4 * jnp.pi, 1.])
+        )
 
     def predict_next(self, sys: System, state: jnp.array, action: jnp.array) -> jnp.array:
         q, qd = state[:2], state[2:]
@@ -102,6 +103,10 @@ class RandomInvertedPendulumEnv(InvertedPendulum, BraxFunctionSimualtor):
         pipeline_state = self._pipeline_step(sys, pipeline_state, action)
         new_state = jnp.concatenate([pipeline_state.q, pipeline_state.qd], axis=-1)
         return new_state
+
+    @property
+    def domain(self) -> Domain:
+        return self._domain
 
     @staticmethod
     def _randomize_sys(sys: System, rng_key: jax.random.PRNGKey) -> System:

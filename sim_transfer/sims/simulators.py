@@ -26,7 +26,7 @@ class FunctionSimulator:
 
     def sample_datasets(self, rng_key: jax.random.PRNGKey, num_samples_train: int,
                         num_samples_test: int = 10000, obs_noise_std: float = 0.1,
-                        x_support_mode_train: str = 'full', param_mode: str = 'typical') \
+                        x_support_mode_train: str = 'full', param_mode: str = 'random') \
             -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
         key1, key2 = jax.random.split(rng_key, 2)
 
