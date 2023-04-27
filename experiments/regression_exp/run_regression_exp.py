@@ -58,9 +58,9 @@ def regression_experiment(
                           num_measurement_points: int = 32,
 
                           # FSVGD_Sim_Prior parameters
-                          bandwidth_ssge: float = None,
-                          bandwidth_kde: float = None,
-                          num_f_samples: int = 100,
+                          bandwidth_score_estim: float = None,
+                          ssge_kernel_type: str = 'SE',
+                          num_f_samples: int = 128,
 
                           # BNN_SVGD_DistillPrior
                           num_distill_steps: int = 500000,
@@ -102,14 +102,14 @@ def regression_experiment(
                           **standard_model_params)
     elif 'BNN_FSVGD_SimPrior' in model:
         score_estimator = model.split('_')[-1]
-        assert score_estimator in ['SSGE', 'ssge', 'GP', 'gp', 'KDE', 'kde']
+        assert score_estimator in ['SSGE', 'ssge', 'GP', 'gp', 'KDE', 'kde', 'nu-method', 'nu_method']
         model = BNN_FSVGD_SimPrior(domain=sim.domain,
                                    function_sim=sim,
                                    num_particles=num_particles,
                                    bandwidth_svgd=bandwidth_svgd,
                                    num_measurement_points=num_measurement_points,
-                                   bandwidth_ssge=bandwidth_ssge,
-                                   bandwidth_kde=bandwidth_kde,
+                                   bandwidth_score_estim=bandwidth_score_estim,
+                                   ssge_kernel_type=ssge_kernel_type,
                                    num_f_samples=num_f_samples,
                                    score_estimator=score_estimator,
                                    **standard_model_params)
@@ -158,6 +158,11 @@ def main(args):
         sys.stdout = logger
         sys.stderr = logger
 
+    from pprint import pprint
+    print('\nExperiment parameters:')
+    pprint(exp_params)
+    print('')
+
     """ Experiment core """
     t_start = time.time()
 
@@ -200,6 +205,7 @@ def main(args):
     if use_wandb:
         wandb.finish()
 
+
 if __name__ == '__main__':
     current_date = datetime.datetime.now().strftime("%b%d").lower()
     parser = argparse.ArgumentParser(description='Meta-BO run')
@@ -215,7 +221,7 @@ if __name__ == '__main__':
     parser.add_argument('--data_seed', type=int, default=77698)
 
     # standard BNN parameters
-    parser.add_argument('--model', type=str, default='BNN_FSVGD_SimPrior_ssge')
+    parser.add_argument('--model', type=str, default='BNN_FSVGD_SimPrior_nu-method')
     parser.add_argument('--model_seed', type=int, default=892616)
     parser.add_argument('--likelihood_std', type=float, default=0.1)
     parser.add_argument('--data_batch_size', type=int, default=8)
@@ -237,8 +243,8 @@ if __name__ == '__main__':
     parser.add_argument('--num_measurement_points', type=int, default=16)
 
     # FSVGD_SimPrior parameters
-    parser.add_argument('--bandwidth_ssge', type=float, default=None)
-    parser.add_argument('--bandwidth_kde', type=float, default=None)
+    parser.add_argument('--bandwidth_score_estim', type=float, default=None)
+    parser.add_argument('--ssge_kernel_type', type=str, default='IMQ')
     parser.add_argument('--num_f_samples', type=int, default=64)
 
     # FSVGD_SimPrior parameters

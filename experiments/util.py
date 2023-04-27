@@ -122,7 +122,7 @@ def generate_run_commands(command_list: List[str], output_file_list: Optional[Li
                    f'-n {num_cpus} '
 
         if num_gpus > 0:
-            bsub_cmd += f'--gpus={num_gpus}]" '
+            bsub_cmd += f'-G {num_gpus} '
 
         assert output_file_list is None or len(command_list) == len(output_file_list)
         if output_file_list is None:

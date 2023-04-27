@@ -15,12 +15,12 @@ MODEL_SPECIFIC_CONFIG = {
     'BNN_FSVGD': {
         'bandwidth_svgd': {'distribution': 'log_uniform', 'min': -2., 'max': 0.0},
         'bandwidth_gp_prior': {'distribution': 'log_uniform', 'min': -2., 'max': 0.},
-        'num_train_steps': {'values': [20000, 40000]},
+        'num_train_steps': {'values': [20000]},
         'num_measurement_points': {'values': [16, 32, 64, 128]},
     },
     'BNN_FSVGD_SimPrior_gp': {
         'bandwidth_svgd': {'distribution': 'log_uniform', 'min': -2., 'max': 2.},
-        'num_train_steps': {'values': [20000, 40000]},
+        'num_train_steps': {'values': [20000]},
         'num_measurement_points': {'values': [8, 16, 32, 64]},
         'num_f_samples': {'values': [512, 1024, 2056, 4112]},
     },
@@ -29,11 +29,18 @@ MODEL_SPECIFIC_CONFIG = {
         'num_train_steps': {'values': [20000]},
         'num_measurement_points': {'values': [8, 16, 32]},
         'num_f_samples': {'values': [128, 256, 512]},
-        'bandwidth_ssge': {'distribution': 'log_uniform', 'min': -2., 'max': 1.},
+        'bandwidth_score_estim': {'distribution': 'log_uniform', 'min': -2., 'max': 1.},
+    },
+    'BNN_FSVGD_SimPrior_nu-method': {
+        'bandwidth_svgd': {'distribution': 'log_uniform', 'min': -1., 'max': 2.},
+        'num_train_steps': {'values': [20000]},
+        'num_measurement_points': {'values': [8, 16, 32]},
+        'num_f_samples': {'values': [256, 512]},
+        'bandwidth_score_estim': {'distribution': 'log_uniform_10', 'min': -0.5, 'max': 1},
     },
     'BNN_FSVGD_SimPrior_kde': {
         'bandwidth_svgd': {'distribution': 'log_uniform', 'min': -2., 'max': 2.},
-        'num_train_steps': {'values': [20000, 40000]},
+        'num_train_steps': {'values': [20000]},
         'num_measurement_points': {'values': [8, 16, 32, 64]},
         'num_f_samples': {'values': [512, 1024, 2056, 4112]},
     },
@@ -104,7 +111,8 @@ def main(args):
             command_list.append(cmd)
             output_file_list.append(os.path.join(exp_result_folder, f'{model_seed}_{data_seed}.out'))
 
-    generate_run_commands(command_list, output_file_list, num_cpus=args.num_cpus, mode=args.run_mode, promt=True)
+    generate_run_commands(command_list, output_file_list, num_cpus=args.num_cpus,
+                          num_gpus=1 if args.gpu else 0, mode=args.run_mode, promt=not args.yes)
 
 
 if __name__ == '__main__':
@@ -121,6 +129,8 @@ if __name__ == '__main__':
     # general args
     parser.add_argument('--exp_name', type=str, default=f'test_{current_date}')
     parser.add_argument('--seed', type=int, default=94563)
+    parser.add_argument('--gpu', default=False, action='store_true')
+    parser.add_argument('--yes', default=False, action='store_true')
 
     # data parameters
     parser.add_argument('--data_source', type=str, default='pendulum')
