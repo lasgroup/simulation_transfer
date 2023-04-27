@@ -6,9 +6,10 @@ from typing import Dict, Any
 import brax
 from brax.base import System
 from brax.envs.inverted_pendulum import InvertedPendulum
+from brax.envs.inverted_double_pendulum import InvertedDoublePendulum
 
 from sim_transfer.sims.simulators import FunctionSimulator
-from sim_transfer.sims.domain import Domain, HypercubeDomain
+from sim_transfer.sims.domain import Domain, HypercubeDomain, HypercubeDomainWithAngles
 
 
 def _brax_write_sys(sys, attr, val):
@@ -115,33 +116,97 @@ class RandomInvertedPendulumEnv(InvertedPendulum, BraxFunctionSimualtor):
             # 'geoms.elasticity': jnp.ones_like(sys.geoms[0].elasticity) * jax.random.uniform(rng_key),
         })
 
+    @property
+    def normalization_stats(self) -> Dict[str, jnp.ndarray]:
+        return {'x_mean': jnp.zeros(self.input_size),
+                'x_std': jnp.array([1., 5., 7.5, 12., 1.]),
+                'y_mean': jnp.zeros(self.output_size),
+                'y_std': jnp.array([1., 5., 7.5, 12.])}
+
+class RandomInvertedDoublePendulumEnv(InvertedDoublePendulum, BraxFunctionSimualtor):
+
+    def __init__(self, backend: str = 'generalized', encode_angles: bool = True,
+                 **kwargs):
+        InvertedDoublePendulum.__init__(self, backend=backend, **kwargs)
+        state_size = 8 if encode_angles else 6
+        BraxFunctionSimualtor.__init__(self, input_size=state_size + 1, output_size=state_size)
+        self.encode_angles = encode_angles
+
+        l_cart_pos, u_cart_pos = -1., 1.
+        l_cart_vel, u_cart_vel = -10., 10.
+        l_ang_vel, u_ang_vel = -4 * jnp.pi, 4 * jnp.pi
+        l_act, u_act = -3., 3.
+        if self.encode_angles:
+            self._domain = HypercubeDomainWithAngles(angle_indices=[1, 2],
+                lower=jnp.array([l_cart_pos, -jnp.pi, -jnp.pi, l_cart_vel, l_ang_vel, l_ang_vel, l_act]),
+                upper=jnp.array([u_cart_pos, jnp.pi, jnp.pi, u_cart_vel, u_ang_vel, u_ang_vel, u_act])
+            )
+        else:
+            self._domain = HypercubeDomain(
+                lower=jnp.array([l_cart_pos, -jnp.pi, -jnp.pi, l_cart_vel, l_ang_vel, l_ang_vel, l_act]),
+                upper=jnp.array([u_cart_pos, jnp.pi, jnp.pi, u_cart_vel, u_ang_vel, u_ang_vel,u_act]))
+
+        assert self._domain.num_dims == self.input_size
+
+    @staticmethod
+    def _encode_q(q: jnp.array) -> jnp.array:
+        return jnp.array([q[0], jnp.sin(q[1]), jnp.cos(q[1]), jnp.sin(q[2]), jnp.cos(q[2])])
+
+    @staticmethod
+    def _decode_q(state: jnp.array):
+        return jnp.array([state[0], jnp.arctan2(state[1], state[2]), jnp.arctan2(state[3], state[4])])
+
+    def predict_next(self, sys: System, state: jnp.array, action: jnp.array) -> jnp.array:
+        q = self._decode_q(state[:3]) if self.encode_angles else state[:3]
+        qd = state[-3:]
+        pipeline_state = self._pipeline.init(sys, q, qd)
+        pipeline_state = self._pipeline_step(sys, pipeline_state, action)
+        q_state = self._encode_q(pipeline_state.q) if self.encode_angles else pipeline_state.q
+        new_state = jnp.concatenate([q_state, pipeline_state.qd], axis=-1)
+        return new_state
+
+    @staticmethod
+    def _randomize_sys(sys: System, rng_key: jax.random.PRNGKey) -> System:
+        return _brax_set_sys(sys, {
+            'link.inertia.mass': sys.link.inertia.mass + jax.random.uniform(rng_key, shape=(sys.num_links(),)),
+            # 'geoms.elasticity': jnp.ones_like(sys.geoms[0].elasticity) * jax.random.uniform(rng_key),
+        })
+
+    @property
+    def normalization_stats(self) -> Dict[str, jnp.ndarray]:
+        if self.encode_angles:
+            return {'x_mean': jnp.zeros(self.input_size),
+                    'x_std': jnp.array([1., 1., 1., 1., 1., 8., 12., 12., 2.]),
+                    'y_mean': jnp.zeros(self.output_size),
+                    'y_std': jnp.array([1., 1., 1., 1., 1., 8., 10., 10.])}
+        else:
+            return {'x_mean': jnp.zeros(self.input_size),
+                    'x_std': jnp.array([1., 2.5, 2.5, 8., 12., 12., 2.]),
+                    'y_mean': jnp.zeros(self.output_size),
+                    'y_std': jnp.array([1., 2.5, 2.5, 8., 12., 12.])}
+
+    @property
+    def domain(self) -> Domain:
+        return self._domain
+
+
 
 if __name__ == '__main__':
-
-    env = RandomInvertedPendulumEnv(backend='generalized')
+    env = RandomInvertedPendulumEnv(backend='spring')
     key = jax.random.PRNGKey(345354)
 
-    import time
+    _, _, x_test, y_test = env.sample_datasets(key, num_samples_train=10)
 
-    sys = env.sys
-    sys_new = _brax_set_sys(sys, {
-        'geoms.elasticity': jnp.ones_like(sys.geoms[0].elasticity) * 0.5,
-        #'link.inertia.mass': sys.link.inertia.mass,
-        # 'geoms.elasticity': sys.geoms.elasticity + jax.random.uniform(rng_key, shape=(sys.num_geoms(),)),
-    })
-
-    predict_next_random_vmap_jit = jax.jit(env._predict_next_random_vmap)
     sample_function_vals_jit = jax.jit(partial(env.sample_function_vals, num_samples=10))
 
+    x = jnp.array([[0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]])
 
-    x = jnp.array([[0.0, 0.0, 0.0, 0.0, 1.0]])
-    print(sample_function_vals_jit(x=x, rng_key=key).shape)
+    next_state = env.predict_next(env.sys, jnp.array([0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0]), action=jnp.array([1.0]))
+
+    y = sample_function_vals_jit(x=x, rng_key=key)
+    print(y.shape)
 
 
-    t = time.time()
-    for i in range(100):
-        pred = sample_function_vals_jit(x=x, rng_key=key)
-    print(time.time() - t)
 
 
 

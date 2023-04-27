@@ -251,8 +251,6 @@ class PendulumSim(FunctionSimulator):
         assert jnp.all(jnp.stack(jtu.tree_flatten(jtu.tree_map(lambda l, u: l <= u, lower_bound, upper_bound))[0])), \
             'lower bounds have to be smaller than upper bounds'
 
-
-
         if self.encode_angle:
             self._domain = HypercubeDomainWithAngles(angle_indices=[0], lower=self._domain_lower,
                                                      upper=self._domain_upper)
@@ -364,6 +362,19 @@ class PendulumBiModalSim(PendulumSim):
         f = vmap(batched_fun, in_axes=(None, 0))(x, params)
         assert f.shape == (num_samples, x.shape[0], self.output_size)
         return f
+
+    @property
+    def normalization_stats(self) -> Dict[str, jnp.ndarray]:
+        if self.encode_angle:
+            return {'x_mean': jnp.zeros(self.input_size),
+                    'x_std': jnp.array([1., 1., 3.5, 2.]),
+                    'y_mean': jnp.zeros(self.output_size),
+                    'y_std': jnp.array([1., 1., 3.5])}
+        else:
+            return {'x_mean': jnp.zeros(self.input_size),
+                    'x_std': jnp.array([2.5, 3.5, 2.0]),
+                    'y_mean': jnp.zeros(self.output_size),
+                    'y_std': jnp.array([2.5, 3.5])}
 
     def _typical_f(self, x: jnp.array) -> jnp.array:
         raise NotImplementedError('Does not make sense for bi-modal simulator')
