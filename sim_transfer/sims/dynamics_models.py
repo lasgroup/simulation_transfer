@@ -80,9 +80,10 @@ class DynamicsModel(ABC):
         self._num_steps_integrate = int(dt / dt_integration)
 
     def next_step(self, x: jax.Array, u: jax.Array, params: PyTree) -> jax.Array:
-        for _ in range(self._num_steps_integrate):
-            x = x + self.dt_integration * self.ode(x, u, params)
-        next_state = x
+        def body(carry, _):
+            q = carry + self.dt_integration * self.ode(carry, u, params)
+            return q, None
+        next_state, _ = jax.lax.scan(body, x, xs=None, length=self._num_steps_integrate)
         if self.angle_idx is not None:
             theta = next_state[self.angle_idx]
             sin_theta, cos_theta = jnp.sin(theta), jnp.cos(theta)
@@ -435,6 +436,8 @@ class BicycleModel(DynamicsModel):
 
 if __name__ == "__main__":
     pendulum = Pendulum(0.1)
+    pendulum.next_step(x=jnp.array([0., 0., 0.]), u=jnp.array([1.0]), params=pendulum.params)
+
     upper_bound = PendulumParams(m=jnp.array(1.0), l=jnp.array(1.0), g=jnp.array(10.0), nu=jnp.array(1.0),
                                  c_d=jnp.array(1.0))
     lower_bound = PendulumParams(m=jnp.array(0.1), l=jnp.array(0.1), g=jnp.array(9.0), nu=jnp.array(0.1),
