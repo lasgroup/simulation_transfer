@@ -9,7 +9,7 @@ rng_key = jax.random.PRNGKey(2342)
 num_samples = 3
 
 ENVS = [RandomInvertedPendulumEnv(), RandomInvertedDoublePendulumEnv()]
-INPUTS = [jnp.array([[0.1, 0.2, 0.3, 0.4, 0.5], [0.5, 0.4, 0.3, 0.2, 0.1]]),  # input for RandomInvertedPendulumEnv
+INPUTS = [jnp.array([[0.1, 0.0, 1.0, 0.3, 0.4, 0.5], [0.5, 1.0, 0.0, 0.3, 0.2, 0.1]]),  # input for RandomInvertedPendulumEnv
           jnp.array([[0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],  # input for RandomInvertedDoublePendulumEnv
                      [0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.2, -0.5, 0.4]])
           ]
@@ -57,6 +57,13 @@ def test_angle_encoding_double_pendulum():
     x1 = jnp.array([0.5, 1., -2.5])
     x2 = env._decode_q(env._encode_q(x1))
     assert jnp.linalg.norm(x1-x2) < 1e-4
+
+def test_angle_encoding_pendulum():
+    env = RandomInvertedPendulumEnv()
+    x1 = jnp.array([0.5, 0.5])
+    x2 = env._decode_q(env._encode_q(x1))
+    assert jnp.linalg.norm(x1-x2) < 1e-4
+
 
 
 if __name__ == '__main__':
