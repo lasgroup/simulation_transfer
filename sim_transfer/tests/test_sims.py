@@ -2,8 +2,10 @@ import unittest
 import pytest
 import jax
 import jax.numpy as jnp
+from typing import Dict
+
 from sim_transfer.sims.mset_sampler import UniformMSetSampler
-from sim_transfer.sims.simulators import GaussianProcessSim
+from sim_transfer.sims.simulators import GaussianProcessSim, AdditiveSim, FunctionSimulator
 
 class TestUniformMSetSampler(unittest.TestCase):
 
@@ -32,6 +34,61 @@ class TestGaussianProcessSim(unittest.TestCase):
         assert f_vals.shape == (7, 10, 1)
 
 
+class _DummySim(FunctionSimulator):
+
+    def __init__(self, input_size: int, output_size: int,
+                 fixed_val: float):
+        super().__init__(input_size, output_size)
+        self.fixed_val = fixed_val
+
+    def sample_function_vals(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
+        f_samples = self.fixed_val * jnp.ones((num_samples, x.shape[0], self.output_size))
+        return f_samples
+
+    @property
+    def normalization_stats(self) -> Dict[str, jnp.ndarray]:
+        return {
+            'x_mean': jnp.zeros(self.input_size),
+            'x_std': jnp.ones(self.input_size),
+            'y_mean': jnp.ones(self.output_size) * self.fixed_val,
+            'y_std': jnp.ones(self.output_size) * 0.5
+        }
+
+
+class TestAdditiveSim(unittest.TestCase):
+
+    def testDefaultBehavior1(self):
+        key = jax.random.PRNGKey(3455)
+        sim = AdditiveSim([_DummySim(input_size=5, output_size=2, fixed_val=3)])
+        f_samples = sim.sample_function_vals(x=jnp.zeros((4, 5)), num_samples=10, rng_key=key)
+        assert jnp.array_equal(3 * jnp.ones((10, 4, 2)), f_samples)
+
+    def testAddBehavior1(self):
+        key = jax.random.PRNGKey(3455)
+        sim = AdditiveSim([_DummySim(input_size=5, output_size=2, fixed_val=3),
+                           _DummySim(input_size=5, output_size=2, fixed_val=-1),
+                           _DummySim(input_size=5, output_size=2, fixed_val=2)])
+        f_samples = sim.sample_function_vals(x=jnp.zeros((4, 5)), num_samples=10, rng_key=key)
+        assert jnp.array_equal(4 * jnp.ones((10, 4, 2)), f_samples)
+
+    def test_seed_behavior(self):
+        sim = AdditiveSim([_DummySim(input_size=3, output_size=2, fixed_val=3),
+                           GaussianProcessSim(input_size=3, output_size=2)])
+        key1, key2 = jax.random.split(jax.random.PRNGKey(3455), 2)
+        f1 = sim.sample_function_vals(x=jnp.zeros((4, 3)), num_samples=7, rng_key=key1)
+        f2 = sim.sample_function_vals(x=jnp.zeros((4, 3)), num_samples=7, rng_key=key1)
+        f3 = sim.sample_function_vals(x=jnp.zeros((4, 3)), num_samples=7, rng_key=key2)
+        assert jnp.array_equal(f1, f2)
+        assert not jnp.array_equal(f1, f3)
+
+    def test_normalization_stats(self):
+        sim = AdditiveSim([_DummySim(input_size=2, output_size=1, fixed_val=3),
+                           _DummySim(input_size=2, output_size=1, fixed_val=-1)])
+        norm_stats = sim.normalization_stats
+        assert jnp.array_equal(norm_stats['x_mean'], jnp.zeros(2))
+        assert jnp.array_equal(norm_stats['x_std'], 2**(0.5) * jnp.ones(2))
+        assert jnp.array_equal(norm_stats['y_mean'], 2 * jnp.ones(1))
+        assert jnp.array_equal(norm_stats['y_std'], (2 * 0.5**2)**(0.5) * jnp.ones(1))
 
 if __name__ == '__main__':
     pytest.main()

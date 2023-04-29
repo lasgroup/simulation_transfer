@@ -1,4 +1,4 @@
-from typing import Callable, Tuple, Dict, Optional
+from typing import Callable, Tuple, Dict, Optional, List
 
 import jax
 import jax.numpy as jnp
@@ -64,6 +64,53 @@ class FunctionSimulator:
     def _typical_f(self, x: jnp.array) -> jnp.array:
         raise NotImplementedError
 
+class AdditiveSim(FunctionSimulator):
+    """
+    Forms an additive combination of multiple sims
+    """
+
+    def __init__(self, base_sims: List[FunctionSimulator], take_domain_of_idx: int = 0):
+        assert len(base_sims) > 0, 'base sims must be a list of at least one sim'
+        assert len({sim.input_size for sim in base_sims}) == 1, 'the base sims must have the same input size'
+        assert len({sim.output_size for sim in base_sims}) == 1, 'the base sims must have the same output size'
+        super().__init__(input_size=base_sims[0].input_size, output_size=base_sims[0].output_size)
+
+        self.base_sims = base_sims
+        assert take_domain_of_idx < len(base_sims), 'take_domain_of_idx must be a valid index of base_sims'
+        self.take_domain_of_idx = take_domain_of_idx
+
+    def sample_function_vals(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
+        rng_keys = jax.random.split(rng_key, len(self.base_sims))
+        f_samples_per_sim = [sim.sample_function_vals(x=x, num_samples=num_samples, rng_key=key)
+                             for sim, key in zip(self.base_sims, rng_keys)]
+        f_samples = jnp.sum(jnp.stack(f_samples_per_sim, axis=0), axis=0)
+        assert f_samples.shape == (num_samples, x.shape[0], self.output_size)
+        return f_samples
+
+    @property
+    def domain(self) -> Domain:
+        return self.base_sims[self.take_domain_of_idx].domain
+
+    @property
+    def normalization_stats(self) -> Dict[str, jnp.ndarray]:
+        norm_stats = {}
+        for stat_name in ['x_mean', 'x_std', 'y_mean', 'y_std']:
+            stats_stack = jnp.stack([sim.normalization_stats[stat_name] for sim in self.base_sims], axis=0)
+            if 'mean' in stat_name:
+                norm_stats[stat_name] = jnp.sum(stats_stack, axis=0)
+            else:
+                norm_stats[stat_name] = jnp.sqrt(jnp.sum(stats_stack**2, axis=0))
+        return norm_stats
+
+
+
+    def _typical_f(self, x: jnp.array) -> jnp.array:
+        raise NotImplementedError
+
+
+
+
+
 
 class GaussianProcessSim(FunctionSimulator):
 
@@ -95,12 +142,15 @@ class GaussianProcessSim(FunctionSimulator):
                 rng_key: random number generator key
         """
         assert x.ndim == 2 and x.shape[-1] == self.input_size
-        gp = tfd.GaussianProcess(kernel=self.kernel, index_points=x, jitter=1e-4)
+        gp = self.gp_marginal_dist(x)
         keys = random.split(rng_key, self.output_size)
         f_samples = vmap(gp.sample, in_axes=(None, 0), out_axes=2)(num_samples, keys)
         f_samples *= self.output_scale
         assert f_samples.shape == (num_samples, x.shape[0], self.output_size)
         return f_samples
+
+    def gp_marginal_dist(self, x) -> tfd.Distribution:
+        return tfd.GaussianProcess(mean_fn=self.mean_fn, kernel=self.kernel, index_points=x, jitter=1e-4)
 
 
 class SinusoidsSim(FunctionSimulator):
@@ -378,6 +428,7 @@ class PendulumBiModalSim(PendulumSim):
 
     def _typical_f(self, x: jnp.array) -> jnp.array:
         raise NotImplementedError('Does not make sense for bi-modal simulator')
+
 
 if __name__ == '__main__':
     from matplotlib import pyplot as plt
