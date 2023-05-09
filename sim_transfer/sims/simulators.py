@@ -3,11 +3,10 @@ from typing import Callable, Tuple, Dict, Optional
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
-import tensorflow_probability.substrates.jax.distributions as tfd
 from jax import vmap, random
+import tensorflow_probability.substrates.jax.distributions as tfd
 from tensorflow_probability.substrates import jax as tfp
-
-from sim_transfer.sims.dynamics_models import Pendulum, PendulumParams
+from sim_transfer.sims.dynamics_models import Pendulum, PendulumParams, RaceCar, CarParams
 from sim_transfer.sims.domain import Domain, HypercubeDomain, HypercubeDomainWithAngles
 
 
@@ -264,7 +263,9 @@ class PendulumSim(FunctionSimulator):
     def sample_function_vals(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
         assert x.ndim == 2 and x.shape[-1] == self.input_size
         params = self.model.sample_params_uniform(rng_key, sample_shape=(num_samples,),
-                                                  lower_bound=self._lower_bound_params, upper_bound=self._upper_bound_params)
+                                                  lower_bound=self._lower_bound_params,
+                                                  upper_bound=self._upper_bound_params)
+
         def batched_fun(z, params):
             x, u = self._split_state_action(z)
             return vmap(self.model.next_step, in_axes=(0, 0, None))(x, u, params)
@@ -339,7 +340,7 @@ class PendulumBiModalSim(PendulumSim):
         assert x.ndim == 2 and x.shape[-1] == self.input_size
 
         # split num_samples samples across the two modes
-        num_samples1 = int(num_samples/2)
+        num_samples1 = int(num_samples / 2)
         num_samples2 = num_samples - num_samples1
         assert num_samples1 + num_samples2 == num_samples
 
@@ -379,14 +380,88 @@ class PendulumBiModalSim(PendulumSim):
     def _typical_f(self, x: jnp.array) -> jnp.array:
         raise NotImplementedError('Does not make sense for bi-modal simulator')
 
+
+class RaceCarSim(FunctionSimulator):
+
+    def __init__(self, dt: float = 0.01, encode_angle: bool = True, use_blend: bool = False):
+        self.use_blend = use_blend
+        self._typical_f = CarParams(use_blend=self.use_blend)
+        FunctionSimulator.__init__(self, input_size=9 if encode_angle else 8, output_size=7 if encode_angle else 6)
+        self.model = RaceCar(dt=dt, encode_angle=encode_angle)
+        self._state_action_spit_idx = 7 if encode_angle else 6
+        self.encode_angle = encode_angle
+        self.max_steering = 0.35
+        # parameter bounds for the 1st part of the dist
+        self._lower_bound_params = CarParams(
+            m=jnp.array(.04), i_com=jnp.array(1e-6), l_f=jnp.array(0.025), l_r=jnp.array(0.025), g=jnp.array(9.0),
+            d_f=jnp.array(0.015), c_f=jnp.array(1.2), b_f=jnp.array(2.2), d_r=jnp.array(0.015), c_r=jnp.array(1.2),
+            b_r=jnp.array(2.2), c_m_1=jnp.array(0.2), c_m_2=jnp.array(0.04), c_rr=jnp.array(0.001), c_d=jnp.array(0.01),
+            use_blend=jnp.array(0.0), steering_limit=jnp.array(self.max_steering))
+        self._upper_bound_params = CarParams(
+            m=jnp.array(.08), i_com=jnp.array(5e-6), l_f=jnp.array(0.05), l_r=jnp.array(0.05), g=jnp.array(10.0),
+            d_f=jnp.array(0.025), c_f=jnp.array(1.5), b_f=jnp.array(2.5), d_r=jnp.array(0.025), c_r=jnp.array(1.5),
+            b_r=jnp.array(2.8), c_m_1=jnp.array(0.4), c_m_2=jnp.array(0.07), c_rr=jnp.array(0.01), c_d=jnp.array(0.1),
+            use_blend=jnp.array(self.use_blend), steering_limit=jnp.array(self.max_steering))
+
+        assert jnp.all(jnp.stack(jtu.tree_flatten(
+            jtu.tree_map(lambda l, u: l <= u, self._lower_bound_params, self._upper_bound_params))[0])), \
+            'lower bounds have to be smaller than upper bounds'
+        if self.encode_angle:
+            self._domain_lower = jnp.array([-50, -50, -jnp.pi, -10, -10, 10, -self.max_steering, -1])
+            self._domain_upper = jnp.array([50, 50, jnp.pi, 10, 10, 10, self.max_steering, 1])
+            self._domain = HypercubeDomainWithAngles(angle_indices=[2], lower=self._domain_lower,
+                                                     upper=self._domain_upper)
+        else:
+            self._domain_lower = jnp.array([-50, -50, -jnp.pi, -10, -10, 10, -self.max_steering, -1])
+            self._domain_upper = jnp.array([50, 50, jnp.pi, 10, 10, 10, self.max_steering, 1])
+            self._domain = HypercubeDomain(lower=self._domain_lower, upper=self._domain_upper)
+
+    def _split_state_action(self, z: jnp.array) -> Tuple[jnp.array, jnp.array]:
+        assert z.shape[-1] == self.domain.num_dims
+        return z[..., :self._state_action_spit_idx], z[..., self._state_action_spit_idx:]
+
+    def sample_function_vals(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
+        assert x.ndim == 2 and x.shape[-1] == self.input_size
+        params = self.model.sample_params_uniform(rng_key, sample_shape=(num_samples,),
+                                                  lower_bound=self._lower_bound_params,
+                                                  upper_bound=self._upper_bound_params)
+        def batched_fun(z, params):
+            x, u = self._split_state_action(z)
+            return vmap(self.model.next_step, in_axes=(0, 0, None))(x, u, params)
+
+        f = vmap(batched_fun, in_axes=(None, 0))(x, params)
+        assert f.shape == (num_samples, x.shape[0], self.output_size)
+        return f
+
+    @property
+    def domain(self) -> Domain:
+        return self._domain
+
+    @property
+    def normalization_stats(self) -> Dict[str, jnp.ndarray]:
+        if self.encode_angle:
+            return {'x_mean': jnp.zeros(self.input_size),
+                    'x_std': jnp.array([5, 5, 1.0, 1.0, 1.5, 1.5, 1.5, 1.0, self.max_steering]),
+                    'y_mean': jnp.zeros(self.output_size),
+                    'y_std': jnp.array([5, 5, 1.0, 1.0, 1.5, 1.5, 1.5])}
+        else:
+            return {'x_mean': jnp.zeros(self.input_size),
+                    'x_std': jnp.array([5, 5, 2.5, 1.5, 1.5, 1.5, 1.0, self.max_steering]),
+                    'y_mean': jnp.zeros(self.output_size),
+                    'y_std': jnp.array([5, 5, 2.5, 1.5, 1.5, 1.5])}
+
+    def _typical_f(self, x: jnp.array) -> jnp.array:
+        s, u = self._split_state_action(x)
+        return self.model.next_step(x=s, u=u, params=self._typical_params)
+
+
 if __name__ == '__main__':
     from matplotlib import pyplot as plt
 
     key = jax.random.PRNGKey(675)
     # sim = GaussianProcessSim(input_size=1, output_scale=3.0, mean_fn=lambda x: 2 * x)
-    sim = PendulumBiModalSim()
+    sim = RaceCarSim()
     sim.sample_function_vals(x=jnp.zeros((1, sim.input_size)), num_samples=5, rng_key=key)
-
     # plt, axes = plt.subplots(ncols=1, figsize=(4.5, 4))
     # for i in range(1):
     #     x_plot = jnp.linspace(sim.domain.l, sim.domain.u, 200).reshape((-1, 1))
@@ -394,8 +469,8 @@ if __name__ == '__main__':
     #     for y in y_samples:
     #         axes.plot(x_plot, y[:, i])
 
-    #axes[0].set_title('Output dimension 1')
-    #axes[1].set_title('Output dimension 2')
-    #x, y = sim.sample_dataset(key, 100, obs_noise_std=0.1, x_support_mode='partial', param_mode='random')
-    #plt.scatter(x, y)
-    plt.show()
+    # axes[0].set_title('Output dimension 1')
+    # axes[1].set_title('Output dimension 2')
+    # x, y = sim.sample_dataset(key, 100, obs_noise_std=0.1, x_support_mode='partial', param_mode='random')
+    # plt.scatter(x, y)
+    # plt.show()
