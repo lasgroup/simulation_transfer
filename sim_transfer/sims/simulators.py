@@ -1,4 +1,4 @@
-from typing import Callable, Tuple, Dict, Optional, List
+from typing import Callable, Tuple, Dict, Optional, List, Union
 
 import jax
 import jax.numpy as jnp
@@ -64,6 +64,7 @@ class FunctionSimulator:
     def _typical_f(self, x: jnp.array) -> jnp.array:
         raise NotImplementedError
 
+
 class AdditiveSim(FunctionSimulator):
     """
     Forms an additive combination of multiple sims
@@ -102,15 +103,14 @@ class AdditiveSim(FunctionSimulator):
                 norm_stats[stat_name] = jnp.sqrt(jnp.sum(stats_stack**2, axis=0))
         return norm_stats
 
-
-
     def _typical_f(self, x: jnp.array) -> jnp.array:
         raise NotImplementedError
 
 
 class GaussianProcessSim(FunctionSimulator):
 
-    def __init__(self, input_size: int = 1, output_size: int = 1, output_scale: float = 1.0, length_scale: float = 1.0,
+    def __init__(self, input_size: int = 1, output_size: int = 1, output_scale: Union[float, jnp.array] = 1.0,
+                 length_scale: Union[float, jnp.array] = 1.0,
                  mean_fn: Optional[Callable] = None):
         """ Samples functions from a Gaussian Process (GP) with SE kernel
         Args:
@@ -121,14 +121,42 @@ class GaussianProcessSim(FunctionSimulator):
         """
         super().__init__(input_size=input_size, output_size=output_size)
 
+        # set output and lengthscale
+        if isinstance(output_scale, float):
+            self.output_scales = output_scale * jnp.ones((output_size,))
+        else:
+            assert output_scale.shape == (output_size,)
+            self.output_scales = output_scale
+
+        if isinstance(length_scale, float):
+            self.length_scales = length_scale * jnp.ones((output_size,))
+        else:
+            assert length_scale.shape == (output_size,)
+            self.length_scales = length_scale
+
+        # check mean function
         if mean_fn is None:
             # use a zero mean by default
             self.mean_fn = lambda x: jnp.zeros((x.shape[0],))
         else:
             self.mean_fn = mean_fn
 
-        self.output_scale = output_scale
-        self.kernel = tfp.math.psd_kernels.ExponentiatedQuadratic(length_scale=length_scale)
+        self.kernels = [tfp.math.psd_kernels.ExponentiatedQuadratic(length_scale=l) for l in self.length_scales]
+
+    def _sample_f_val_per_dim(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey,
+                              lengthscale: Union[float, jnp.array], output_scale: Union[float, jnp.array]) -> jnp.ndarray:
+        gp_dist = self._gp_marginal_dist(x, lengthscale, output_scale)
+        f_samples = gp_dist.sample(sample_shape=(num_samples,), seed=rng_key)
+        return f_samples
+
+    def _gp_marginal_dist(self, x: jnp.ndarray, lengthscale: float, output_scale: float, jitter=1e-4) \
+            -> tfd.MultivariateNormalFullCovariance:
+        """ Returns the marginal distribution of a GP with SE kernel """
+        assert x.ndim == 2 and x.shape[-1] == self.input_size
+        kernel = tfp.math.psd_kernels.ExponentiatedQuadratic(length_scale=lengthscale)
+        K = kernel.matrix(x, x) + jitter * jnp.eye(x.shape[0])
+        m = self.mean_fn(x)
+        return tfd.MultivariateNormalFullCovariance(loc=m, covariance_matrix=output_scale**2 * K)
 
     def sample_function_vals(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
         """ Samples functions from a Gaussian Process (GP) with SE kernel
@@ -138,15 +166,17 @@ class GaussianProcessSim(FunctionSimulator):
                 rng_key: random number generator key
         """
         assert x.ndim == 2 and x.shape[-1] == self.input_size
-        gp = self.gp_marginal_dist(x)
         keys = random.split(rng_key, self.output_size)
-        f_samples = vmap(gp.sample, in_axes=(None, 0), out_axes=2)(num_samples, keys)
-        f_samples *= self.output_scale
+        # sample f values per dimension via vmap
+        f_samples = jax.vmap(self._sample_f_val_per_dim, in_axes=(None, None, 0, 0, 0), out_axes=-1)\
+                                            (x, num_samples, keys, self.length_scales, self.output_scales)
+        # check final f_sample shape
         assert f_samples.shape == (num_samples, x.shape[0], self.output_size)
         return f_samples
 
-    def gp_marginal_dist(self, x) -> tfd.Distribution:
-        return tfd.GaussianProcess(mean_fn=self.mean_fn, kernel=self.kernel, index_points=x, jitter=1e-4)
+    def gp_marginal_dists(self, x) -> List[tfd.Distribution]:
+        return [self._gp_marginal_dist(x=x, lengthscale=l, output_scale=o)
+                for l, o in zip(self.length_scales, self.output_scales)]
 
 
 class SinusoidsSim(FunctionSimulator):
@@ -505,10 +535,16 @@ class RaceCarSim(FunctionSimulator):
 if __name__ == '__main__':
     from matplotlib import pyplot as plt
 
-    key = jax.random.PRNGKey(675)
-    # sim = GaussianProcessSim(input_size=1, output_scale=3.0, mean_fn=lambda x: 2 * x)
-    sim = RaceCarSim()
-    sim.sample_function_vals(x=jnp.zeros((1, sim.input_size)), num_samples=5, rng_key=key)
+    key = jax.random.PRNGKey(2234)
+    dim_x = 4
+    function_sim = GaussianProcessSim(input_size=dim_x)
+    mset = jax.random.uniform(key, shape=(10, dim_x))
+    f_vals = function_sim.sample_function_vals(mset, num_samples=7, rng_key=key)
+    # key = jax.random.PRNGKey(675)
+    #sim = GaussianProcessSim(input_size=1, output_scale=3.0, mean_fn=lambda x: jnp.squeeze(2 * x, axis=-1))
+    #f_vals = sim.sample_function_vals(x=jax.random.normal(jax.random.PRNGKey(12312), (10, sim.input_size)), num_samples=5, rng_key=key)
+    # sim = RaceCarSim()
+    # sim.sample_function_vals(x=jnp.zeros((1, sim.input_size)), num_samples=5, rng_key=key)
     # plt, axes = plt.subplots(ncols=1, figsize=(4.5, 4))
     # for i in range(1):
     #     x_plot = jnp.linspace(sim.domain.l, sim.domain.u, 200).reshape((-1, 1))

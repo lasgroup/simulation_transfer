@@ -24,7 +24,7 @@ class TestUniformMSetSampler(unittest.TestCase):
 
 class TestGaussianProcessSim(unittest.TestCase):
 
-    def test_shape(self):
+    def test_shape_1(self):
         # test whether the generated samples have the correct shape
         key = jax.random.PRNGKey(2234)
         dim_x = 4
@@ -32,6 +32,29 @@ class TestGaussianProcessSim(unittest.TestCase):
         mset = jax.random.uniform(key, shape=(10, dim_x))
         f_vals = function_sim.sample_function_vals(mset, num_samples=7, rng_key=key)
         assert f_vals.shape == (7, 10, 1)
+
+    def test_shape_2(self):
+        # test whether the generated samples have the correct shape
+        key = jax.random.PRNGKey(2234)
+        dim_x, dim_y = 3, 2
+        function_sim = GaussianProcessSim(input_size=dim_x, output_size=dim_y)
+        mset = jax.random.uniform(key, shape=(9, dim_x))
+        f_vals = function_sim.sample_function_vals(mset, num_samples=12, rng_key=key)
+        assert f_vals.shape == (12, 9, dim_y)
+
+    def test_gp_marginals(self):
+        """ Test whether the marginal distributions of the GP are correct. """
+        sim = GaussianProcessSim(input_size=1, output_size=2,
+                                 length_scale=jnp.array([10., 0.01]),
+                                 output_scale=jnp.array([10., 0.1]))
+        x = jnp.array([[0.], [1.]])
+        gp_dist1, gp_dist2 = sim.gp_marginal_dists(x)
+        assert gp_dist1.scale_tril[0][0] >= 10.
+        assert gp_dist2.scale_tril[0][0] <= 0.11
+        cov1 = gp_dist1.scale_tril @ gp_dist1.scale_tril.T
+        cov2 = gp_dist2.scale_tril @ gp_dist2.scale_tril.T
+        assert cov1[0][1] >= 90
+        assert cov2[0][1] <= 1e-4
 
 
 class _DummySim(FunctionSimulator):
