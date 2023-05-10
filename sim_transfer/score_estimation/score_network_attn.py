@@ -6,7 +6,7 @@ import jax.numpy as jnp
 from functools import partial
 from jax.tree_util import PyTreeDef
 from tensorflow_probability.substrates import jax as tfp
-from typing import Any, Tuple, Union, Optional
+from typing import Any, Tuple, Union, Optional, Callable
 
 from sim_transfer.modules.attention_modules import ScoreNetworkAttentionModel
 from sim_transfer.sims.simulators import FunctionSimulator
@@ -25,12 +25,15 @@ class ScoreMatchingEstimator:
                  n_fn_samples: int = 20,
                  mset_size: int = 5,
                  num_msets_per_step: int = 2,
+                 sliced_sm: bool = False,
+                 num_slices: Optional[int] = None,
 
                  # score network attributes
                  attn_num_layers: int = 2,
                  attn_dim: int = 32,
                  attn_key_size: int = 16,
                  attn_num_heads: int = 8,
+                 activation_fn: Callable = jax.nn.gelu,
 
                  # optimizer attributes
                  learning_rate: float = 1e-2,
@@ -45,15 +48,14 @@ class ScoreMatchingEstimator:
         self.n_fn_samples = n_fn_samples
         self.mset_size = mset_size
         self.num_msets_per_step = num_msets_per_step
+        self.sliced_sm = sliced_sm
+        self.num_slices = self.function_sim.input_size if num_slices is None else num_slices
 
         assert function_sim.input_size == self.mset_sampler.dim_x
         self.x_dim = self.mset_sampler.dim_x
 
         # setup score MLP
         self._input_dim_mlp = mset_size * mset_sampler.dim_x + mset_size
-        # self.model = MLP(input_size=self._input_dim_mlp,
-        #                  output_size=(mset_size * mset_sampler.dim_x),
-        #                  hidden_layer_sizes=(256, 256, 256), hidden_activation=jax.nn.swish)
 
         model_kwargs = {"x_dim": self.x_dim,
                         "hidden_dim": attn_dim,
@@ -65,6 +67,7 @@ class ScoreMatchingEstimator:
                         "widening_factor": 2,
                         "dropout_rate": 0.0,
                         "layer_norm_axis": {"last": -1, "lasttwo": (-2, -1)}["last"],
+                        "fc_layer_activation_fn": activation_fn,
                         }
         self.model = hk.transform(lambda *args: ScoreNetworkAttentionModel(**model_kwargs)(*args))
 
@@ -115,7 +118,7 @@ class ScoreMatchingEstimator:
             iter_count += 1
         return float(loss_cum/iter_count)
 
-    def _loss(self, params: PyTreeDef, rng: jax.random.PRNGKey, x_fx: jnp.array) -> jnp.array:
+    def _sm_loss(self, params: PyTreeDef, rng: jax.random.PRNGKey, x_fx: jnp.array) -> jnp.array:
         """ Score matching loss by Hyvarinen. """
         def sn_fwd(x):
             score_pred = self.model.apply(params, rng, x, True)
@@ -125,11 +128,35 @@ class ScoreMatchingEstimator:
         loss = jnp.mean(jnp.trace(jacs, axis1=-2, axis2=-1) + 0.5 * jnp.linalg.norm(score_preds, axis=-1) ** 2)
         return loss
 
+    def _sliced_sm_loss_raw(self, params: PyTreeDef, rng: jax.random.PRNGKey, x_fx: jnp.array, v: jnp.array):
+        # sliced score matching loss by Song et al. (2019) where the projections v are given as an argument
+        def sn_fwd(x, v):
+            score_pred = self.model.apply(params, rng, x, True)
+            return jnp.sum(score_pred * v), score_pred
+
+        grad_vs, score_pred = jax.grad(sn_fwd, has_aux=True)(x_fx, v)
+        loss_1 = 0.5 * jnp.sum(score_pred ** 2, axis=-1)
+        loss_2 = jnp.sum(v * grad_vs[..., -1], axis=-1)
+        loss = jnp.mean(loss_1 + loss_2)
+        return loss
+
+    def _sliced_sm_loss(self, params: PyTreeDef, rng: jax.random.PRNGKey, x_fx: jnp.array):
+        # sliced score matching loss by Song et al. (2019)
+        rng_key_v, rng_key_loss = jax.random.split(rng)
+        v = jax.random.normal(rng_key_v, shape=(self.num_slices,) + x_fx.shape[:-1])
+        v *= jnp.sqrt(v.shape[-1]) / jnp.linalg.norm(v, axis=-1)[..., None]
+        loss = jnp.mean(jax.vmap(self._sliced_sm_loss_raw, in_axes=(None, None, None, 0))(params, rng_key_loss, x_fx, v))
+        return loss
+
+
     def _sampling_and_loss(self, param: optax.Params, rng_key: jax.random.PRNGKey) -> Union[float, jnp.array]:
         # compute score matching loss
         rng_key_sample, rng_key_loss = jax.random.split(rng_key)
         x_fx = self.sample_x_fx(rng_key_sample)
-        loss = self._loss(param, rng_key_loss, x_fx)
+        if self.sliced_sm:
+            loss = self._sliced_sm_loss(param, rng_key_loss, x_fx)
+        else:
+            loss = self._sm_loss(param, rng_key_loss, x_fx)
         return loss
 
     @partial(jax.jit, static_argnums=(0,))
@@ -216,12 +243,12 @@ if __name__ == '__main__':
     # mset_sampler = UniformMSetSampler(l_bound=-2 * jnp.ones(1),
     #                                   u_bound=-2 * jnp.ones(1))
 
-    NUM_MSETS = 100
+    NUM_MSETS = 3
     mset_sampler_fixed = DummyMSetSampler(dim_x=1, mset_size=5,
                                           num_msets=NUM_MSETS, key=key1)
     mset_sampler = UniformMSetSampler(l_bound=jnp.array([-2.]),
                                       u_bound=jnp.array([2.]))
-    # mset_sampler = mset_sampler_fixed
+    mset_sampler = mset_sampler_fixed
     xms = mset_sampler_fixed._fixed_points
 
     def get_true_score(xm, f_samples):
@@ -264,15 +291,17 @@ if __name__ == '__main__':
 
     est = ScoreMatchingEstimator(function_sim=function_sim,
                                  mset_size=5,
-                                 num_msets_per_step=5,
+                                 num_msets_per_step=2,
                                  n_fn_samples=500,
                                  mset_sampler=mset_sampler,
                                  rng_key=key3,
                                  learning_rate=LR,
+                                 sliced_sm=False,
+                                 activation_fn=jax.nn.swish,
                                  lr_decay_rate=LR_DECAY_RATE,
                                  weight_decay=0.00)
 
-    N_ITER = 2000
+    N_ITER = 500
 
     loss = est.train(n_iter=1)
     f_div = jnp.mean(jnp.stack([fisher_divergence(xms[i], est, f_test_samples[i])
