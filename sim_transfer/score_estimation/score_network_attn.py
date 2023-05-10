@@ -40,7 +40,7 @@ class ScoreMatchingEstimator:
                  transition_steps: int = 1000,
                  lr_decay_rate: float = 0.9,
                  weight_decay: float = 0.,
-                 gradient_cliping: Optional[float] = 10.0):
+                 gradient_clipping: Optional[float] = 10.0):
 
         self.function_sim = function_sim
         self.mset_sampler = mset_sampler
@@ -49,7 +49,7 @@ class ScoreMatchingEstimator:
         self.mset_size = mset_size
         self.num_msets_per_step = num_msets_per_step
         self.sliced_sm = sliced_sm
-        self.num_slices = self.function_sim.input_size if num_slices is None else num_slices
+        self.num_slices = self.mset_size if num_slices is None else num_slices
 
         assert function_sim.input_size == self.mset_sampler.dim_x
         self.x_dim = self.mset_sampler.dim_x
@@ -62,6 +62,7 @@ class ScoreMatchingEstimator:
                         "layers": attn_num_layers,
                         "key_size": attn_key_size,
                         "num_heads": attn_num_heads,
+                        "output_dim": self._f_output_size,
 
                         "layer_norm": True,
                         "widening_factor": 2,
@@ -77,14 +78,17 @@ class ScoreMatchingEstimator:
             transition_steps=transition_steps,
             decay_rate=lr_decay_rate)
 
-        if gradient_cliping is None:
+        if gradient_clipping is None:
             self.optimizer = optax.adamw(learning_rate=scheduler, weight_decay=weight_decay)
         else:
-            self.optimizer = optax.chain(optax.clip_by_global_norm(gradient_cliping),
+            self.optimizer = optax.chain(optax.clip_by_global_norm(gradient_clipping),
                                          optax.adamw(learning_rate=scheduler, weight_decay=weight_decay))
         self.param = None
         self.opt_state = None
 
+    @property
+    def _f_output_size(self) -> int:
+        return self.function_sim.output_size
 
     def sample_x_fx(self, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
         """ Samples a measurement set and corresponding function values.
@@ -123,10 +127,11 @@ class ScoreMatchingEstimator:
         def sn_fwd(x):
             score_pred = self.model.apply(params, rng, x, True)
             return score_pred, score_pred
-        jacs, score_preds = jax.vmap((jax.jacrev(sn_fwd, has_aux=True)))(x_fx)
-        jacs = jacs[..., -1]  # only the gradients w.r.t. f_samples are relevant for the sm loss
-        loss = jnp.mean(jnp.trace(jacs, axis1=-2, axis2=-1) + 0.5 * jnp.linalg.norm(score_preds, axis=-1) ** 2)
-        return loss
+        jacs, score_preds = jax.vmap(jax.jacrev(sn_fwd, has_aux=True))(x_fx)
+        jacs = jacs[..., - self._f_output_size:]  # only the gradients w.r.t. f_samples are relevant for the sm loss
+        trace_loss = jnp.mean(jnp.trace(jnp.trace(jacs, axis1=-4, axis2=-2), axis1=-1, axis2=-2))
+        l2_loss = 0.5 * jnp.mean(jnp.sum(score_preds**2, axis=(-2, -1)))
+        return trace_loss + l2_loss
 
     def _sliced_sm_loss_raw(self, params: PyTreeDef, rng: jax.random.PRNGKey, x_fx: jnp.array, v: jnp.array):
         # sliced score matching loss by Song et al. (2019) where the projections v are given as an argument
@@ -135,15 +140,14 @@ class ScoreMatchingEstimator:
             return jnp.sum(score_pred * v), score_pred
 
         grad_vs, score_pred = jax.grad(sn_fwd, has_aux=True)(x_fx, v)
-        loss_1 = 0.5 * jnp.sum(score_pred ** 2, axis=-1)
-        loss_2 = jnp.sum(v * grad_vs[..., -1], axis=-1)
-        loss = jnp.mean(loss_1 + loss_2)
-        return loss
+        loss_1 = 0.5 * jnp.mean(jnp.sum(score_pred ** 2, axis=(-2, -1)))
+        loss_2 = jnp.mean(jnp.sum(v * grad_vs[..., -self._f_output_size:], axis=(-2, -1)))
+        return loss_1 + loss_2
 
     def _sliced_sm_loss(self, params: PyTreeDef, rng: jax.random.PRNGKey, x_fx: jnp.array):
         # sliced score matching loss by Song et al. (2019)
         rng_key_v, rng_key_loss = jax.random.split(rng)
-        v = jax.random.normal(rng_key_v, shape=(self.num_slices,) + x_fx.shape[:-1])
+        v = jax.random.normal(rng_key_v, shape=(self.num_slices,) + x_fx.shape[:-1] + (self._f_output_size,))
         v *= jnp.sqrt(v.shape[-1]) / jnp.linalg.norm(v, axis=-1)[..., None]
         loss = jnp.mean(jax.vmap(self._sliced_sm_loss_raw, in_axes=(None, None, None, 0))(params, rng_key_loss, x_fx, v))
         return loss
@@ -188,8 +192,7 @@ class ScoreMatchingEstimator:
 
     def pred_score(self, xm: jnp.array, f_vals: jnp.array) -> jnp.ndarray:
         x_fx = self._combine_xf(x=xm, f=f_vals)
-        score_preds = self.__call__(x_fx)
-        return score_preds
+        return self.__call__(x_fx)
 
     def __call__(self, x_fx: jnp.ndarray) -> jnp.ndarray:
         return self.model.apply(self.param, next(self.rng_gen), x_fx)
@@ -243,12 +246,12 @@ if __name__ == '__main__':
     # mset_sampler = UniformMSetSampler(l_bound=-2 * jnp.ones(1),
     #                                   u_bound=-2 * jnp.ones(1))
 
-    NUM_MSETS = 3
+    NUM_MSETS = 100
     mset_sampler_fixed = DummyMSetSampler(dim_x=1, mset_size=5,
                                           num_msets=NUM_MSETS, key=key1)
     mset_sampler = UniformMSetSampler(l_bound=jnp.array([-2.]),
                                       u_bound=jnp.array([2.]))
-    mset_sampler = mset_sampler_fixed
+    # mset_sampler = mset_sampler_fixed
     xms = mset_sampler_fixed._fixed_points
 
     def get_true_score(xm, f_samples):
@@ -267,7 +270,7 @@ if __name__ == '__main__':
         return jnp.mean(jnp.linalg.norm(score_pred - score, axis=-1) ** 2)
 
     def fisher_divergence(xm, est, f_samples):
-        score_pred = est.pred_score(xm=xm, f_vals=jnp.expand_dims(f_samples, axis=-1))
+        score_pred = jnp.squeeze(est.pred_score(xm=xm, f_vals=jnp.expand_dims(f_samples, axis=-1)), axis=-1)
         score = get_true_score(xm, f_samples)
         return jnp.mean(jnp.linalg.norm(score_pred - score, axis=-1) ** 2)
 
@@ -287,21 +290,22 @@ if __name__ == '__main__':
 
     LR = 1e-3
     LR_DECAY_RATE = 1.0
-    print('LR:', LR, 'LR_DECAY_RATE:', LR_DECAY_RATE)
+    SLICED_SM = True
+    print('LR:', LR, 'LR_DECAY_RATE:', LR_DECAY_RATE, 'SLICED_SM:', SLICED_SM)
 
     est = ScoreMatchingEstimator(function_sim=function_sim,
                                  mset_size=5,
-                                 num_msets_per_step=2,
+                                 num_msets_per_step=5,
                                  n_fn_samples=500,
                                  mset_sampler=mset_sampler,
                                  rng_key=key3,
                                  learning_rate=LR,
-                                 sliced_sm=False,
-                                 activation_fn=jax.nn.swish,
+                                 sliced_sm=SLICED_SM,
+                                 activation_fn=jax.nn.gelu,
                                  lr_decay_rate=LR_DECAY_RATE,
                                  weight_decay=0.00)
 
-    N_ITER = 500
+    N_ITER = 2000
 
     loss = est.train(n_iter=1)
     f_div = jnp.mean(jnp.stack([fisher_divergence(xms[i], est, f_test_samples[i])

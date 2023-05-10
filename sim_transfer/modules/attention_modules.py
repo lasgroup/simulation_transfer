@@ -15,6 +15,7 @@ class ScoreNetworkAttentionModel(hk.Module):
 
     def __init__(self,
                  x_dim: int,
+                 output_dim: int = 1,
                  hidden_dim: int = 128,
                  layers: int = 8,
                  layer_norm: bool = True,
@@ -29,6 +30,7 @@ class ScoreNetworkAttentionModel(hk.Module):
                  ):
         super().__init__(name=name)
         self.hidden_dim = hidden_dim
+        self.output_dim = output_dim
         self.x_dim = x_dim
         self.layer_norm = layer_norm
         self.layers = layers
@@ -72,12 +74,12 @@ class ScoreNetworkAttentionModel(hk.Module):
 
         # estimated score
         if self.layer_norm:
-            score = jnp.squeeze(hk.Sequential([
+            score = hk.Sequential([
                 hk_layer_norm(axis=self.layer_norm_axis),
-                hk.Linear(1, w_init=self.w_init),
-            ])(z))
+                hk.Linear(self.output_dim, w_init=self.w_init),
+            ])(z)
         else:
-            score = jnp.squeeze(hk.Sequential([
-                hk.Linear(1, w_init=self.w_init),
-            ])(z))
+            score = hk.Sequential([
+                hk.Linear(self.output_dim, w_init=self.w_init),
+            ])(z)
         return score
