@@ -183,11 +183,11 @@ class ScoreMatchingEstimator:
 
     def _combine_xf(self, x: jnp.array, f: jnp.array) -> jnp.array:
         # tile measurement set and stack x_mset and f samples together
-        assert f.ndim == 3 and x.ndim == 2 and x.shape[0] == f.shape[1]
+        assert f.ndim == 3 and x.ndim == 2 and x.shape[-2] == f.shape[-2]
         num_f_samples = f.shape[0]
         mset_tiles = jnp.repeat(x[None, :, :], num_f_samples, axis=0)
         x_fx = jnp.concatenate([mset_tiles, f], axis=-1)
-        assert x_fx.shape == (num_f_samples, self.mset_size, self.x_dim + 1)
+        assert x_fx.shape == (num_f_samples, self.mset_size, self.x_dim + self._f_output_size)
         return x_fx
 
     def pred_score(self, xm: jnp.array, f_vals: jnp.array) -> jnp.ndarray:
@@ -242,7 +242,8 @@ if __name__ == '__main__':
     from sim_transfer.sims.mset_sampler import UniformMSetSampler
 
     key1, key2, key3, key4 = jax.random.split(jax.random.PRNGKey(575756), 4)
-    function_sim = GaussianProcessSim(input_size=1)
+    function_sim = GaussianProcessSim(input_size=1, output_size=2, output_scale=jnp.array([1., 1.]),
+                                      length_scale=jnp.array([1., 1.]))
     # mset_sampler = UniformMSetSampler(l_bound=-2 * jnp.ones(1),
     #                                   u_bound=-2 * jnp.ones(1))
 
@@ -255,47 +256,51 @@ if __name__ == '__main__':
     xms = mset_sampler_fixed._fixed_points
 
     def get_true_score(xm, f_samples):
-        dist = function_sim.gp_marginal_dist(xm)
-        return jax.grad(lambda f: jnp.sum(dist.log_prob(f)))(f_samples)
+        return jnp.stack([jax.grad(lambda f: jnp.sum(dist.log_prob(f)))(f_samples[..., i])
+                          for i, dist in enumerate(function_sim.gp_marginal_dists(xm))], axis=-1)
     #
     # get_true_score_vmap = jax.vmap(get_true_score, in_axes=(0, None), out_axes=0)
 
     def fisher_divergence_gp_approx(xm, samples_eval, samples_train, eps=1e-4):
         mean = jnp.mean(samples_train, axis=0).T
         cov = jnp.swapaxes(tfp.stats.covariance(samples_train, sample_axis=0, event_axis=1), 0, -1)
-        gp_approx = tfd.MultivariateNormalFullCovariance(
-            loc=mean, covariance_matrix=cov + eps * jnp.eye(cov.shape[0]))
-        score_pred = jax.grad(lambda x: jnp.sum(gp_approx.log_prob(x)))(samples_eval)
-        score = get_true_score(xm, samples_eval)
-        return jnp.mean(jnp.linalg.norm(score_pred - score, axis=-1) ** 2)
+        score_preds = []
+        for i in range(mean.shape[0]):
+            gp_approx = tfd.MultivariateNormalFullCovariance(
+                loc=mean[i], covariance_matrix=cov[i] + eps * jnp.eye(cov.shape[-1]))
+            score_pred = jax.grad(lambda x: jnp.sum(gp_approx.log_prob(x)))(samples_eval[..., i])
+            score_preds.append(score_pred)
+        score_preds = jnp.stack(score_preds, axis=-1)
+        true_scores = get_true_score(xm, samples_eval)
+        return jnp.mean(jnp.linalg.norm(score_preds - true_scores, axis=-2) ** 2)
 
     def fisher_divergence(xm, est, f_samples):
-        score_pred = jnp.squeeze(est.pred_score(xm=xm, f_vals=jnp.expand_dims(f_samples, axis=-1)), axis=-1)
+        score_pred = est.pred_score(xm=xm, f_vals=f_samples)
         score = get_true_score(xm, f_samples)
-        return jnp.mean(jnp.linalg.norm(score_pred - score, axis=-1) ** 2)
+        return jnp.mean(jnp.linalg.norm(score_pred - score, axis=-2) ** 2)
 
-    def fisher_divergence_ssge(xm, samples_eval, samples_train):
-        score_pred = SSGE().estimate_gradients_s_x(samples_eval, samples_train)
-        score = get_true_score(xm, samples_eval)
-        return jnp.mean(jnp.linalg.norm(score_pred - score, axis=-1) ** 2)
+    # def fisher_divergence_ssge(xm, samples_eval, samples_train):
+    #     score_pred = SSGE().estimate_gradients_s_x(samples_eval, samples_train)
+    #     score = get_true_score(xm, samples_eval)
+    #     return jnp.mean(jnp.linalg.norm(score_pred - score, axis=-1) ** 2)
 
-    f_test_samples = jnp.stack([dist.sample(seed=key2, sample_shape=(5000,))
-                                for dist in map(function_sim.gp_marginal_dist, xms)], axis=0)
-    f_train_samples = jnp.stack([dist.sample(seed=key4, sample_shape=(1000,))
-                                 for dist in map(function_sim.gp_marginal_dist, xms)], axis=0)
+    f_test_samples = jnp.stack([function_sim.sample_function_vals(xm, num_samples=5000, rng_key=key2)
+                                for xm in xms], axis=0)
+    f_train_samples = jnp.stack([function_sim.sample_function_vals(xm, num_samples=1000, rng_key=key2)
+                                for xm in xms], axis=0)
     f_div_gp = jnp.mean(jnp.stack([fisher_divergence_gp_approx(xms[i], f_test_samples[i], f_train_samples[i])
                                    for i in range(NUM_MSETS)]))
-    f_div_test_ssge = jnp.mean(jnp.stack([fisher_divergence_ssge(xms[i], f_test_samples[i], f_train_samples[i])
-                                   for i in range(NUM_MSETS)]))
+    # f_div_test_ssge = jnp.mean(jnp.stack([fisher_divergence_ssge(xms[i], f_test_samples[i], f_train_samples[i])
+    #                                for i in range(NUM_MSETS)]))
 
     LR = 1e-3
     LR_DECAY_RATE = 1.0
-    SLICED_SM = True
+    SLICED_SM = False
     print('LR:', LR, 'LR_DECAY_RATE:', LR_DECAY_RATE, 'SLICED_SM:', SLICED_SM)
 
     est = ScoreMatchingEstimator(function_sim=function_sim,
                                  mset_size=5,
-                                 num_msets_per_step=5,
+                                 num_msets_per_step=2,
                                  n_fn_samples=500,
                                  mset_sampler=mset_sampler,
                                  rng_key=key3,
@@ -310,7 +315,7 @@ if __name__ == '__main__':
     loss = est.train(n_iter=1)
     f_div = jnp.mean(jnp.stack([fisher_divergence(xms[i], est, f_test_samples[i])
                                    for i in range(NUM_MSETS)]))
-    print(0, loss, f_div, f_div_gp, f_div_test_ssge)
+    print(0, loss, f_div, f_div_gp)
     t = time.time()
     for i in range(1, 200+1):
         loss = est.train(n_iter=N_ITER)
@@ -320,5 +325,5 @@ if __name__ == '__main__':
         duration = time.time() - t
         duration_eval = time.time() - t_eval
         print(f'Iter {i*N_ITER} | Loss: {loss:.2f} | F-div {f_div:.2f}  | F-div GP-approx {f_div_gp:.2f} '
-              f'| F-div SSGE {f_div_test_ssge:.2f} | Time: {duration} sec | Time eval: {duration_eval} sec')
+              f'| Time: {duration} sec | Time eval: {duration_eval} sec')
         t = time.time()
