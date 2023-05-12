@@ -2,6 +2,7 @@ import optax
 import haiku as hk
 import jax
 import jax.numpy as jnp
+import math
 
 from functools import partial
 from jax.tree_util import PyTreeDef
@@ -19,13 +20,14 @@ psd_kernels = tfp.math.psd_kernels
 class ScoreMatchingEstimator:
 
     def __init__(self,
-                 function_sim: FunctionSimulator,
-                 mset_sampler: MSetSampler,
+                 input_size: int,
+                 output_size: int,
+                 sample_ms_f_fn: Callable,
                  rng_key: jax.random.PRNGKey,
-                 n_fn_samples: int = 20,
+                 num_f_samples: int = 20,
                  mset_size: int = 5,
                  num_msets_per_step: int = 2,
-                 sliced_sm: bool = False,
+                 loss_mode: str = 'sm',
                  num_slices: Optional[int] = None,
 
                  # score network attributes
@@ -36,47 +38,91 @@ class ScoreMatchingEstimator:
                  activation_fn: Callable = jax.nn.gelu,
 
                  # optimizer attributes
-                 learning_rate: float = 1e-2,
-                 transition_steps: int = 1000,
-                 lr_decay_rate: float = 0.9,
+                 num_iters: int = 100000,
+                 loss_change_iter: Optional[int] = None,
+                 learning_rate: float = 1e-3,
+                 use_lr_scheduler: bool = False,
                  weight_decay: float = 0.,
                  gradient_clipping: Optional[float] = 10.0):
+        """
+           Args:
+               input_size (int): The size of the input to the model.
+               output_size (int): The size of the output from the model.
+               sample_ms_f_fn (Callable): A function to generate a measurement set and function values.
+                       The function should have the following signature:
+                            Args:
+                                rng_key (jax.random.PRNGKey): Pseudo-Random Number Generator key from JAX library.
+                                mset_size (int): The size of the measurement set to be generated.
+                                num_f_samples (int): The number of function values to be generated for each
+                                            measurement point.
+                            Returns:
+                                mset: The sampled measurement set.
+                                f_samples: The sampled function values corresponding to the measurement set.
 
-        self.function_sim = function_sim
-        self.mset_sampler = mset_sampler
-        self.rng_gen = hk.PRNGSequence(rng_key)
-        self.n_fn_samples = n_fn_samples
+               rng_key (jax.random.PRNGKey): Pseudo-Random Number Generator key from JAX library.
+                            It is used for all random operations.
+               num_f_samples (int): The number of function values to be generated. Default is 20.
+               mset_size (int): The size of the measurement set to be generated. Default is 5.
+               num_msets_per_step (int): The number of measurement sets generated per step. Default is 2.
+               loss_mode (str): The loss function to be used. Default is 'sm'.
+                            Options are 'sm', 'sliced_sm', 'score_mm'.
+               num_slices (Optional[int]): The number of slices to use if `loss_mode_sn` is True.
+                            If None, the number of slices is set to the number of measurement points. Default is None.
+               attn_num_layers (int): The number of layers in the attention mechanism of the score network.
+               attn_dim (int): The dimension of the attention layer in the score network. Default is 32.
+               attn_key_size (int): The size of the keys in the attention mechanism of the score network. Default is 16.
+               attn_num_heads (int): The number of attention heads in the score network. Default is 8.
+               activation_fn (Callable): The activation function to be used in the score network.
+                            Default is the GELU activation function from the JAX library.
+               learning_rate (float): The initial learning rate for the optimizer. Default is 1e-3.
+               use_lr_scheduler (bool): A flag to indicate whether to use a linear learning rate scheduler.
+               weight_decay (float): The weight decay factor for the optimizer. Default is 0.
+               gradient_clipping (Optional[float]): The maximum magnitude for gradients.
+                            If None, no gradient clipping is performed. Default is 10.0.
+           """
+        self.input_size = input_size
+        self.output_size = output_size
         self.mset_size = mset_size
+        self.num_f_samples = num_f_samples
         self.num_msets_per_step = num_msets_per_step
-        self.sliced_sm = sliced_sm
+        self.rng_gen = hk.PRNGSequence(rng_key)
+        self.num_iters = num_iters
+
+
+        self.sample_ms_f_fn = sample_ms_f_fn
+        assert self._check_sample_ms_f_fn(sample_ms_f_fn)
+
+        assert loss_mode in ['sm', 'sliced_sm', 'mm', 'mm+sliced_sm', 'mm+sm']
+        self.loss_mode = loss_mode
+        if len(loss_mode.split('+')) == 2:
+            self.loss_change_iter = num_iters // 2 if loss_change_iter is None else loss_change_iter
+        else:
+            self.loss_change_iter = math.inf
         self.num_slices = self.mset_size if num_slices is None else num_slices
 
-        assert function_sim.input_size == self.mset_sampler.dim_x
-        self.x_dim = self.mset_sampler.dim_x
-
-        # setup score MLP
-        self._input_dim_mlp = mset_size * mset_sampler.dim_x + mset_size
-
-        model_kwargs = {"x_dim": self.x_dim,
+        # setup score network
+        model_kwargs = {"x_dim": self.input_size,
                         "hidden_dim": attn_dim,
                         "layers": attn_num_layers,
                         "key_size": attn_key_size,
                         "num_heads": attn_num_heads,
-                        "output_dim": self._f_output_size,
+                        "output_dim": self.output_size,
 
                         "layer_norm": True,
                         "widening_factor": 2,
                         "dropout_rate": 0.0,
-                        "layer_norm_axis": {"last": -1, "lasttwo": (-2, -1)}["last"],
+                        "layer_norm_axis": {"last": -1, "lasttwo": (-2, -1)}["lasttwo"],
                         "fc_layer_activation_fn": activation_fn,
                         }
         self.model = hk.transform(lambda *args: ScoreNetworkAttentionModel(**model_kwargs)(*args))
 
         # setup optimizer
-        scheduler = optax.exponential_decay(
-            init_value=learning_rate,
-            transition_steps=transition_steps,
-            decay_rate=lr_decay_rate)
+        if use_lr_scheduler:
+            scheduler = optax.linear_schedule(init_value=learning_rate, end_value=1e-4,
+                                              transition_steps=self.num_iters,
+                                              transition_begin=self.num_iters // 10)
+        else:
+            scheduler = learning_rate
 
         if gradient_clipping is None:
             self.optimizer = optax.adamw(learning_rate=scheduler, weight_decay=weight_decay)
@@ -86,41 +132,54 @@ class ScoreMatchingEstimator:
         self.param = None
         self.opt_state = None
 
-    @property
-    def _f_output_size(self) -> int:
-        return self.function_sim.output_size
-
     def sample_x_fx(self, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
         """ Samples a measurement set and corresponding function values.
             Returns them concatenated along axis=-1. """
-        rng_key_mset, rng_key_f = jax.random.split(rng_key)
-        # sample measurement set
-        mset = self.mset_sampler.sample_mset(rng_key_mset, mset_size=self.mset_size)
-        # sample function values corresponding to the measurment set with the sim
-        f_samples = self.function_sim.sample_function_vals(mset, num_samples=self.n_fn_samples,
-                                                           rng_key=rng_key_f)
+        # sample mset and f_samples
+        mset, f_samples = self.sample_ms_f_fn(rng_key, self.mset_size, self.num_f_samples)
         # tile mset and concatenate with f_samples
         x_fx = self._combine_xf(mset, f_samples)
         return x_fx
 
-    def step(self) -> float:
-        loss, self.param, self.opt_state = self._step(next(self.rng_gen), self.param, self.opt_state)
-        return float(loss)
 
-    def train(self, n_iter: int = 20000) -> float:
-        assert n_iter > 0, 'must be at least one iteration'
+    def train(self, num_iter: Optional[int] = None) -> float:
+        assert num_iter > 0, 'must be at least one iteration'
 
         # init if necessary
         self._init_nn_and_optim()
 
+        num_iter = self.num_iters if num_iter is None else num_iter
         iter_count = 0
         loss_cum = 0.
         # training loop
-        for i in range(n_iter):
-            loss = self.step()
+        for i in range(1, num_iter+1):
+            self._itr += 1
+            loss, self.param, self.opt_state = self._step_jitted(next(self.rng_gen), self.param, self.opt_state)
+            loss = float(loss)
             loss_cum += loss
             iter_count += 1
+
+            if self._itr == self.loss_change_iter:
+                self._change_loss()
         return float(loss_cum/iter_count)
+
+    def pred_score(self, xm: jnp.array, f_vals: jnp.array) -> jnp.ndarray:
+        x_fx = self._combine_xf(x=xm, f=f_vals)
+        return self.__call__(x_fx)
+
+    @partial(jax.jit, static_argnums=(0,))
+    def _pred_score(self, params: PyTreeDef, rng_key: jax.random.PRNGKey, xm: jnp.array,
+                    f_vals: jnp.array) -> jnp.ndarray:
+        x_fx = self._combine_xf(x=xm, f=f_vals)
+        return self.model.apply(params, rng_key, x_fx)
+
+    def _change_loss(self):
+        second_loss_mode = self.loss_mode.split('+')[1]
+        self._step_jitted = jax.jit(partial(self._step, loss_mode=second_loss_mode))
+        print(f'Changed loss to {second_loss_mode}')
+
+    def __call__(self, x_fx: jnp.ndarray) -> jnp.ndarray:
+        return self.model.apply(self.param, next(self.rng_gen), x_fx)
 
     def _sm_loss(self, params: PyTreeDef, rng: jax.random.PRNGKey, x_fx: jnp.array) -> jnp.array:
         """ Score matching loss by Hyvarinen. """
@@ -128,7 +187,7 @@ class ScoreMatchingEstimator:
             score_pred = self.model.apply(params, rng, x, True)
             return score_pred, score_pred
         jacs, score_preds = jax.vmap(jax.jacrev(sn_fwd, has_aux=True))(x_fx)
-        jacs = jacs[..., - self._f_output_size:]  # only the gradients w.r.t. f_samples are relevant for the sm loss
+        jacs = jacs[..., - self.output_size:]  # only the gradients w.r.t. f_samples are relevant for the sm loss
         trace_loss = jnp.mean(jnp.trace(jnp.trace(jacs, axis1=-4, axis2=-2), axis1=-1, axis2=-2))
         l2_loss = 0.5 * jnp.mean(jnp.sum(score_preds**2, axis=(-2, -1)))
         return trace_loss + l2_loss
@@ -141,35 +200,63 @@ class ScoreMatchingEstimator:
 
         grad_vs, score_pred = jax.grad(sn_fwd, has_aux=True)(x_fx, v)
         loss_1 = 0.5 * jnp.mean(jnp.sum(score_pred ** 2, axis=(-2, -1)))
-        loss_2 = jnp.mean(jnp.sum(v * grad_vs[..., -self._f_output_size:], axis=(-2, -1)))
+        loss_2 = jnp.mean(jnp.sum(v * grad_vs[..., -self.output_size:], axis=(-2, -1)))
         return loss_1 + loss_2
 
     def _sliced_sm_loss(self, params: PyTreeDef, rng: jax.random.PRNGKey, x_fx: jnp.array):
         # sliced score matching loss by Song et al. (2019)
         rng_key_v, rng_key_loss = jax.random.split(rng)
-        v = jax.random.normal(rng_key_v, shape=(self.num_slices,) + x_fx.shape[:-1] + (self._f_output_size,))
+        v = jax.random.normal(rng_key_v, shape=(self.num_slices,) + x_fx.shape[:-1] + (self.output_size,))
         v *= jnp.sqrt(v.shape[-1]) / jnp.linalg.norm(v, axis=-1)[..., None]
         loss = jnp.mean(jax.vmap(self._sliced_sm_loss_raw, in_axes=(None, None, None, 0))(params, rng_key_loss, x_fx, v))
         return loss
 
+    def _score_mm_loss(self, params: PyTreeDef, rng: jax.random.PRNGKey, x_fx: jnp.array) -> jnp.array:
+        """ Score matching loss by Hyvarinen. """
+        score_preds = self.model.apply(params, rng, x_fx, True)
+        fs = x_fx[..., - self.output_size:]
+        mean = jnp.mean(fs, axis=0).T
+        cov = jnp.swapaxes(tfp.stats.covariance(fs, sample_axis=0, event_axis=1), 0, -1)
+        est_dist = tfd.MultivariateNormalFullCovariance(mean, cov)
+        score_gp_approx = jax.grad(lambda x: jnp.sum(est_dist.log_prob(jnp.swapaxes(x, axis2=-2, axis1=-1))))(fs)
+        return jnp.mean(jnp.sum((score_preds - score_gp_approx)**2, axis=(-2, -1)))
 
-    def _sampling_and_loss(self, param: optax.Params, rng_key: jax.random.PRNGKey) -> Union[float, jnp.array]:
+    def _sampling_and_loss(self, param: optax.Params, rng_key: jax.random.PRNGKey,
+                           itr: Union[int, jnp.array]) -> Union[float, jnp.array]:
         # compute score matching loss
         rng_key_sample, rng_key_loss = jax.random.split(rng_key)
         x_fx = self.sample_x_fx(rng_key_sample)
-        if self.sliced_sm:
+        if self.loss_mode == 'sliced_sm':
             loss = self._sliced_sm_loss(param, rng_key_loss, x_fx)
-        else:
+        elif self.loss_mode == 'sm':
             loss = self._sm_loss(param, rng_key_loss, x_fx)
+        elif self.loss_mode == 'mm':
+            loss = self._score_mm_loss(param, rng_key_loss, x_fx)
+        elif self.loss_mode == 'mm+sliced_sm':
+            loss = jax.lax.cond(itr < self.loss_change_iter, self._score_mm_loss, self._sliced_sm_loss, *(param, rng_key_loss, x_fx))
+        else:
+            raise NotImplementedError(f'Loss mode {self.loss_mode} not implemented.')
         return loss
 
-    @partial(jax.jit, static_argnums=(0,))
     def _step(self, rng_key: jax.random.PRNGKey, param: optax.Params,
-              opt_state: Any) -> Tuple[float, optax.Params, Any]:
+              opt_state: Any, loss_mode: str) -> Tuple[float, optax.Params, Any]:
         """ Performs one gradient step on the score matching loss """
+        def _sampling_and_loss(param: optax.Params, rng_key: jax.random.PRNGKey):
+            rng_key_sample, rng_key_loss = jax.random.split(rng_key)
+            x_fx = self.sample_x_fx(rng_key_sample)
+            if loss_mode == 'sliced_sm':
+                loss = self._sliced_sm_loss(param, rng_key_loss, x_fx)
+            elif loss_mode == 'sm':
+                loss = self._sm_loss(param, rng_key_loss, x_fx)
+            elif loss_mode == 'mm':
+                loss = self._score_mm_loss(param, rng_key_loss, x_fx)
+            else:
+                raise NotImplementedError(f'Loss mode {self.loss_mode} not implemented.')
+            return loss
+
         rng_keys = jax.random.split(rng_key, self.num_msets_per_step)
-        _sampling_and_loss_vmap = lambda param, rng_key: jnp.mean(
-            jax.vmap(self._sampling_and_loss, in_axes=(None, 0), out_axes=0)(param, rng_keys))
+        _sampling_and_loss_vmap = lambda param, _rng_keys: jnp.mean(
+            jax.vmap(_sampling_and_loss, in_axes=(None, 0), out_axes=0)(param, _rng_keys))
         loss, grads = jax.value_and_grad(_sampling_and_loss_vmap)(param, rng_keys)  # get score matching loss grads
         updates, opt_state = self.optimizer.update(grads, opt_state, param)
         param = optax.apply_updates(param, updates)
@@ -180,6 +267,9 @@ class ScoreMatchingEstimator:
             x_fx_init = self.sample_x_fx(next(self.rng_gen))
             self.param = self.model.init(next(self.rng_gen), x_fx_init)
             self.opt_state = self.optimizer.init(self.param)
+            self._itr = 0
+            first_loss_mode = self.loss_mode.split('+')[0]
+            self._step_jitted = jax.jit(partial(self._step, loss_mode=first_loss_mode))
 
     def _combine_xf(self, x: jnp.array, f: jnp.array) -> jnp.array:
         # tile measurement set and stack x_mset and f samples together
@@ -187,35 +277,20 @@ class ScoreMatchingEstimator:
         num_f_samples = f.shape[0]
         mset_tiles = jnp.repeat(x[None, :, :], num_f_samples, axis=0)
         x_fx = jnp.concatenate([mset_tiles, f], axis=-1)
-        assert x_fx.shape == (num_f_samples, self.mset_size, self.x_dim + self._f_output_size)
+        assert x_fx.shape == (num_f_samples, self.mset_size, self.input_size + self.output_size)
         return x_fx
 
-    def pred_score(self, xm: jnp.array, f_vals: jnp.array) -> jnp.ndarray:
-        x_fx = self._combine_xf(x=xm, f=f_vals)
-        return self.__call__(x_fx)
+    def _check_sample_ms_f_fn(self, sample_ms_f_fn: Callable):
+        # check if sample_ms_f_fn returns a valid measurement set and f samples
+        xm, f_samples = sample_ms_f_fn(next(self.rng_gen), self.mset_size, self.num_f_samples)
+        assert xm.shape == (self.mset_size, self.input_size), \
+            f'sample_ms_f_fn returns measurement set of shape {xm.shape} instead of {(self.mset_size, self.input_size)}'
+        assert f_samples.shape == (self.num_f_samples, self.mset_size, self.output_size), \
+            f'sample_ms_f_fn returns f samples of shape {f_samples.shape} instead of ' \
+            f'{(self.num_f_samples, self.mset_size, self.output_size)}'
+        return True
 
-    def __call__(self, x_fx: jnp.ndarray) -> jnp.ndarray:
-        return self.model.apply(self.param, next(self.rng_gen), x_fx)
-
-
-if __name__ == '__main__':
-    import argparse
-    import time
-
-    arg_parser = argparse.ArgumentParser()
-    arg_parser.add_argument('--gpu', type=int, default=None)
-    args = arg_parser.parse_args()
-
-    if args.gpu == None:
-        device_type = 'cpu'
-        device_num = 0 if args.gpu is None else args.gpu
-    else:
-        device_type = 'gpu'
-        device_num = args.gpu
-    jax.config.update("jax_default_device", jax.devices(device_type)[device_num])
-    print('using device:', jax.devices(device_type)[device_num])
-
-    class DummyMSetSampler(MSetSampler):
+class DummyMSetSampler(MSetSampler):
 
         def __init__(self, dim_x: 1, mset_size: int,
                      key: jax.random.PRNGKey, num_msets: int = 1):
@@ -236,9 +311,24 @@ if __name__ == '__main__':
         def dim_x(self) -> int:
             return self._dim_x
 
+if __name__ == '__main__':
+    import argparse
+    import time
+
+    arg_parser = argparse.ArgumentParser()
+    arg_parser.add_argument('--gpu', type=int, default=None)
+    args = arg_parser.parse_args()
+
+    if args.gpu == None:
+        device_type = 'cpu'
+        device_num = 0 if args.gpu is None else args.gpu
+    else:
+        device_type = 'gpu'
+        device_num = args.gpu
+    jax.config.update("jax_default_device", jax.devices(device_type)[device_num])
+    print('using device:', jax.devices(device_type)[device_num])
 
     from sim_transfer.sims.simulators import GaussianProcessSim
-    from sim_transfer.score_estimation import SSGE
     from sim_transfer.sims.mset_sampler import UniformMSetSampler
 
     key1, key2, key3, key4 = jax.random.split(jax.random.PRNGKey(575756), 4)
@@ -247,18 +337,18 @@ if __name__ == '__main__':
     # mset_sampler = UniformMSetSampler(l_bound=-2 * jnp.ones(1),
     #                                   u_bound=-2 * jnp.ones(1))
 
-    NUM_MSETS = 100
+    NUM_MSETS = 3
     mset_sampler_fixed = DummyMSetSampler(dim_x=1, mset_size=5,
                                           num_msets=NUM_MSETS, key=key1)
     mset_sampler = UniformMSetSampler(l_bound=jnp.array([-2.]),
                                       u_bound=jnp.array([2.]))
-    # mset_sampler = mset_sampler_fixed
+    mset_sampler = mset_sampler_fixed
     xms = mset_sampler_fixed._fixed_points
 
     def get_true_score(xm, f_samples):
         return jnp.stack([jax.grad(lambda f: jnp.sum(dist.log_prob(f)))(f_samples[..., i])
                           for i, dist in enumerate(function_sim.gp_marginal_dists(xm))], axis=-1)
-    #
+
     # get_true_score_vmap = jax.vmap(get_true_score, in_axes=(0, None), out_axes=0)
 
     def fisher_divergence_gp_approx(xm, samples_eval, samples_train, eps=1e-4):
@@ -293,32 +383,38 @@ if __name__ == '__main__':
     # f_div_test_ssge = jnp.mean(jnp.stack([fisher_divergence_ssge(xms[i], f_test_samples[i], f_train_samples[i])
     #                                for i in range(NUM_MSETS)]))
 
-    LR = 1e-3
-    LR_DECAY_RATE = 1.0
-    SLICED_SM = False
-    print('LR:', LR, 'LR_DECAY_RATE:', LR_DECAY_RATE, 'SLICED_SM:', SLICED_SM)
+    LR = 5e-3
+    LR_SCHEDULER = False
+    LOSS_MODE = 'score_mm'
+    print('LR:', LR, 'LR_SCHEDULER:', LR_SCHEDULER, 'LOSS_MODE:', LOSS_MODE)
 
-    est = ScoreMatchingEstimator(function_sim=function_sim,
+    def sample_ms_f_fn(rng_key: jax.random.PRNGKey, mset_size: int, num_f_samples: int):
+        rng_key_mset, rng_key_f = jax.random.split(rng_key)
+        mset = mset_sampler.sample_mset(rng_key_mset, mset_size=mset_size)
+        f_samples = function_sim.sample_function_vals(mset, num_samples=num_f_samples, rng_key=rng_key_f)
+        return mset, f_samples
+
+    est = ScoreMatchingEstimator(input_size=mset_sampler.dim_x,
+                                 output_size=function_sim.output_size,
+                                 sample_ms_f_fn=sample_ms_f_fn,
                                  mset_size=5,
                                  num_msets_per_step=2,
-                                 n_fn_samples=500,
-                                 mset_sampler=mset_sampler,
+                                 num_f_samples=500,
                                  rng_key=key3,
                                  learning_rate=LR,
-                                 sliced_sm=SLICED_SM,
+                                 loss_mode='score_mm',
                                  activation_fn=jax.nn.gelu,
-                                 lr_decay_rate=LR_DECAY_RATE,
                                  weight_decay=0.00)
 
     N_ITER = 2000
 
-    loss = est.train(n_iter=1)
+    loss = est.train(num_iter=1)
     f_div = jnp.mean(jnp.stack([fisher_divergence(xms[i], est, f_test_samples[i])
                                    for i in range(NUM_MSETS)]))
     print(0, loss, f_div, f_div_gp)
     t = time.time()
     for i in range(1, 200+1):
-        loss = est.train(n_iter=N_ITER)
+        loss = est.train(num_iter=N_ITER)
         t_eval = time.time()
         f_div = jnp.mean(jnp.stack([fisher_divergence(xms[i], est, f_test_samples[i])
                                     for i in range(NUM_MSETS)]))
