@@ -35,6 +35,7 @@ class BNN_FSVGD_SN(AbstractFSVGD_BNN):
                  num_iter_sm: int = 500000,
                  loss_change_iter_sm: Optional[int] = 350000,
                  save_path_sn: Optional[str] = None,
+                 mm_faction_sn: float = 0.5,
 
                  num_train_steps: int = 10000,
                  lr: float = 1e-3,
@@ -70,6 +71,7 @@ class BNN_FSVGD_SN(AbstractFSVGD_BNN):
         self.num_iter_sm = num_iter_sm
         self.loss_change_iter_sm = loss_change_iter_sm
         self.save_path_sn = save_path_sn
+        self.mm_faction_sn = mm_faction_sn
         self.score_net = None
 
     def setup_sn_eval(self, sample_ms_f_fn: Callable, sim: FunctionSimulator, batch_size: int = 1):
@@ -115,7 +117,7 @@ class BNN_FSVGD_SN(AbstractFSVGD_BNN):
         return xms, f_test_samples, fisher_divergence_vect, f_div_gp
 
     def fit_score_network(self, x_train: jnp.ndarray, num_iter: int = None, log_period: int = 1000,
-                          sim = None, log_to_wandb: bool = False):
+                          sim: FunctionSimulator = None, log_to_wandb: bool = False):
         if log_to_wandb:
             import wandb
 
@@ -147,7 +149,9 @@ class BNN_FSVGD_SN(AbstractFSVGD_BNN):
                 rng_key=self._rng_key_sn,
                 learning_rate=self.lr_sn,
                 use_lr_scheduler=self.use_lr_schedule_sn,
-                loss_mode=self.loss_mode_sn)
+                loss_mode=self.loss_mode_sn,
+                mm_faction=self.mm_faction_sn,
+            )
 
         loss = self.score_net.train(num_iter=1)
         if sim is not None:
@@ -171,7 +175,7 @@ class BNN_FSVGD_SN(AbstractFSVGD_BNN):
                 print(f'Score Network | Iter {itr} | Loss: {loss} | F-div: {f_div:.2f} | F-div GP: {f_div_gp:.2f} | '
                       f'Duration: {duration:.2f} sec | Eval Duration: {duration_eval:.2f} sec')
                 if log_to_wandb:
-                    wandb.log({'itr': itr, 'loss': loss, 'f_div': f_div, 'f_div_gp': f_div_gp,
+                    wandb.log({'iter': itr, 'loss': loss, 'f_div': f_div, 'f_div_gp': f_div_gp,
                                'duration': duration, 'duration_eval': duration_eval,
                                'duration_per_iter': duration/log_period})
             else:
@@ -189,8 +193,12 @@ class BNN_FSVGD_SN(AbstractFSVGD_BNN):
 
     def _save_sn_model(self):
         if self.save_path_sn is not None:
-            self.score_net.save_model(self.save_path_sn)
+            self.score_net.save_state(self.save_path_sn)
             print('Saved Score Network Model to:', self.save_path_sn)
+
+    def _load_sn_model(self, path):
+        self.score_net.load_state(self.save_path_sn)
+        print('Loaded Score Network Model from:', self.save_path_sn)
 
     # def fit(self, x_train: jnp.ndarray, *args, **kwargs):
     #     self.fit_score_network(x_train)
