@@ -22,14 +22,14 @@ class ScoreMatchingEstimator:
                  function_sim: FunctionSimulator,
                  mset_sampler: MSetSampler,
                  rng_key: jax.random.PRNGKey,
-                 n_fn_samples: int = 20,
+                 n_fn_samples: int = 500,
                  mset_size: int = 10,
 
                  # score network attributes
-                 attn_num_layers: int = 4,
+                 attn_num_layers: int = 2,
                  attn_architecture: Any = ScoreNetworkAttentionModel,
-                 attn_dim: int = 64,
-                 attn_key_size: int = 32,
+                 attn_dim: int = 32,
+                 attn_key_size: int = 16,
                  attn_num_heads: int = 8,
 
                  # optimizer attributes
@@ -142,16 +142,38 @@ class ScoreMatchingEstimator:
 
 
 if __name__ == '__main__':
+    class DummyMSetSampler(MSetSampler):
+
+        def __init__(self, dim_x: 1, n_points: int, key: jax.random.PRNGKey):
+            self.n_points = n_points
+            self._dim_x = dim_x
+            self.key = key
+
+            self._fixed_points = jax.random.uniform(key, shape=(n_points, self.dim_x),
+                                                    minval=-2, maxval=2)
+
+        def sample_mset(self, rng_key: jax.random.PRNGKey, mset_size: int) -> jnp.ndarray:
+            assert mset_size == self.n_points
+            return self._fixed_points
+
+        @property
+        def dim_x(self) -> int:
+            return self._dim_x
+
     from sim_transfer.sims.simulators import GaussianProcessSim
-    from sim_transfer.sims.mset_sampler import UniformMSetSampler
+    #from sim_transfer.sims.mset_sampler import UniformMSetSampler
     key = jax.random.PRNGKey(9645)
     function_sim = GaussianProcessSim(input_size=1)
-    mset_sampler = UniformMSetSampler(l_bound=-5 * jnp.ones(1),
-                                      u_bound=-5 * jnp.ones(1))
+    # mset_sampler = UniformMSetSampler(l_bound=-5 * jnp.ones(1),
+    #                                   u_bound=-5 * jnp.ones(1))
+    mset_sampler = DummyMSetSampler(dim_x=1, n_points=5, key=key)
+    xm = mset_sampler._fixed_points
+    dist = function_sim.gp_marginal_dist(xm)
 
     est = ScoreMatchingEstimator(function_sim=function_sim,
                                  mset_sampler=mset_sampler,
                                  rng_key=key,
+                                 mset_size=5,
                                  learning_rate=0.001)
 
     est.train(n_iter=20000)

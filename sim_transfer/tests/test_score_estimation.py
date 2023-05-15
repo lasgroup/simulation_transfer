@@ -188,5 +188,50 @@ class TestKDE(unittest.TestCase):
         assert (abs(integral) - 1) < 0.01
 
 
+class TestScoreNetwork(unittest.TestCase):
+
+    def testScoreNetworkSaveLoad(self):
+        from sim_transfer.sims.simulators import GaussianProcessSim
+        from sim_transfer.score_estimation.score_network_attn import ScoreMatchingEstimator
+
+        key1, key2, key3 = jax.random.split(jax.random.PRNGKey(9234), 3)
+        sim = GaussianProcessSim(input_size=2, output_size=2)
+        domain = sim.domain
+
+        def sample_ms_f_fn(rng_key: jax.random.PRNGKey, mset_size: int, num_f_samples: int):
+            rng_key_mset, rng_key_f = jax.random.split(rng_key, 2)
+            mset = domain.sample_uniformly(rng_key_mset, mset_size)
+            f_samples = sim.sample_function_vals(x=mset, rng_key=rng_key_f, num_samples=num_f_samples)
+            return mset, f_samples
+
+        est = ScoreMatchingEstimator(input_size=2,
+                                     output_size=2,
+                                     sample_ms_f_fn=sample_ms_f_fn,
+                                     mset_size=6,
+                                     num_msets_per_step=2,
+                                     num_f_samples=100,
+                                     rng_key=key1,
+                                     loss_mode='mm',
+                                     activation_fn=jax.nn.gelu,
+                                     weight_decay=0.00)
+
+        xm = domain.sample_uniformly(key2, 6)
+        f = sim.sample_function_vals(x=xm, rng_key=key3, num_samples=20)
+
+        est.train(num_iter=5)
+        pred1 = est.pred_score(xm, f)
+
+        path = '/tmp/sdkjfsksdjf.pkl'
+        est.save_state(path=path)
+
+        est.train(num_iter=5)
+        pred2 = est.pred_score(xm, f)
+        assert not jnp.allclose(pred1, pred2)
+
+        est.load_state(path=path)
+        pred3 = est.pred_score(xm, f)
+        assert jnp.allclose(pred1, pred3)
+
+
 if __name__ == '__main__':
     unittest.main()
