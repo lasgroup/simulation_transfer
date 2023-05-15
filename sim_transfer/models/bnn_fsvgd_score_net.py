@@ -34,6 +34,7 @@ class BNN_FSVGD_SN(AbstractFSVGD_BNN):
                  loss_mode_sn: str = 'mm+sliced_sm',
                  num_iter_sm: int = 500000,
                  loss_change_iter_sm: Optional[int] = 350000,
+                 save_path_sn: Optional[str] = None,
 
                  num_train_steps: int = 10000,
                  lr: float = 1e-3,
@@ -68,11 +69,12 @@ class BNN_FSVGD_SN(AbstractFSVGD_BNN):
         self.loss_mode_sn = loss_mode_sn
         self.num_iter_sm = num_iter_sm
         self.loss_change_iter_sm = loss_change_iter_sm
+        self.save_path_sn = save_path_sn
         self.score_net = None
 
     def setup_sn_eval(self, sample_ms_f_fn: Callable, sim: FunctionSimulator, batch_size: int = 1):
         key1, key2, key3, key4 = jax.random.split(jax.random.PRNGKey(575756), 4)
-        NUM_EVAL_MSETS = 5
+        NUM_EVAL_MSETS = 20
         xms = jnp.stack([sample_ms_f_fn(k, mset_size=self.num_measurement_points + batch_size, num_f_samples=1)[0]
                          for k in jax.random.split(jax.random.PRNGKey(234), NUM_EVAL_MSETS)], axis=0)
 
@@ -132,7 +134,6 @@ class BNN_FSVGD_SN(AbstractFSVGD_BNN):
             xms, f_test_samples, fisher_divergence_vect, f_div_gp = self.setup_sn_eval(
                 sample_ms_f_fn=sample_ms_f_fn, sim=sim, batch_size=batch_size)
 
-
         if self.score_net == None:
             self.score_net = ScoreMatchingEstimator(
                 input_size=self.input_size,
@@ -148,7 +149,6 @@ class BNN_FSVGD_SN(AbstractFSVGD_BNN):
                 use_lr_scheduler=self.use_lr_schedule_sn,
                 loss_mode=self.loss_mode_sn)
 
-
         loss = self.score_net.train(num_iter=1)
         if sim is not None:
             f_div = fisher_divergence_vect(xms, self.score_net, f_test_samples)
@@ -161,25 +161,36 @@ class BNN_FSVGD_SN(AbstractFSVGD_BNN):
         for i in range(1, (num_iter // log_period)+1):
             loss = self.score_net.train(num_iter=log_period)
 
+            itr = i * log_period
+
             duration = time.time() - t
             if sim is not None:
                 t_eval = time.time()
                 f_div = fisher_divergence_vect(xms, self.score_net, f_test_samples)
                 duration_eval = time.time() - t_eval
-                print(f'Score Network | Iter {i * log_period} | Loss: {loss} | F-div: {f_div:.2f} | F-div GP: {f_div_gp:.2f} | '
+                print(f'Score Network | Iter {itr} | Loss: {loss} | F-div: {f_div:.2f} | F-div GP: {f_div_gp:.2f} | '
                       f'Duration: {duration:.2f} sec | Eval Duration: {duration_eval:.2f} sec')
                 if log_to_wandb:
-                    wandb.log({'iter': i * log_period, 'loss': loss, 'f_div': f_div, 'f_div_gp': f_div_gp,
+                    wandb.log({'itr': itr, 'loss': loss, 'f_div': f_div, 'f_div_gp': f_div_gp,
                                'duration': duration, 'duration_eval': duration_eval,
                                'duration_per_iter': duration/log_period})
             else:
-                print(f'Score Network | Iter {i * log_period} | Loss: {loss} | Duration: {duration} sec')
+                print(f'Score Network | Iter {itr} | Loss: {loss} | Duration: {duration} sec')
             t = time.time()
+
+            if itr % 50000 == 0:
+                self._save_sn_model()
 
         remaining_iter = num_iter % log_period
         if remaining_iter > 0:
             loss = self.score_net.train(num_iter=remaining_iter)
+        self._save_sn_model()
         return loss
+
+    def _save_sn_model(self):
+        if self.save_path_sn is not None:
+            self.score_net.save_model(self.save_path_sn)
+            print('Saved Score Network Model to:', self.save_path_sn)
 
     # def fit(self, x_train: jnp.ndarray, *args, **kwargs):
     #     self.fit_score_network(x_train)

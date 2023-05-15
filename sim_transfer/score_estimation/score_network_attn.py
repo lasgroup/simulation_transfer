@@ -3,6 +3,7 @@ import haiku as hk
 import jax
 import jax.numpy as jnp
 import math
+import pickle
 
 from functools import partial
 from jax.tree_util import PyTreeDef
@@ -28,6 +29,7 @@ class ScoreMatchingEstimator:
                  mset_size: int = 5,
                  num_msets_per_step: int = 2,
                  loss_mode: str = 'sm',
+                 mm_faction: float = 0.5,
                  num_slices: Optional[int] = None,
 
                  # score network attributes
@@ -88,7 +90,6 @@ class ScoreMatchingEstimator:
         self.rng_gen = hk.PRNGSequence(rng_key)
         self.num_iters = num_iters
 
-
         self.sample_ms_f_fn = sample_ms_f_fn
         assert self._check_sample_ms_f_fn(sample_ms_f_fn)
 
@@ -98,6 +99,7 @@ class ScoreMatchingEstimator:
             self.loss_change_iter = num_iters // 2 if loss_change_iter is None else loss_change_iter
         else:
             self.loss_change_iter = math.inf
+        self.mm_faction = mm_faction
         self.num_slices = self.mset_size if num_slices is None else num_slices
 
         # setup score network
@@ -141,7 +143,6 @@ class ScoreMatchingEstimator:
         x_fx = self._combine_xf(mset, f_samples)
         return x_fx
 
-
     def train(self, num_iter: Optional[int] = None) -> float:
         assert num_iter > 0, 'must be at least one iteration'
 
@@ -166,6 +167,18 @@ class ScoreMatchingEstimator:
     def pred_score(self, xm: jnp.array, f_vals: jnp.array) -> jnp.ndarray:
         x_fx = self._combine_xf(x=xm, f=f_vals)
         return self.__call__(x_fx)
+
+    def save_state(self, path: str):
+        assert self.param is not None, 'must train first'
+        assert self.opt_state is not None, 'must train first'
+        with open(path, 'wb') as f:
+            pickle.dump({'params': self.param, 'opt_state': self.opt_state}, f)
+
+    def load_state(self, path: str):
+        with open(path, 'rb') as f:
+            state = pickle.load(f)
+        self.param = state['params']
+        self.opt_state = state['opt_state']
 
     @partial(jax.jit, static_argnums=(0,))
     def _pred_score(self, params: PyTreeDef, rng_key: jax.random.PRNGKey, xm: jnp.array,
@@ -213,12 +226,17 @@ class ScoreMatchingEstimator:
 
     def _score_mm_loss(self, params: PyTreeDef, rng: jax.random.PRNGKey, x_fx: jnp.array) -> jnp.array:
         """ Score matching loss by Hyvarinen. """
-        score_preds = self.model.apply(params, rng, x_fx, True)
         fs = x_fx[..., - self.output_size:]
         mean = jnp.mean(fs, axis=0).T
         cov = jnp.swapaxes(tfp.stats.covariance(fs, sample_axis=0, event_axis=1), 0, -1)
         est_dist = tfd.MultivariateNormalFullCovariance(mean, cov)
+        if self.mm_faction < 1.0:
+            # only feed a fraction of the samples through the model to save compute
+            n_fraction = int(fs.shape[0] * self.mm_faction)
+            fs = fs[:n_fraction]
+            x_fx = x_fx[:n_fraction]
         score_gp_approx = jax.grad(lambda x: jnp.sum(est_dist.log_prob(jnp.swapaxes(x, axis2=-2, axis1=-1))))(fs)
+        score_preds = self.model.apply(params, rng, x_fx, True)
         return jnp.mean(jnp.sum((score_preds - score_gp_approx)**2, axis=(-2, -1)))
 
     def _sampling_and_loss(self, param: optax.Params, rng_key: jax.random.PRNGKey,
@@ -311,6 +329,7 @@ class DummyMSetSampler(MSetSampler):
         def dim_x(self) -> int:
             return self._dim_x
 
+
 if __name__ == '__main__':
     import argparse
     import time
@@ -402,7 +421,7 @@ if __name__ == '__main__':
                                  num_f_samples=500,
                                  rng_key=key3,
                                  learning_rate=LR,
-                                 loss_mode='score_mm',
+                                 loss_mode='mm',
                                  activation_fn=jax.nn.gelu,
                                  weight_decay=0.00)
 

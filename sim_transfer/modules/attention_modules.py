@@ -45,6 +45,7 @@ class ScoreNetworkAttentionModel(hk.Module):
 
     def __call__(self, x, is_training: bool = False):
         dropout_rate = self.dropout_rate if is_training else 0.0
+        do_dropout = self.dropout_rate > 0.0
         z = hk.Linear(self.hidden_dim)(x)
         for _ in range(self.layers):
             # Multi-head attention
@@ -57,7 +58,10 @@ class ScoreNetworkAttentionModel(hk.Module):
                 w_init_scale=2.0,
                 model_size=self.hidden_dim,
             )(q_in, k_in, v_in)
-            z = z + hk.dropout(hk.next_rng_key(), dropout_rate, z_attn)
+            if do_dropout:
+                z = z + hk.dropout(hk.next_rng_key(), dropout_rate, z_attn)
+            else:
+                z = z + z_attn
 
             # fully connected layer
             z_in = hk_layer_norm(axis=self.layer_norm_axis)(z) if self.layer_norm else z
@@ -67,8 +71,10 @@ class ScoreNetworkAttentionModel(hk.Module):
                 self.fc_layer_activation_fn,
                 hk.Linear(self.hidden_dim, w_init=self.w_init),
             ])(z_in)
-
-            z = z + hk.dropout(hk.next_rng_key(), dropout_rate, z_ffn)
+            if do_dropout:
+                z = z + hk.dropout(hk.next_rng_key(), dropout_rate, z_ffn)
+            else:
+                z = z + z_ffn
 
         z = hk_layer_norm(axis=self.layer_norm_axis)(z) if self.layer_norm else z
 
