@@ -5,6 +5,7 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 import tensorflow_probability.substrates.jax.distributions as tfd
 from jax import vmap, random
+from functools import cached_property
 from tensorflow_probability.substrates import jax as tfp
 
 from sim_transfer.sims.dynamics_models import Pendulum, PendulumParams, RaceCar, CarParams
@@ -48,7 +49,7 @@ class FunctionSimulator:
 
         # 4) split into train and test
         y_train = y[:num_samples_train]
-        y_test = y[num_samples_train:]
+        y_test = y[-num_samples_test:]
 
         # check shapes and return dataset
         assert x_train.shape == (num_samples_train, self.input_size)
@@ -178,6 +179,29 @@ class GaussianProcessSim(FunctionSimulator):
         return [self._gp_marginal_dist(x=x, lengthscale=l, output_scale=o)
                 for l, o in zip(self.length_scales, self.output_scales)]
 
+    @property
+    def domain(self) -> Domain:
+        lower = jnp.array([-2.] * self.input_size)
+        upper = jnp.array([2.] * self.input_size)
+        return HypercubeDomain(lower=lower, upper=upper)
+
+    def _typical_f(self, x: jnp.array) -> jnp.array:
+        return self.mean_fn(x)
+
+    @cached_property
+    def normalization_stats(self) -> Dict[str, jnp.ndarray]:
+        key1, key2 = jax.random.split(jax.random.PRNGKey(23423), 2)
+        x = self.domain.sample_uniformly(key1, sample_shape=1000)
+        y = self.sample_function_vals(x, num_samples=50, rng_key=key2)
+        y = y.reshape((-1, self.output_size))
+        norm_stats = {
+            'x_mean': jnp.mean(x, axis=0),
+            'x_std': jnp.std(x, axis=0),
+            'y_mean': jnp.mean(y, axis=0),
+            'y_std': 1.5 * jnp.std(y, axis=0),
+        }
+        return norm_stats
+
 
 class SinusoidsSim(FunctionSimulator):
     amp_mean = 2.0
@@ -302,30 +326,33 @@ class LinearSim(FunctionSimulator):
 class PendulumSim(FunctionSimulator):
     _domain_lower = jnp.array([-jnp.pi, -5, -2.5])
     _domain_upper = jnp.array([jnp.pi, 5, 2.5])
-    _typical_params = PendulumParams(m=jnp.array(1.), l=jnp.array(1.), g=jnp.array(9.81), nu=jnp.array(0.0),
+    _typical_params_lf = PendulumParams(m=jnp.array(1.), l=jnp.array(1.), g=jnp.array(9.81), nu=jnp.array(0.0),
                                      c_d=jnp.array(0.0))
+    _typical_params_hf = PendulumParams(m=jnp.array(1.), l=jnp.array(1.), g=jnp.array(9.81), nu=jnp.array(0.5),
+                                        c_d=jnp.array(0.5))
 
     def __init__(self, dt: float = 0.05,
                  upper_bound: Optional[PendulumParams] = None,
                  lower_bound: Optional[PendulumParams] = None,
-                 encode_angle: bool = True):
+                 encode_angle: bool = True,
+                 high_fidelity: bool = False):
         super().__init__(input_size=4 if encode_angle else 3, output_size=3 if encode_angle else 2)
         self.model = Pendulum(dt=dt, dt_integration=0.005, encode_angle=encode_angle)
 
+        self.high_fidelity = high_fidelity
         self.encode_angle = encode_angle
         self._state_action_spit_idx = 3 if encode_angle else 2
 
-        """ Bounds for uniform sampling of the parameters"""
-        if lower_bound is None:
-            lower_bound = PendulumParams(m=jnp.array(.5), l=jnp.array(.5), g=jnp.array(5.0), nu=jnp.array(0.0),
-                                         c_d=jnp.array(0.0))
-        if upper_bound is None:
-            upper_bound = PendulumParams(m=jnp.array(1.5), l=jnp.array(1.5), g=jnp.array(15.0), nu=jnp.array(0.0),
-                                         c_d=jnp.array(0.0))
-        self._upper_bound_params = upper_bound
-        self._lower_bound_params = lower_bound
-        assert jnp.all(jnp.stack(jtu.tree_flatten(jtu.tree_map(lambda l, u: l <= u, lower_bound, upper_bound))[0])), \
+        # set bounds for uniform sampling
+        self._lower_bound_params, self._upper_bound_params = self._default_sampling_bounds()
+        if lower_bound is not None:
+            self._lower_bound_params = lower_bound
+        if upper_bound is not None:
+            self._upper_bound_params = upper_bound
+        assert jnp.all(jnp.stack(jtu.tree_flatten(jtu.tree_map(
+            lambda l, u: l <= u, self._lower_bound_params, self._upper_bound_params))[0])), \
             'lower bounds have to be smaller than upper bounds'
+
 
         if self.encode_angle:
             self._domain = HypercubeDomainWithAngles(angle_indices=[0], lower=self._domain_lower,
@@ -351,6 +378,21 @@ class PendulumSim(FunctionSimulator):
         assert f.shape == (num_samples, x.shape[0], self.output_size)
         return f
 
+    def _default_sampling_bounds(self):
+        """ Bounds for uniform sampling of the parameters"""
+        if self.high_fidelity:
+            lower_bound = PendulumParams(m=jnp.array(.5), l=jnp.array(.5), g=jnp.array(5.0), nu=jnp.array(0.4),
+                                             c_d=jnp.array(0.4))
+            upper_bound = PendulumParams(m=jnp.array(1.5), l=jnp.array(1.5), g=jnp.array(15.0), nu=jnp.array(0.6),
+                                             c_d=jnp.array(0.6))
+        else:
+            lower_bound = PendulumParams(m=jnp.array(.5), l=jnp.array(.5), g=jnp.array(5.0), nu=jnp.array(0.0),
+                                             c_d=jnp.array(0.0))
+            upper_bound = PendulumParams(m=jnp.array(1.5), l=jnp.array(1.5), g=jnp.array(15.0), nu=jnp.array(0.0),
+                                             c_d=jnp.array(0.0))
+
+        return lower_bound, upper_bound
+
     @property
     def domain(self) -> Domain:
         return self._domain
@@ -370,37 +412,22 @@ class PendulumSim(FunctionSimulator):
 
     def _typical_f(self, x: jnp.array) -> jnp.array:
         s, u = self._split_state_action(x)
-        return self.model.next_step(x=s, u=u, params=self._typical_params)
+        typical_params = self._typical_params_hf if self.high_fidelity else self._typical_params_lf
+        return self.model.next_step(x=s, u=u, params=typical_params)
 
 
 class PendulumBiModalSim(PendulumSim):
 
-    def __init__(self, dt: float = 0.05, encode_angle: bool = True):
+    def __init__(self, dt: float = 0.05, encode_angle: bool = True,
+                 high_fidelity: bool = False):
         FunctionSimulator.__init__(self, input_size=4 if encode_angle else 3, output_size=3 if encode_angle else 2)
         self.model = Pendulum(dt=dt, dt_integration=0.005, encode_angle=encode_angle)
 
+        self.high_fidelity = high_fidelity
         self.encode_angle = encode_angle
         self._state_action_spit_idx = 3 if encode_angle else 2
 
-        # parameter bounds for the 1st part of the dist
-        self._lower_bound_params1 = PendulumParams(
-            m=jnp.array(.5), l=jnp.array(.5), g=jnp.array(10.), nu=jnp.array(0.0), c_d=jnp.array(0.0))
-        self._upper_bound_params1 = PendulumParams(
-            m=jnp.array(0.7), l=jnp.array(0.7), g=jnp.array(10.), nu=jnp.array(0.0), c_d=jnp.array(0.0))
-
-        assert jnp.all(jnp.stack(jtu.tree_flatten(
-            jtu.tree_map(lambda l, u: l <= u, self._lower_bound_params1, self._upper_bound_params1))[0])), \
-            'lower bounds have to be smaller than upper bounds'
-
-        # parameter bounds for the 2nd part of the dist
-        self._lower_bound_params2 = PendulumParams(
-            m=jnp.array(1.3), l=jnp.array(1.3), g=jnp.array(10.), nu=jnp.array(0.0), c_d=jnp.array(0.0))
-        self._upper_bound_params2 = PendulumParams(
-            m=jnp.array(1.5), l=jnp.array(1.5), g=jnp.array(10.), nu=jnp.array(0.0), c_d=jnp.array(0.0))
-
-        assert jnp.all(jnp.stack(jtu.tree_flatten(
-            jtu.tree_map(lambda l, u: l <= u, self._lower_bound_params2, self._upper_bound_params2))[0])), \
-            'lower bounds have to be smaller than upper bounds'
+        self._set_detault_sampling_bounds()
 
         # setup domain
         if self.encode_angle:
@@ -408,6 +435,40 @@ class PendulumBiModalSim(PendulumSim):
                                                      upper=self._domain_upper)
         else:
             self._domain = HypercubeDomain(lower=self._domain_lower, upper=self._domain_upper)
+
+    def _set_detault_sampling_bounds(self):
+        # parameter bounds for the 1st part of the dist
+        if self.high_fidelity:
+            self._lower_bound_params1 = PendulumParams(
+                m=jnp.array(.5), l=jnp.array(.5), g=jnp.array(10.), nu=jnp.array(0.4), c_d=jnp.array(0.4))
+            self._upper_bound_params1 = PendulumParams(
+                m=jnp.array(0.7), l=jnp.array(0.7), g=jnp.array(10.), nu=jnp.array(0.6), c_d=jnp.array(0.6))
+        else:
+            self._lower_bound_params1 = PendulumParams(
+                m=jnp.array(.5), l=jnp.array(.5), g=jnp.array(10.), nu=jnp.array(0.0), c_d=jnp.array(0.0))
+            self._upper_bound_params1 = PendulumParams(
+                m=jnp.array(0.7), l=jnp.array(0.7), g=jnp.array(10.), nu=jnp.array(0.0), c_d=jnp.array(0.0))
+
+        assert jnp.all(jnp.stack(jtu.tree_flatten(
+            jtu.tree_map(lambda l, u: l <= u, self._lower_bound_params1, self._upper_bound_params1))[0])), \
+            'lower bounds have to be smaller than upper bounds'
+
+        # parameter bounds for the 2nd part of the dist
+        if self.high_fidelity:
+            # parameter bounds for the 2nd part of the dist
+            self._lower_bound_params2 = PendulumParams(
+                m=jnp.array(1.3), l=jnp.array(1.3), g=jnp.array(10.), nu=jnp.array(0.4), c_d=jnp.array(0.4))
+            self._upper_bound_params2 = PendulumParams(
+                m=jnp.array(1.5), l=jnp.array(1.5), g=jnp.array(10.), nu=jnp.array(0.6), c_d=jnp.array(0.6))
+        else:
+            self._lower_bound_params2 = PendulumParams(
+                m=jnp.array(1.3), l=jnp.array(1.3), g=jnp.array(10.), nu=jnp.array(0.0), c_d=jnp.array(0.0))
+            self._upper_bound_params2 = PendulumParams(
+                m=jnp.array(1.5), l=jnp.array(1.5), g=jnp.array(10.), nu=jnp.array(0.0), c_d=jnp.array(0.0))
+
+        assert jnp.all(jnp.stack(jtu.tree_flatten(
+            jtu.tree_map(lambda l, u: l <= u, self._lower_bound_params2, self._upper_bound_params2))[0])), \
+            'lower bounds have to be smaller than upper bounds'
 
     def _split_state_action(self, z: jnp.array) -> Tuple[jnp.array, jnp.array]:
         assert z.shape[-1] == self.domain.num_dims
