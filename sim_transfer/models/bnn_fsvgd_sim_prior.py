@@ -12,7 +12,8 @@ import tensorflow_probability.substrates.jax.distributions as tfd
 
 
 class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
-    _score_estimator_types = ['SSGE', 'ssge', 'nu_method', 'nu-method', 'GP', 'gp', 'KDE', 'kde']
+    _score_estimator_types = ['SSGE', 'ssge', 'nu_method', 'nu-method', 'GP', 'gp', 'KDE', 'kde',
+                              'gp+nu_method']
 
     def __init__(self,
                  input_size: int,
@@ -32,6 +33,7 @@ class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
                  bandwidth_svgd: float = 0.2,
                  data_batch_size: int = 8,
                  num_train_steps: int = 10000,
+                 switch_score_estimator_frac: float = 0.75,
                  lr: float = 1e-3,
                  weight_decay: float = 1e-3,
                  normalize_data: bool = True,
@@ -58,10 +60,33 @@ class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
 
         assert score_estimator in self._score_estimator_types, \
             f'score_estimator must be one of {self._score_estimator_types}'
-        self.score_estimator = score_estimator
+        if len(score_estimator.split('+')) == 2:
+            # switch score estimator after some time
+            self.score_estimator = score_estimator.split('+')[0]
+            self.score_estimator_switch = score_estimator.split('+')[1]
+            self.switch_score_estimator_at_iter = int(switch_score_estimator_frac * num_train_steps)
+        else:
+            self.score_estimator = score_estimator
+            self.score_estimator_switch = None
+            self.switch_score_estimator_at_iter = jnp.inf
         self.independent_output_dims = independent_output_dims
         self.bandwidth_score_estim = bandwidth_score_estim
         self.ssge_kernel_type = ssge_kernel_type
+
+        self._itr = 0
+
+    def step(self, x_batch: jnp.ndarray, y_batch: jnp.ndarray, num_train_points: Union[float, int]) -> Dict[str, float]:
+        self.opt_state, self.params, stats = self._step_jit(self.opt_state, self.params, x_batch, y_batch,
+                                                            key=self.rng_key, num_train_points=num_train_points)
+        self._itr += 1
+
+        # functionality for switching score estimators
+        if self.switch_score_estimator_at_iter == self._itr:
+            print(f'Switching score estimator from {self.score_estimator} to {self.score_estimator_switch}')
+            self.score_estimator = self.score_estimator_switch
+            self._before_training_loop_callback()  # re-run the callback to re-initialize the score estimator
+            self._step_jit = jax.jit(self._step)  # re-compile the step function
+        return stats
 
     def _neg_log_posterior(self, pred_raw: jnp.ndarray, likelihood_std: jnp.array, x_stacked: jnp.ndarray,
                             y_batch: jnp.ndarray, train_data_till_idx: int,
@@ -235,7 +260,7 @@ if __name__ == '__main__':
     x_measurement = jnp.linspace(domain.l[0], domain.u[0], 50).reshape(-1, 1)
 
     num_train_points = 3
-    score_estimator = 'kde'
+    score_estimator = 'gp+nu_method'
 
     x_train = jax.random.uniform(key=next(key_iter), shape=(num_train_points,),
                                  minval=domain.l, maxval=domain.u).reshape(-1, 1)
@@ -245,8 +270,8 @@ if __name__ == '__main__':
     y_test = fun(x_test)
 
     bnn = BNN_FSVGD_SimPrior(NUM_DIM_X, NUM_DIM_Y, domain=domain, rng_key=next(key_iter), function_sim=sim,
-                             hidden_layer_sizes=[64, 64, 64], num_train_steps=20000, data_batch_size=4,
-                             num_particles=20, num_f_samples=128, num_measurement_points=16,
+                             hidden_layer_sizes=[64, 64, 64], num_train_steps=4000, data_batch_size=4,
+                             num_particles=20, num_f_samples=256, num_measurement_points=16,
                              bandwidth_svgd=1., bandwidth_score_estim=1.0, ssge_kernel_type='IMQ',
                              normalization_stats=sim.normalization_stats, likelihood_std=0.05,
                              score_estimator=score_estimator)

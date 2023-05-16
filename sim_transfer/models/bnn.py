@@ -86,7 +86,10 @@ class AbstractParticleBNN(BatchedNeuralNetworkModel, LikelihoodMixin):
         raise NotImplementedError('Needs to be implemented by subclass')
 
     @partial(jax.jit, static_argnums=(0,))
-    def _step_jit(self, opt_state: optax.OptState, params: Dict, x_batch: jnp.array, y_batch: jnp.array,
+    def _step_jit(self, *args, **kwargs):
+        return self._step(*args, **kwargs)
+
+    def _step(self, opt_state: optax.OptState, params: Dict, x_batch: jnp.array, y_batch: jnp.array,
                   key: jax.random.PRNGKey, num_train_points: Union[float, int]):
         (loss, stats), grad = jax.value_and_grad(self._surrogate_loss, has_aux=True)(
             params, x_batch, y_batch, num_train_points, key)
@@ -96,7 +99,7 @@ class AbstractParticleBNN(BatchedNeuralNetworkModel, LikelihoodMixin):
 
     def step(self, x_batch: jnp.ndarray, y_batch: jnp.ndarray, num_train_points: Union[float, int]) -> Dict[str, float]:
         self.opt_state, self.params, stats = self._step_jit(self.opt_state, self.params, x_batch, y_batch,
-                                                                  key=self.rng_key, num_train_points=num_train_points)
+                                                            key=self.rng_key, num_train_points=num_train_points)
         return stats
 
     def predict_dist(self, x: jnp.ndarray, include_noise: bool = True) -> tfd.Distribution:
@@ -249,7 +252,6 @@ class AbstractFSVGD_BNN(AbstractParticleBNN, MeasurementSetMixin):
                            num_train_points: Union[float, int], key: jax.random.PRNGKey):
         raise NotImplementedError
 
-    @partial(jax.jit, static_argnums=(0,))
     def _surrogate_loss(self, params: Dict, x_batch: jnp.array, y_batch: jnp.array,
                         num_train_points: int, key: jax.random.PRNGKey) -> [jnp.ndarray, Dict]:
         key1, key2 = jax.random.split(key, 2)
