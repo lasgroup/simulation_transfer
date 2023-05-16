@@ -3,7 +3,7 @@ import jax.numpy as jnp
 from jax import vmap
 
 import wandb
-from sim_transfer.models.bnn_fsvgd_sim_prior import BNN_FSVGD_Sim_Prior
+from sim_transfer.models.bnn_fsvgd_sim_prior import BNN_FSVGD_SimPrior
 from sim_transfer.sims import PendulumSim, GaussianProcessSim
 from sim_transfer.sims.dynamics_models import PendulumParams, Pendulum
 
@@ -29,13 +29,13 @@ d_l, d_u = -1, 1
 
 # Here we define the true model
 true_pendulum_params = PendulumParams(m=jnp.array(1.0), l=jnp.array(1.0), g=jnp.array(0.81), nu=jnp.array(0.1))
-pendulum_model = Pendulum(h=time_step)
+pendulum_model = Pendulum(dt=time_step)
 
 # Here we define prior
 if MODEL_PRIOR:
     lower_b_params = PendulumParams(m=jnp.array(0.99), l=jnp.array(0.99), g=jnp.array(0.80), nu=jnp.array(0.09))
     upper_b_params = PendulumParams(m=jnp.array(1.01), l=jnp.array(1.01), g=jnp.array(0.82), nu=jnp.array(0.11))
-    sim = PendulumSim(h=time_step, lower_bound=lower_b_params, upper_bound=upper_b_params)
+    sim = PendulumSim(dt=time_step, lower_bound=lower_b_params, upper_bound=upper_b_params)
 else:
     sim = GaussianProcessSim(input_size=3, output_size=2)
 
@@ -55,11 +55,11 @@ x_test = jax.random.uniform(next(key_iter), shape=(num_test_points, NUM_DIM_X), 
 y_test = vmap(fun)(x_test) + noise_std * jax.random.normal(next(key_iter), shape=(x_test.shape[0], NUM_DIM_Y))
 domain_l, domain_u = d_l * jnp.ones(shape=(NUM_DIM_X)), d_u * jnp.ones(shape=(NUM_DIM_X))
 
-bnn = BNN_FSVGD_Sim_Prior(NUM_DIM_X, NUM_DIM_Y, domain_l, domain_u, rng_key=next(key_iter), function_sim=sim,
-                          hidden_layer_sizes=[64, 64, 64], num_train_steps=20000, data_batch_size=10,
-                          num_measurement_points=10, independent_output_dims=True, log_wandb=True,
-                          likelihood_std=noise_std, num_particles=10, num_f_samples=20, bandwidth_ssge=2,
-                          bandwidth_svgd=1e-1)
+bnn = BNN_FSVGD_SimPrior(NUM_DIM_X, NUM_DIM_Y, domain_l, domain_u, rng_key=next(key_iter), function_sim=sim,
+                         hidden_layer_sizes=[64, 64, 64], num_train_steps=20000, data_batch_size=10,
+                         num_measurement_points=10, independent_output_dims=True, log_wandb=True,
+                         likelihood_std=noise_std, num_particles=10, num_f_samples=20, bandwidth_ssge=2,
+                         bandwidth_svgd=1e-1)
 
 wandb.init(
     project="Model vs GP prior",
