@@ -153,10 +153,10 @@ def main(args):
 
     if exp_result_folder is not None:
         os.makedirs(exp_result_folder, exist_ok=True)
-        log_file_path = os.path.join(exp_result_folder, f'{exp_hash}.log ')
-        logger = Logger(log_file_path)
-        sys.stdout = logger
-        sys.stderr = logger
+        # log_file_path = os.path.join(exp_result_folder, f'{exp_hash}.log ')
+        # logger = Logger(log_file_path)
+        # sys.stdout = logger
+        # sys.stderr = logger
 
     from pprint import pprint
     print('\nExperiment parameters:')

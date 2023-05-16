@@ -1,7 +1,7 @@
 from experiments.util import (generate_run_commands, generate_base_command, RESULT_DIR, sample_param_flags, hash_dict)
 from experiments.data_provider import DATASET_CONFIGS
 
-import experiments.regression_exp.run_regression_exp
+import experiments.meta_learning_exp.run_meta_learning_exp
 import numpy as np
 import datetime
 import itertools
@@ -9,53 +9,11 @@ import argparse
 import os
 
 MODEL_SPECIFIC_CONFIG = {
-    'BNN_SVGD': {
-        'bandwidth_svgd': {'distribution': 'log_uniform', 'min': -1., 'max': 4.},
-        'num_train_steps': {'values': [20000, 40000]}
-    },
-    'BNN_FSVGD': {
-        'bandwidth_svgd': {'distribution': 'log_uniform', 'min': -2., 'max': 0.0},
-        'bandwidth_gp_prior': {'distribution': 'log_uniform', 'min': -2., 'max': 0.},
-        'num_train_steps': {'values': [20000]},
-        'num_measurement_points': {'values': [16, 32, 64, 128]},
-    },
-    'BNN_FSVGD_SimPrior_gp': {
-        'bandwidth_svgd': {'distribution': 'log_uniform', 'min': -2., 'max': 2.},
-        'num_train_steps': {'values': [20000]},
-        'num_measurement_points': {'values': [8, 16, 32]},
-        'num_f_samples': {'values': [256, 512, 1024]},
-    },
-    'BNN_FSVGD_SimPrior_ssge': {
-        'bandwidth_svgd': {'distribution': 'log_uniform', 'min': -1., 'max': 2.},
-        'num_train_steps': {'values': [20000]},
-        'num_measurement_points': {'values': [8, 16, 32]},
-        'num_f_samples': {'values': [128, 256, 512]},
-        'bandwidth_score_estim': {'distribution': 'log_uniform', 'min': -2., 'max': 1.},
-    },
-    'BNN_FSVGD_SimPrior_nu-method': {
-        'bandwidth_svgd': {'distribution': 'log_uniform', 'min': -1., 'max': 2.},
-        'num_train_steps': {'values': [40000]},
-        'num_measurement_points': {'values': [8, 16, 32]},
-        'num_f_samples': {'values': [256, 512]},
-        'bandwidth_score_estim': {'distribution': 'log_uniform_10', 'min': 0.0, 'max': 1.3},
-    },
-    'BNN_FSVGD_SimPrior_kde': {
-        'bandwidth_svgd': {'distribution': 'log_uniform', 'min': -2., 'max': 2.},
-        'num_train_steps': {'values': [20000]},
-        'num_measurement_points': {'values': [8, 16, 32, 64]},
-        'num_f_samples': {'values': [512, 1024, 2056, 4112]},
-    },
-    'BNN_MMD_SimPrior': {
-        'num_train_steps': {'values': [20000, 40000]},
-        'num_measurement_points': {'values': [8, 16, 32, 64]},
-        'num_f_samples': {'values': [64, 128, 256, 512]},
-    },
-    'BNN_SVGD_DistillPrior': {
-        'bandwidth_svgd': {'distribution': 'log_uniform', 'min': -2., 'max': 2.},
-        'num_train_steps': {'values': [20000, 40000]},
-        'num_measurement_points': {'values': [8, 16, 32]},
-        'num_f_samples': {'values': [64, 128, 256]},
-        'num_distill_steps': {'values': [30000, 60000]},
+    'PACOH': {
+        'prior_weight': {'distribution': 'log_uniform_10', 'min': -1., 'max': 0.},
+        'num_iter_meta_train': {'values': [20000]},
+        'meta_batch_size': {'values': [4, 8, 16]},
+        'bandwidth': {'distribution': 'log_uniform_10', 'min': 0., 'max': 2.},
     },
 }
 
@@ -71,8 +29,6 @@ def main(args):
         'num_samples_train': DATASET_CONFIGS[args.data_source]['num_samples_train'],
         'model': {'value': args.model},
         'likelihood_std': DATASET_CONFIGS[args.data_source]['likelihood_std'],
-        'num_particles': {'value': 20},
-        'data_batch_size': {'value': 8},
     }
     # update with model specific sweep ranges
     assert args.model in MODEL_SPECIFIC_CONFIG
@@ -92,11 +48,12 @@ def main(args):
 
         for model_seed, data_seed in itertools.product(model_seeds[:args.num_model_seeds],
                                                        data_seeds[:args.num_data_seeds]):
-            cmd = generate_base_command(experiments.regression_exp.run_regression_exp,
+            cmd = generate_base_command(experiments.meta_learning_exp.run_meta_learning_exp,
                                         flags=dict(**flags, **{'model_seed': model_seed, 'data_seed': data_seed}))
             command_list.append(cmd)
             output_file_list.append(os.path.join(exp_result_folder, f'{model_seed}_{data_seed}.out'))
 
+    print(command_list[0])
     generate_run_commands(command_list, output_file_list, num_cpus=args.num_cpus,
                           num_gpus=1 if args.gpu else 0, mode=args.run_mode, promt=not args.yes)
 
@@ -122,7 +79,7 @@ if __name__ == '__main__':
     parser.add_argument('--data_source', type=str, default='pendulum')
 
     # # standard BNN parameters
-    parser.add_argument('--model', type=str, default='BNN_SVGD')
+    parser.add_argument('--model', type=str, default='PACOH')
 
     args = parser.parse_args()
     main(args)
