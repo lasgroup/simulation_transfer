@@ -1,5 +1,4 @@
 from experiments.util import (generate_run_commands, generate_base_command, RESULT_DIR, sample_param_flags, hash_dict)
-from experiments.data_provider import DATASET_CONFIGS
 
 import experiments.regression_exp.run_regression_exp
 import numpy as np
@@ -34,7 +33,7 @@ MODEL_SPECIFIC_CONFIG = {
     },
     'BNN_FSVGD_SimPrior_nu-method': {
         'bandwidth_svgd': {'distribution': 'log_uniform', 'min': -1., 'max': 2.},
-        'num_train_steps': {'values': [20000]},
+        'num_train_steps': {'values': [40000]},
         'num_measurement_points': {'values': [8, 16, 32]},
         'num_f_samples': {'values': [256, 512]},
         'bandwidth_score_estim': {'distribution': 'log_uniform_10', 'min': 0.0, 'max': 1.3},
@@ -57,6 +56,25 @@ MODEL_SPECIFIC_CONFIG = {
         'num_f_samples': {'values': [64, 128, 256]},
         'num_distill_steps': {'values': [30000, 60000]},
     },
+}
+
+DATASET_CONFIGS = {
+    'sinusoids1d': {
+        'likelihood_std': {'value': 0.1},
+        'num_samples_train': {'value': 5},
+    },
+    'sinusoids2d': {
+        'likelihood_std': {'value': 0.1},
+        'num_samples_train': {'value': 5},
+    },
+    'pendulum': {
+        'likelihood_std': {'value': 0.02},
+        'num_samples_train': {'value': 20},
+    },
+    'pendulum_bimodal': {
+        'likelihood_std': {'value': 0.02},
+        'num_samples_train': {'value': 20},
+    }
 }
 
 

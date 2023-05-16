@@ -2,7 +2,6 @@ import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 from jax import vmap
-from jax.config import config
 
 from sim_transfer.models.bnn_mmd_sim_prior import BNN_MMD_SimPrior
 from sim_transfer.models.bnn_fsvgd_sim_prior import BNN_FSVGD_SimPrior
@@ -65,7 +64,7 @@ domain = HypercubeDomain(domain_l, domain_u)
 # bnn = BNN_FSVGD_Sim_Prior(NUM_DIM_X, NUM_DIM_Y, domain, rng_key=next(key_iter), function_sim=sim,
 #                           hidden_layer_sizes=[64, 64, 64], num_train_steps=20000, data_batch_size=num_train_points,
 #                           num_measurement_points=10, independent_output_dims=True, num_f_samples=20,
-#                           bandwidth_svgd=1e-4, bandwidth_score_estim=1.)
+#                           bandwidth_svgd=1e-4, bandwidth_ssge=1.)
 
 # bnn = BNN_MMD_SimPrior(NUM_DIM_X, NUM_DIM_Y, domain, rng_key=next(key_iter), function_sim=sim,
 #                        hidden_layer_sizes=[64, 64, 64], num_train_steps=20000, data_batch_size=num_train_points,

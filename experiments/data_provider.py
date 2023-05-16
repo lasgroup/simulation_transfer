@@ -1,24 +1,6 @@
 from typing import Dict, Any
 import jax
 
-DATASET_CONFIGS = {
-    'sinusoids1d': {
-        'likelihood_std': {'value': 0.1},
-        'num_samples_train': {'value': 5},
-    },
-    'sinusoids2d': {
-        'likelihood_std': {'value': 0.1},
-        'num_samples_train': {'value': 5},
-    },
-    'pendulum': {
-        'likelihood_std': {'value': 0.02},
-        'num_samples_train': {'value': 20},
-    },
-    'pendulum_bimodal': {
-        'likelihood_std': {'value': 0.02},
-        'num_samples_train': {'value': 20},
-    }
-}
 
 DEFAULTS_SINUSOIDS = {
     'obs_noise_std': 0.1,
