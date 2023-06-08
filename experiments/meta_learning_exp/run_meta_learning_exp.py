@@ -47,12 +47,12 @@ def meta_learning_experiment(
         # run meta-learning
         pacoh_model = PACOH_NN_Regression(meta_training_data, random_seed=model_seed,
                                           num_iter_meta_train=num_iter_meta_train,
-                                      num_iter_meta_test=5000,
-                                      learn_likelihood=False,
-                                      hidden_layer_sizes=(64, 64, 64),
-                                      activation='leaky_relu',
-                                      likelihood_std=likelihood_std,
-                                      prior_weight=prior_weight,
+                                          num_iter_meta_test=5000,
+                                          learn_likelihood=False,
+                                          hidden_layer_sizes=(64, 64, 64),
+                                          activation='leaky_relu',
+                                          likelihood_std=likelihood_std,
+                                          prior_weight=prior_weight,
                                           meta_batch_size=meta_batch_size,
                                           batch_size=batch_size,
                                           bandwidth=bandwidth)

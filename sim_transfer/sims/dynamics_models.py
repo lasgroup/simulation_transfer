@@ -52,7 +52,7 @@ class CarParams(NamedTuple):
     c_rr: Union[jax.Array, float] = jnp.array(0.003)  # [0.001, 0.01]
     c_d: Union[jax.Array, float] = jnp.array(0.052)  # [0.01, 0.1]
     steering_limit: Union[jax.Array, float] = jnp.array(0.35)
-    use_blend: Union[jax.Array, float] = jnp.array(0.0)
+    use_blend: Union[jax.Array, float] = jnp.array(0.0)  # 0.0 -> no blend (only kinematics), 1.0 -> (kinematics + dynamics)
 
 
 class DynamicsModel(ABC):
@@ -271,6 +271,11 @@ class Pendulum(DynamicsModel):
 
 class RaceCar(DynamicsModel):
 
+    """
+    x = [x, y, theta, vel_x, vel_y, vel_theta]
+    u = [steering_angle, throttle]
+    """
+
     def __init__(self, dt, encode_angle: bool = False):
         super().__init__(dt=dt, x_dim=6, u_dim=2, params=CarParams(), angle_idx=2)
         self.encode_angle = encode_angle
@@ -399,8 +404,7 @@ class RaceCar(DynamicsModel):
         delta, d = u[0], u[1]
         delta = jnp.clip(delta, a_min=-params.steering_limit,
                          a_max=params.steering_limit)
-        d = jnp.clip(d, a_min=-1, a_max=1)
-        d = d * 0.6 + 0.4
+        d = jnp.clip(d, a_min=0., a_max=1)  # throttle
         u = u.at[0].set(delta)
         u = u.at[1].set(d)
         v_x = x[3]
