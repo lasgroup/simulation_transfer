@@ -1,12 +1,7 @@
-from collections import OrderedDict
-from functools import partial
 from typing import List, Optional, Callable, Dict, Union
 
 import jax
 import jax.numpy as jnp
-import optax
-import tensorflow_probability.substrates.jax.distributions as tfd
-from tensorflow_probability.substrates import jax as tfp
 
 from sim_transfer.models.bnn import AbstractSVGD_BNN
 

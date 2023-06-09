@@ -82,7 +82,7 @@ class BNN_MMD_SimPrior(AbstractParticleBNN, MeasurementSetMixin):
             else self.likelihood_std
 
         # negative log-likelihood
-        nll = - self._ll(f_nn, likelihood_std, y_batch, train_batch_size)
+        nll = - num_train_points * self._ll(f_nn, likelihood_std, y_batch, train_batch_size)
 
         # estimate mmd between posterior and prior
         f_sim_samples = self._fsim_samples(x_stacked, key=key2)
@@ -92,7 +92,7 @@ class BNN_MMD_SimPrior(AbstractParticleBNN, MeasurementSetMixin):
             mmd = jnp.sum(self._mmd_fn(f_nn.reshape(f_nn.shape[0], -1),
                                        f_sim_samples.reshape(f_sim_samples.shape[0], -1)))
 
-        loss = nll + mmd / num_train_points
+        loss = nll + mmd
 
         stats = OrderedDict(train_nll_loss=nll, mmd=mmd, loss=loss)
         if self.learn_likelihood_std:

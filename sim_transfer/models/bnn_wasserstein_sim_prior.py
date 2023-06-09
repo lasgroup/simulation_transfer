@@ -70,7 +70,7 @@ class BNN_Wasserstein_SimPrior(AbstractParticleBNN, MeasurementSetMixin):
             else self.likelihood_std
 
         # negative log-likelihood
-        nll = - self._ll(f_nn, likelihood_std, y_batch, train_batch_size)
+        nll = - num_train_points * self._ll(f_nn, likelihood_std, y_batch, train_batch_size)
 
         # estimate mmd between posterior and prior
         f_sim_samples = self._fsim_samples(x_stacked, key=key2)
@@ -80,7 +80,7 @@ class BNN_Wasserstein_SimPrior(AbstractParticleBNN, MeasurementSetMixin):
         else:
             raise NotImplementedError('We support only independent output dimensions for now.')
 
-        loss = nll + dist_distance / num_train_points
+        loss = nll + dist_distance
 
         stats = OrderedDict(train_nll_loss=nll, dist_distance=dist_distance, loss=loss)
         if self.learn_likelihood_std:

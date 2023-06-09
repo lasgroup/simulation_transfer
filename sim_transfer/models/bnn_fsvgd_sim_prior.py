@@ -91,16 +91,16 @@ class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
     def _neg_log_posterior(self, pred_raw: jnp.ndarray, likelihood_std: jnp.array, x_stacked: jnp.ndarray,
                             y_batch: jnp.ndarray, train_data_till_idx: int,
                             num_train_points: Union[float, int], key: jax.random.PRNGKey):
-        nll = - self._ll(pred_raw, likelihood_std, y_batch, train_data_till_idx)
+        nll = - num_train_points * self._ll(pred_raw, likelihood_std, y_batch, train_data_till_idx)
         if self.score_estimator in ['SSGE', 'ssge', 'nu_method', 'nu-method']:
-            prior_score = self._estimate_prior_score(pred_raw, x_stacked, key) / num_train_points
+            prior_score = self._estimate_prior_score(pred_raw, x_stacked, key)
             neg_log_post = nll - jnp.sum(jnp.mean(pred_raw * jax.lax.stop_gradient(prior_score), axis=-2))
         elif self.score_estimator in ['GP', 'gp']:
             prior_logprob = self._prior_log_prob_gp_approx(pred_raw, x_stacked, key)
-            neg_log_post = nll - prior_logprob / num_train_points
+            neg_log_post = nll - prior_logprob
         elif self.score_estimator in ['KDE', 'kde']:
             prior_logprob = self._prior_log_prob_kde_approx(pred_raw, x_stacked, key)
-            neg_log_post = nll - prior_logprob / num_train_points
+            neg_log_post = nll - prior_logprob
         else:
             raise NotImplementedError
         stats = OrderedDict(train_nll_loss=nll)
@@ -260,7 +260,7 @@ if __name__ == '__main__':
     x_measurement = jnp.linspace(domain.l[0], domain.u[0], 50).reshape(-1, 1)
 
     num_train_points = 3
-    score_estimator = 'gp+nu_method'
+    score_estimator = 'gp'
 
     x_train = jax.random.uniform(key=next(key_iter), shape=(num_train_points,),
                                  minval=domain.l, maxval=domain.u).reshape(-1, 1)

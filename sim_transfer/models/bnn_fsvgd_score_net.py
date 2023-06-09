@@ -207,10 +207,10 @@ class BNN_FSVGD_SN(AbstractFSVGD_BNN):
     def _neg_log_posterior(self, pred_raw: jnp.ndarray, likelihood_std: jnp.array, x_stacked: jnp.ndarray,
                             y_batch: jnp.ndarray, train_data_till_idx: int,
                             num_train_points: Union[float, int], key: jax.random.PRNGKey):
-        nll = - self._ll(pred_raw, likelihood_std, y_batch, train_data_till_idx)
+        nll = - num_train_points * self._ll(pred_raw, likelihood_std, y_batch, train_data_till_idx)
 
         prior_score = self.score_net.pred_score(xm=x_stacked, f_vals=pred_raw)
-        neg_log_post = nll - jnp.sum(jnp.mean(pred_raw * jax.lax.stop_gradient(prior_score), axis=-2)) / num_train_points
+        neg_log_post = nll - jnp.sum(jnp.mean(pred_raw * jax.lax.stop_gradient(prior_score), axis=-2))
 
         stats = OrderedDict(train_nll_loss=nll)
         if self.learn_likelihood_std:
