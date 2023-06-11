@@ -272,7 +272,7 @@ class Pendulum(DynamicsModel):
 class RaceCar(DynamicsModel):
 
     """
-    x = [x, y, theta, vel_x, vel_y, vel_theta]
+    x = [x, y, theta, vel_r, vel_t, angular_velocity_z]
     u = [steering_angle, throttle]
     """
 
@@ -296,6 +296,19 @@ class RaceCar(DynamicsModel):
 
     @staticmethod
     def _ode_kin(x, u, params: CarParams):
+        """Compute kinematics derivative for localized state.
+        Inputs
+        -----
+        x: jnp.ndarray,
+            shape = (4, ) -> [x, y, theta, v_r], v_r: Radial velocity
+        u: jnp.ndarray,
+            shape = (2, ) -> [steering_angle, throttle]
+
+        Output
+        ------
+        dx_kin: jnp.ndarray,
+            shape = (4, ) -> derivative of x
+        """
         p_x, p_y, theta, v_x = x[0], x[1], x[2], x[3]  # progress
         m = params.m
         l_f = params.l_f
@@ -316,6 +329,19 @@ class RaceCar(DynamicsModel):
         return dx_kin
 
     def _accelerations(self, x, u, params: CarParams):
+        """Compute acceleration forces for dynamic model.
+        Inputs
+        -------
+        x: jnp.ndarray,
+            shape = (6, ) -> [x, y, theta, velocity_r, velocity_t, angular_velocity_z]
+        u: jnp.ndarray,
+            shape = (2, ) -> [steering_angle, throttle]
+
+        Output
+        ------
+        acceleration: jnp.ndarray,
+            shape = (3, ) -> [a_r, a_t, a_theta]
+        """
         i_com = params.i_com
         theta, v_x, v_y, w = x[2], x[3], x[4], x[5]
         m = params.m
@@ -355,6 +381,20 @@ class RaceCar(DynamicsModel):
         return acceleration
 
     def _ode_dyn(self, x, u, params: CarParams):
+        """Compute derivative using dynamic model.
+        Inputs
+        -------
+        x: jnp.ndarray,
+            shape = (6, ) -> [x, y, theta, velocity_r, velocity_t, angular_velocity_z]
+        u: jnp.ndarray,
+            shape = (2, ) -> [steering_angle, throttle]
+
+        Output
+        ------
+        x_dot: jnp.ndarray,
+            shape = (6, ) -> time derivative of x
+
+        """
         # state = [p_x, p_y, theta, v_x, v_y, w]. Velocities are in local coordinate frame.
         # Inputs: [\delta, d] -> \delta steering angle and d duty cycle of the electric motor.
         theta, v_x, v_y, w = x[2], x[3], x[4], x[5]
@@ -369,6 +409,19 @@ class RaceCar(DynamicsModel):
         return x_dot
 
     def _compute_dx_kin(self, x, u, params: CarParams):
+        """Compute derivative using kinematic model.
+        Inputs
+        -------
+        x: jnp.ndarray,
+            shape = (6, ) -> [x, y, theta, velocity_r, velocity_t, angular_velocity_z]
+        u: jnp.ndarray,
+            shape = (2, ) -> [steering_angle, throttle]
+
+        Output
+        ------
+        dx_kin_full: jnp.ndarray,
+            shape = (6, ) -> time derivative of x
+        """
         l_r = params.l_r
         l_f = params.l_f
         v_x = x[3]
@@ -384,6 +437,23 @@ class RaceCar(DynamicsModel):
         return dx_kin_full
 
     def _compute_dx(self, x, u, params: CarParams):
+        """Calculate time derivative of state.
+        Inputs:
+        ------
+        x: jnp.ndarray,
+            shape = (6, ) -> [x, y, theta, vel_r, vel_t, angular_velocity_z]
+        u: jnp.ndarray,
+            shape = (2, ) -> [steering_angle, throttle]
+        params: CarParams,
+
+        Output:
+        -------
+        dx: jnp.ndarray, derivative of x
+
+
+        If params.use_blend <= 0.5 --> only kinematic model is used, else a blend between nonlinear model
+        and kinematic is used.
+        """
         use_kin = params.use_blend <= 0.5
         v_x = x[3]
         blend_ratio = (v_x - 0.3) / 0.2
@@ -400,6 +470,18 @@ class RaceCar(DynamicsModel):
         """
         Using kinematic model with blending: https://arxiv.org/pdf/1905.05150.pdf
         Code based on: https://github.com/alexliniger/gym-racecar/
+
+        Inputs:
+        ------
+        x: jnp.ndarray,
+            shape = (6, ) -> [x, y, theta, vel_r, vel_t, angular_velocity_z]
+        u: jnp.ndarray,
+            shape = (2, ) -> [steering_angle, throttle]
+        params: CarParams,
+
+        Output:
+        -------
+        dx: jnp.ndarray, derivative of x
         """
         delta, d = u[0], u[1]
         delta = jnp.clip(delta, a_min=-params.steering_limit,
@@ -408,6 +490,8 @@ class RaceCar(DynamicsModel):
         u = u.at[0].set(delta)
         u = u.at[1].set(d)
         v_x = x[3]
+
+        # velocity is <= 0.1 and throttle is small -> velocity and accelerations are 0.
         idx = jnp.logical_and(v_x <= 0.1,
                               d <= (params.c_rr + params.c_d * v_x ** 2) / (params.c_m_1 - params.c_m_2 * v_x))
 
