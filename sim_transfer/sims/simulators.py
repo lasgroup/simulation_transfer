@@ -427,7 +427,7 @@ class PendulumBiModalSim(PendulumSim):
         self.encode_angle = encode_angle
         self._state_action_spit_idx = 3 if encode_angle else 2
 
-        self._set_detault_sampling_bounds()
+        self._set_default_sampling_bounds()
 
         # setup domain
         if self.encode_angle:
@@ -436,7 +436,7 @@ class PendulumBiModalSim(PendulumSim):
         else:
             self._domain = HypercubeDomain(lower=self._domain_lower, upper=self._domain_upper)
 
-    def _set_detault_sampling_bounds(self):
+    def _set_default_sampling_bounds(self):
         # parameter bounds for the 1st part of the dist
         if self.high_fidelity:
             self._lower_bound_params1 = PendulumParams(

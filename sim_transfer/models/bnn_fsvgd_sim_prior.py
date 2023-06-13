@@ -13,7 +13,7 @@ import tensorflow_probability.substrates.jax.distributions as tfd
 
 class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
     _score_estimator_types = ['SSGE', 'ssge', 'nu_method', 'nu-method', 'GP', 'gp', 'KDE', 'kde',
-                              'gp+nu_method']
+                              'gp+nu-method', 'gp+nu_method']
 
     def __init__(self,
                  input_size: int,
