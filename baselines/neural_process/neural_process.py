@@ -47,7 +47,7 @@ class MLP(nn.Module):
         return self.out_layer(x)
 
 
-class NP_Decoder(nn.Module):
+class NPDecoder(nn.Module):
     hidden_layer_sizes: List[int]
     output_size: int
 
@@ -57,38 +57,42 @@ class NP_Decoder(nn.Module):
     def __call__(self, x):
         mlp_out = self.mlp(x)
         mu, log_sigma = jnp.split(mlp_out, 2, axis=-1)
-        # Bound the variance
-        sigma = 0.01 + 0.99 * nn.softplus(log_sigma)
+        # Lower bound the variance
+        sigma = 0.05 + 0.95 * nn.softplus(log_sigma)
         return mu, sigma
 
 
-class NP_Encoder(nn.Module):
+class NPEncoderDet(nn.Module):
     latent_dim: int
     hidden_dims: list
 
     def setup(self):
         self.enc_det = MLP(self.hidden_dims, output_size=self.latent_dim)
-        self.enc_stoch = MLP(self.hidden_dims, output_size=2*self.latent_dim)
 
-    def __call__(self, x, y, xy_mask=None):
+    def __call__(self, x, y):
         xy = jnp.concatenate([x, y], -1)
 
         # deterministic encoder
         r_i = self.enc_det(xy)
-        if xy_mask is not None:
-            assert xy_mask.shape == (r_i.shape[-2],)
-            r_i = r_i * xy_mask[..., None]
         rc = jnp.mean(r_i, axis=-2)
+        return rc
+
+class NPEncoderStoch(nn.Module):
+    latent_dim: int
+    hidden_dims: list
+
+    def setup(self):
+        self.enc_stoch = MLP(self.hidden_dims, output_size=2*self.latent_dim)
+
+    def __call__(self, x, y):
+        xy = jnp.concatenate([x, y], -1)
 
         # stochastic encoder
         s_i = self.enc_stoch(xy)
-        if xy_mask is not None:
-            assert xy_mask.shape == (r_i.shape[-2],)
-            s_i = s_i * xy_mask[..., None]
         sc = jnp.mean(s_i, axis=-2)
         mu, log_sigma = jnp.split(sc, 2, axis=-1)
         sigma = nn.softplus(log_sigma)
-        return rc, mu, sigma
+        return mu, sigma
 
 
 class NeuralProcess(RngKeyMixin):
@@ -97,14 +101,13 @@ class NeuralProcess(RngKeyMixin):
                  domain: Domain,
                  function_sim: FunctionSimulator,
                  rng_key: jax.random.PRNGKey,
-                 num_f_samples: int = 16,
+                 num_f_samples: int = 8,
                  num_z_samples: int = 8,
-                 num_points_target: int = 64,
+                 num_points_target: int = 32,
                  num_points_context: int = 8,
-                 latent_dim: int = 64,
+                 latent_dim: int = 128,
                  hidden_dims: List[int] = (32, 32, 32),
                  likelihood_std: Union[float, jnp.array] = 0.2,
-                 use_random_masking: bool = True,
                  lr: float = 1e-3,
                  num_train_steps: int = 100000):
         RngKeyMixin.__init__(self, rng_key)
@@ -118,7 +121,6 @@ class NeuralProcess(RngKeyMixin):
         self.num_z_samples = num_z_samples
         self.num_points_target = num_points_target
         self.num_points_context = num_points_context
-        self.use_random_masking = use_random_masking
 
         if type(likelihood_std) == float:
             self.likelihood_std = jnp.ones(output_size) * likelihood_std
@@ -128,11 +130,13 @@ class NeuralProcess(RngKeyMixin):
         self.latent_dim = latent_dim
         self.hidden_dims = hidden_dims
 
-        self.encoder = NP_Encoder(latent_dim, hidden_dims)
-        self.decoder = NP_Decoder(hidden_layer_sizes=hidden_dims, output_size=output_size)
+        self.encoder_det = NPEncoderDet(latent_dim, hidden_dims)
+        self.encoder_stoch = NPEncoderStoch(latent_dim, hidden_dims)
+        self.decoder = NPDecoder(hidden_layer_sizes=hidden_dims, output_size=output_size)
 
         self.params = {
-            'encoder': self.encoder.init(self.rng_key, jnp.ones((1, input_size)), jnp.ones((1, output_size))),
+            'encoder_det': self.encoder_det.init(self.rng_key, jnp.ones((1, input_size)), jnp.ones((1, output_size))),
+            'encoder_stoch': self.encoder_stoch.init(self.rng_key, jnp.ones((1, input_size)), jnp.ones((1, output_size))),
             'decoder': self.decoder.init(self.rng_key, jnp.ones((1, input_size + 2 * latent_dim)))
         }
 
@@ -153,7 +157,8 @@ class NeuralProcess(RngKeyMixin):
                  num_z_samples: int = 64):
         if rng_key is None:
             rng_key = self.rng_key
-        rc, mu, sigma = self.encoder.apply(self.params['encoder'], x_context, y_context)
+        rc = self.encoder_det.apply(self.params['encoder_det'], x_context, y_context)
+        mu, sigma = self.encoder_stoch.apply(self.params['encoder_stoch'], x_context, y_context)
         z_samples = tfd.Normal(mu, sigma).sample(sample_shape=(num_z_samples,), seed=rng_key)
 
         # tile inputs
@@ -202,8 +207,7 @@ class NeuralProcess(RngKeyMixin):
         pred_dist_raw = tfd.MixtureSameFamily(mixture_distribution, independent_normals)
         return pred_dist_raw
 
-    def loss(self, params: Dict, rng_key: jax.random.PRNGKey,
-             mask: Optional[jnp.array] = None):
+    def loss(self, params: Dict, rng_key: jax.random.PRNGKey):
         key_x, key_y, key_noise = jax.random.split(rng_key, 3)
 
         # sample data
@@ -216,14 +220,9 @@ class NeuralProcess(RngKeyMixin):
         y_context, y_target = jnp.split(y, [self.num_points_context], axis=-2)
 
         # encode context and full data
-        rc_context, mu_context, sigma_context = self.encoder.apply(params['encoder'], x_context, y_context,
-                                                                   xy_mask=mask)
-        if mask is None:
-            mask_full = None
-        else:
-            mask_full = jnp.concatenate([mask, jnp.ones(self.num_points_target)])
-        rc_full, mu_full, sigma_full = self.encoder.apply(params['encoder'], x, y,
-                                                          xy_mask=mask_full)
+        rc_context = self.encoder_det.apply(params['encoder_det'], x_context, y_context)
+        mu_context, sigma_context = self.encoder_stoch.apply(params['encoder_stoch'], x_context, y_context)
+        mu_full, sigma_full = self.encoder_stoch.apply(params['encoder_stoch'], x, y)
 
         z_dist_context = tfd.Normal(mu_context, sigma_context)
         z_dist_full = tfd.Normal(mu_full, sigma_full)
@@ -246,18 +245,14 @@ class NeuralProcess(RngKeyMixin):
         return loss, stats
 
     @partial(jax.jit, static_argnums=(0,))
-    def _step(self, params: Dict, rng_key: jax.random.PRNGKey, mask: Optional[jnp.array] = None):
-        (loss, stats), grads = jax.value_and_grad(self.loss, has_aux=True)(params, rng_key, mask=mask)
+    def _step(self, params: Dict, rng_key: jax.random.PRNGKey):
+        (loss, stats), grads = jax.value_and_grad(self.loss, has_aux=True)(params, rng_key)
         updates, opt_state = self.optim.update(grads, self.opt_state)
         params = optax.apply_updates(params, updates)
         return stats, params, opt_state
 
     def step(self):
-        if self.use_random_masking:
-            mask = sample_mask(self.rng_key, size=self.num_points_context, min_num_ones=2)
-        else:
-            mask = None
-        stats, self.params, self.opt_state = self._step(self.params, self.rng_key, mask=mask)
+        stats, self.params, self.opt_state = self._step(self.params, self.rng_key)
         return stats
 
     def meta_fit(self, log_period: int = 5000, num_steps: Optional[int] = None,
@@ -386,11 +381,11 @@ if __name__ == '__main__':
     y_test = fun(x_test)
 
     model = NeuralProcess(input_size=NUM_DIM_X, output_size=NUM_DIM_Y, rng_key=next(key_iter),
-                          domain=domain, function_sim=sim, use_random_masking=True)
+                          domain=domain, function_sim=sim)
 
 
     for i in range(50):
-        model.meta_fit(num_steps=10000, log_period=2000, eval_data=(x_train, y_train, x_test, y_test))
+        model.meta_fit(num_steps=5000, log_period=2000, eval_data=(x_train, y_train, x_test, y_test))
         if NUM_DIM_X == 1:
             model.plot_1d(x_train, y_train, true_fun=fun, title=f'Neural Process, iter {(i + 1) * 2000}',
                         domain_l=domain.l[0], domain_u=domain.u[0])
