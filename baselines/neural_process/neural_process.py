@@ -17,22 +17,6 @@ from sim_transfer.sims import Domain, FunctionSimulator
 from matplotlib import pyplot as plt
 
 
-def sample_mask(key: jax.random.PRNGKey, size: int, min_num_ones: int):
-    # Check constraints
-    assert 0 < min_num_ones <= size
-
-    # Sample the number of ones
-    num_ones = jax.random.randint(key, (), min_num_ones, size + 1)
-
-    # Create the initial mask
-    mask = jnp.zeros(size, dtype=jnp.float32)
-
-    # Set ones in the mask
-    ones_indices = jax.random.choice(jax.random.PRNGKey(1), jnp.arange(size), shape=(num_ones,), replace=False)
-    mask = mask.at[ones_indices].set(1)
-    return mask
-
-
 class MLP(nn.Module):
     hidden_layer_sizes: List[int]
     output_size: int
@@ -46,6 +30,49 @@ class MLP(nn.Module):
             x = nn.leaky_relu(layer(x))
         return self.out_layer(x)
 
+class TransformerModel(nn.Module):
+    output_dim: int
+    num_heads: int
+    hidden_dim: int = 32
+    num_blocks: int = 2
+
+    def setup(self):
+        self.dense_in = nn.Dense(self.hidden_dim)
+
+        self.transformer_blocks = [{
+            'attn': nn.attention.SelfAttention(num_heads=self.num_heads),
+            'linear': [
+                nn.Dense(self.hidden_dim),
+                nn.leaky_relu,
+                nn.Dense(self.hidden_dim)
+            ],
+            'norm1': nn.LayerNorm(),
+            'norm2': nn.LayerNorm()
+        } for _ in range(self.num_blocks)]
+
+        self.dense_out = nn.Dense(self.output_dim)
+
+    def __call__(self, x, train=True):
+        x = self.dense_in(x)
+
+        for block_modules in self.transformer_blocks:
+            # Attention part
+            attn_out = block_modules['attn'](x)
+            # x = x + self.dropout(attn_out, deterministic=not train)
+            x = x + attn_out
+            x = block_modules['norm1'](x)
+
+            # MLP part
+            linear_out = x
+            for l in block_modules['linear']:
+                linear_out = l(linear_out) if not isinstance(l, nn.Dropout) else l(linear_out, deterministic=not train)
+            # x = x + self.dropout(linear_out, deterministic=not train)
+            x = x + linear_out
+            x = block_modules['norm2'](x)
+
+        x = self.dense_out(x)
+        return x
+
 
 class NPDecoder(nn.Module):
     hidden_layer_sizes: List[int]
@@ -58,31 +85,64 @@ class NPDecoder(nn.Module):
         mlp_out = self.mlp(x)
         mu, log_sigma = jnp.split(mlp_out, 2, axis=-1)
         # Lower bound the variance
-        sigma = 0.05 + 0.95 * nn.softplus(log_sigma)
+        sigma = 0.1 + 0.9 * nn.softplus(log_sigma)
         return mu, sigma
+
+def dot_product_attn(query, keys, values):
+    return jnp.sum(nn.softmax(jnp.sum(query[..., None, :] * keys, axis=-1) /
+                       jnp.sqrt(keys.shape[-1]), axis=-1)[..., None] * values, axis=-2)
 
 
 class NPEncoderDet(nn.Module):
     latent_dim: int
-    hidden_dims: list
+    hidden_dim: list = 32
+    num_layers: int = 3
+    use_cross_attention: bool = False
+    use_self_attention: bool = False
+    num_attn_heads: int = 4
+    num_transf_blocks: int = 2
 
     def setup(self):
-        self.enc_det = MLP(self.hidden_dims, output_size=self.latent_dim)
+        if self.use_self_attention:
+            self.enc_det = TransformerModel(output_dim=self.latent_dim, num_heads=self.num_attn_heads,
+                                            hidden_dim=self.hidden_dim, num_blocks=self.num_transf_blocks)
+        else:
+            self.enc_det = MLP([self.hidden_dim] * self.num_layers, output_size=self.latent_dim)
 
-    def __call__(self, x, y):
+        if self.use_cross_attention:
+            self.key_mlp = MLP(hidden_layer_sizes=[self.hidden_dim], output_size=self.latent_dim)
+            self.query_mlp = MLP(hidden_layer_sizes=[self.hidden_dim], output_size=self.latent_dim)
+
+    def __call__(self, x, y, x_target):
+        batch_shape = x.shape[:-2]
+        num_target_points = x_target.shape[-2]
         xy = jnp.concatenate([x, y], -1)
 
         # deterministic encoder
         r_i = self.enc_det(xy)
-        rc = jnp.mean(r_i, axis=-2)
-        return rc
+        if self.use_cross_attention:
+            keys = self.key_mlp(x)
+            query = self.query_mlp(x_target)
+            r_agg = jax.vmap(dot_product_attn, in_axes=(-2, None, None), out_axes=-2)(query, keys, r_i)
+        else:
+            r_agg = jnp.repeat(jnp.mean(r_i, axis=-2)[..., None, :], num_target_points, axis=-2)
+        return r_agg
+
 
 class NPEncoderStoch(nn.Module):
     latent_dim: int
-    hidden_dims: list
+    hidden_dim: list = 32
+    num_layers: int = 3
+    use_self_attention: bool = False
+    num_attn_heads: int = 4
+    num_transf_blocks: int = 2
 
     def setup(self):
-        self.enc_stoch = MLP(self.hidden_dims, output_size=2*self.latent_dim)
+        if self.use_self_attention:
+            self.enc_stoch = TransformerModel(output_dim=2*self.latent_dim, num_heads=self.num_attn_heads,
+                                            hidden_dim=self.hidden_dim, num_blocks=self.num_transf_blocks)
+        else:
+            self.enc_stoch = MLP([self.hidden_dim] * self.num_layers, output_size=2*self.latent_dim)
 
     def __call__(self, x, y):
         xy = jnp.concatenate([x, y], -1)
@@ -101,14 +161,18 @@ class NeuralProcess(RngKeyMixin):
                  domain: Domain,
                  function_sim: FunctionSimulator,
                  rng_key: jax.random.PRNGKey,
-                 num_f_samples: int = 8,
+                 num_f_samples: int = 64,
                  num_z_samples: int = 8,
-                 num_points_target: int = 32,
+                 num_points_target: int = 64,
                  num_points_context: int = 8,
                  latent_dim: int = 128,
-                 hidden_dims: List[int] = (32, 32, 32),
+                 hidden_dim: int = 64,
+                 num_layers: int = 3,
+                 num_transf_blocks: int = 2,
+                 use_cross_attention: bool = True,
+                 use_self_attention: bool = False,
                  likelihood_std: Union[float, jnp.array] = 0.2,
-                 lr: float = 1e-3,
+                 lr: float = 5e-4,
                  num_train_steps: int = 100000):
         RngKeyMixin.__init__(self, rng_key)
         self.input_size = input_size
@@ -128,14 +192,22 @@ class NeuralProcess(RngKeyMixin):
             self.likelihood_std = likelihood_std
 
         self.latent_dim = latent_dim
-        self.hidden_dims = hidden_dims
+        self.hidden_dim = hidden_dim
+        self.num_layers = num_layers
+        self.num_transf_blocks = num_transf_blocks
 
-        self.encoder_det = NPEncoderDet(latent_dim, hidden_dims)
-        self.encoder_stoch = NPEncoderStoch(latent_dim, hidden_dims)
-        self.decoder = NPDecoder(hidden_layer_sizes=hidden_dims, output_size=output_size)
+        self.encoder_det = NPEncoderDet(latent_dim, hidden_dim=hidden_dim, num_layers=num_layers,
+                                        num_transf_blocks=num_transf_blocks,
+                                        use_cross_attention=use_cross_attention,
+                                        use_self_attention=use_self_attention)
+        self.encoder_stoch = NPEncoderStoch(latent_dim, hidden_dim=hidden_dim, num_layers=num_layers,
+                                            use_self_attention=use_self_attention,
+                                            num_transf_blocks=num_transf_blocks)
+        self.decoder = NPDecoder(hidden_layer_sizes=[hidden_dim] * 3, output_size=output_size)
 
         self.params = {
-            'encoder_det': self.encoder_det.init(self.rng_key, jnp.ones((1, input_size)), jnp.ones((1, output_size))),
+            'encoder_det': self.encoder_det.init(self.rng_key, jnp.ones((1, input_size)), jnp.ones((1, output_size)),
+                                                 jnp.ones((1, input_size))),
             'encoder_stoch': self.encoder_stoch.init(self.rng_key, jnp.ones((1, input_size)), jnp.ones((1, output_size))),
             'decoder': self.decoder.init(self.rng_key, jnp.ones((1, input_size + 2 * latent_dim)))
         }
@@ -148,7 +220,7 @@ class NeuralProcess(RngKeyMixin):
         num_targets = x_target.shape[0]
         num_z_samples = z_samples.shape[-2]
         x_targets_tiled = jnp.repeat(x_target[:, None, :], num_z_samples, axis=-2)
-        rc_tiled = jnp.repeat(jnp.repeat(rc[None, None, :], num_z_samples, axis=-2), num_targets, axis=-3)
+        rc_tiled = jnp.repeat(rc[:, None, :], num_z_samples, axis=-2)
         z_samples_tiled = jnp.repeat(z_samples[None, :], num_targets, axis=-3)
         decoder_input = jnp.concatenate([x_targets_tiled, rc_tiled, z_samples_tiled], axis=-1)
         return decoder_input
@@ -157,7 +229,7 @@ class NeuralProcess(RngKeyMixin):
                  num_z_samples: int = 64):
         if rng_key is None:
             rng_key = self.rng_key
-        rc = self.encoder_det.apply(self.params['encoder_det'], x_context, y_context)
+        rc = self.encoder_det.apply(self.params['encoder_det'], x_context, y_context, x_target)
         mu, sigma = self.encoder_stoch.apply(self.params['encoder_stoch'], x_context, y_context)
         z_samples = tfd.Normal(mu, sigma).sample(sample_shape=(num_z_samples,), seed=rng_key)
 
@@ -220,7 +292,7 @@ class NeuralProcess(RngKeyMixin):
         y_context, y_target = jnp.split(y, [self.num_points_context], axis=-2)
 
         # encode context and full data
-        rc_context = self.encoder_det.apply(params['encoder_det'], x_context, y_context)
+        rc_context = self.encoder_det.apply(params['encoder_det'], x_context, y_context, x_target)
         mu_context, sigma_context = self.encoder_stoch.apply(params['encoder_stoch'], x_context, y_context)
         mu_full, sigma_full = self.encoder_stoch.apply(params['encoder_stoch'], x, y)
 
@@ -231,8 +303,7 @@ class NeuralProcess(RngKeyMixin):
 
         # tile and concatenate inputs for decoder
         x_tiled = jnp.repeat(x_target[None, ...], self.num_z_samples, axis=0)
-        rc_context_tiled = jnp.repeat(jnp.repeat(rc_context[None, :, None, :], self.num_points_target, axis=-2),
-                                       self.num_z_samples, axis=0)
+        rc_context_tiled = jnp.repeat(rc_context[None, ...], self.num_z_samples, axis=0)
         z_samples_tilded = jnp.repeat(z_samples[..., None, :], self.num_points_target, axis=-2)
         decoder_input = jnp.concatenate([x_tiled, rc_context_tiled, z_samples_tilded], axis=-1)
         target_pred_mean, target_pred_std = self.decoder.apply(params['decoder'], decoder_input)
@@ -346,8 +417,8 @@ if __name__ == '__main__':
 
     key_iter = key_iter()
     NUM_DIM_X = 1
-    NUM_DIM_Y = 1
-    SIM_TYPE = 'LinearSim'
+    NUM_DIM_Y = 2
+    SIM_TYPE = 'SinusoidsSim'
 
     if SIM_TYPE == 'QuadraticSim':
         sim = QuadraticSim()
