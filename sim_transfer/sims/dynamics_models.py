@@ -272,27 +272,70 @@ class Pendulum(DynamicsModel):
 class RaceCar(DynamicsModel):
 
     """
-    x = [x, y, theta, vel_r, vel_t, angular_velocity_z]
+    local_coordinates: bool
+        Used to indicate if local or global coordinates shall be used.
+        If local, the state x is
+            x = [0, 0, theta, vel_r, vel_t, angular_velocity_z]
+        else:
+            x = [x, y, theta, vel_x, vel_y, angular_velocity_z]
     u = [steering_angle, throttle]
+    encode_angle: bool
+        Encodes angle to sin and cos if true
+
     """
 
-    def __init__(self, dt, encode_angle: bool = False):
+    def __init__(self, dt, encode_angle: bool = False, local_coordinates=False):
         super().__init__(dt=dt, x_dim=6, u_dim=2, params=CarParams(), angle_idx=2)
         self.encode_angle = encode_angle
+        self.local_coordinates = local_coordinates
         self.angle_idx = 2
+        self.velocity_start_idx = 4 if self.encode_angle else 3
+        self.velocity_end_idx = 5 if self.encode_angle else 4
 
     def next_step(self, x, u, params):
+        theta_x = jnp.arctan2(x[..., self.angle_idx], x[..., self.angle_idx + 1]) if self.encode_angle else \
+            x[..., self.angle_idx]
+        if not self.local_coordinates:
+            # rotate velocity to local frame to compute dx
+            velocity_global = x[..., self.velocity_start_idx: self.velocity_end_idx + 1]
+            rotated_vel = self.rotate_vector(velocity_global,
+                                             -theta_x)
+            x = x.at[..., self.velocity_start_idx: self.velocity_end_idx + 1].set(rotated_vel)
         if self.encode_angle:
             theta = jnp.arctan2(x[..., self.angle_idx], x[..., self.angle_idx + 1])
 
-            x_reduced = jnp.concatenate([x[..., 0:self.angle_idx], jnp.atleast_1d(theta), x[..., self.angle_idx + 2:]], axis=-1)
+            x_reduced = jnp.concatenate([x[..., 0:self.angle_idx], jnp.atleast_1d(theta),
+                                         x[..., self.velocity_start_idx:]],
+                                        axis=-1)
             x_reduced = super().next_step(x_reduced, u, params)
             next_theta = jnp.atleast_1d(x_reduced[..., self.angle_idx])
             next_x = jnp.concatenate([x_reduced[..., 0:self.angle_idx], jnp.sin(next_theta), jnp.cos(next_theta),
                                 x_reduced[..., self.angle_idx + 1:]], axis=-1)
         else:
             next_x = super().next_step(x, u, params)
+
+        if self.local_coordinates:
+            # convert position to local frame
+            pos = next_x[..., 0:self.angle_idx] - x[..., 0:self.angle_idx]
+            rotated_pos = self.rotate_vector(pos, -theta_x)
+            next_x = next_x.at[..., 0:self.angle_idx].set(rotated_pos)
+        else:
+            # convert velocity to global frame
+            new_theta_x = jnp.arctan2(next_x[..., self.angle_idx], next_x[..., self.angle_idx + 1]) \
+                if self.encode_angle else next_x[..., self.angle_idx]
+            velocity = next_x[..., self.velocity_start_idx: self.velocity_end_idx + 1]
+            rotated_vel = self.rotate_vector(velocity, new_theta_x)
+            next_x = next_x.at[..., self.velocity_start_idx: self.velocity_end_idx + 1].set(rotated_vel)
+
         return next_x
+
+    @staticmethod
+    def rotate_vector(v, theta):
+        v_x, v_y = v[..., 0], v[..., 1]
+        rot_x = v_x * jnp.cos(theta) - v_y * jnp.sin(theta)
+        rot_y = v_x * jnp.sin(theta) + v_y * jnp.cos(theta)
+        return jnp.concatenate([jnp.atleast_1d(rot_x), jnp.atleast_1d(rot_y)], axis=-1)
+
 
     @staticmethod
     def _ode_kin(x, u, params: CarParams):
