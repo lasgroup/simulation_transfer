@@ -351,8 +351,8 @@ if __name__ == '__main__':
 
     key_iter = key_iter()
     NUM_DIM_X = 1
-    NUM_DIM_Y = 2
-    SIM_TYPE = 'SinusoidsSim'
+    NUM_DIM_Y = 1
+    SIM_TYPE = 'LinearSim'
 
     if SIM_TYPE == 'QuadraticSim':
         sim = QuadraticSim()

@@ -14,4 +14,4 @@ tensorflow-probability
 tensorflow-datasets
 tensorflow
 pytest
-brax
+brax >= 0.9.1

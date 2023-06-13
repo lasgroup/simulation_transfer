@@ -49,7 +49,7 @@ class BraxFunctionSimualtor(FunctionSimulator):
 
     def __init__(self, input_size: int, output_size: int):
         super().__init__(input_size=input_size, output_size=output_size)
-        assert isinstance(self, brax.envs.env.PipelineEnv), 'needs to inherit from brax env'
+        assert isinstance(self, brax.envs.PipelineEnv), 'needs to inherit from brax env'
 
         # vmap over random keys and over state_actions
         self._predict_next_random_vmap = jax.vmap(jax.vmap(self._predict_next_random_sys,
