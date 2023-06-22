@@ -29,7 +29,7 @@ class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
                  learn_likelihood_std: bool = False,
                  score_estimator: str = 'SSGE',
                  ssge_kernel_type: str = 'IMQ',
-                 bandwidth_score_estim: Optional[float] = None,  # if None, a bandiwidth heuristic is used
+                 bandwidth_score_estim: Optional[float] = None,  # if None, a bandwidth heuristic is used
                  bandwidth_svgd: float = 0.2,
                  data_batch_size: int = 8,
                  num_train_steps: int = 10000,

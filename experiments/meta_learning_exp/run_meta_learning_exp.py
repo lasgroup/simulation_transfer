@@ -1,4 +1,3 @@
-from baselines.pacoh_nn.pacoh_nn_regression import PACOH_NN_Regression
 from experiments.data_provider import provide_data_and_sim
 from experiments.util import hash_dict, NumpyArrayEncoder
 
@@ -24,7 +23,12 @@ def meta_learning_experiment(
         prior_weight: float = 1.0,
         meta_batch_size: int = 16,
         batch_size: int = 32,
-        bandwidth: float = 10.
+        bandwidth: float = 10.,
+        use_self_attention: bool = True,
+        use_cross_attention: bool = True,
+        lr: float = 1e-3,
+        latent_dim: int = 128,
+        hidden_dim: int = 32,
 ):
     # provide data and sim
     x_train, y_train, x_test, y_test, sim = provide_data_and_sim(
@@ -44,6 +48,7 @@ def meta_learning_experiment(
         meta_training_data.append((np.array(x), np.array(y)))
 
     if model == 'PACOH':
+        from baselines.pacoh_nn.pacoh_nn_regression import PACOH_NN_Regression
         # run meta-learning
         pacoh_model = PACOH_NN_Regression(meta_training_data, random_seed=model_seed,
                                           num_iter_meta_train=num_iter_meta_train,
@@ -65,6 +70,26 @@ def meta_learning_experiment(
         rmse = float(tf.sqrt(tf.reduce_mean(tf.reduce_sum((pred_dist.mean() - y_test)**2, axis=-1))))
         avg_std = float(tf.reduce_mean(pred_dist.stddev()))
         eval_stats = {'nll': nll, 'rmse': rmse, 'avg_std': avg_std}
+    elif model == 'NP':
+        from baselines.neural_process.neural_process import NeuralProcess
+        np_model = NeuralProcess(input_size=sim.input_size,
+                                 output_size=sim.output_size,
+                                 function_sim=sim,
+                                 domain=sim.domain,
+                                 rng_key=jax.random.PRNGKey(model_seed),
+                                 num_train_steps=num_iter_meta_train,
+                                 use_cross_attention=use_cross_attention,
+                                 latent_dim=latent_dim,
+                                 num_f_samples=16,
+                                 num_z_samples=4,
+                                 num_points_target=16,
+                                 num_points_context=8,
+                                 hidden_dim=hidden_dim,
+                                 use_self_attention=use_self_attention,
+                                 likelihood_std=likelihood_std,
+                                 lr=lr)
+        np_model.meta_fit(log_period=2000, eval_data=(x_train, y_train, x_test, y_test))
+        eval_stats = np_model.eval(x_train, y_train, x_test, y_test)
     else:
         raise NotImplementedError(f'Unknown model {model}')
     return eval_stats
@@ -125,15 +150,25 @@ if __name__ == '__main__':
     parser.add_argument('--num_tasks', type=int, default=200)
 
     # model parameters
+
+    # -- general
+    parser.add_argument('--model', type=str, default='NP')
     parser.add_argument('--model_seed', type=int, default=892616)
-    parser.add_argument('--likelihood_std', type=float, default=0.1)
-    parser.add_argument('--num_iter_meta_train', type=int, default=20000)
+    parser.add_argument('--likelihood_std', type=float, default=0.02)
+    parser.add_argument('--num_iter_meta_train', type=int, default=50000)
+
+    # -- PACOH
     parser.add_argument('--prior_weight', type=float, default=1.0)
     parser.add_argument('--meta_batch_size', type=int, default=4)
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--bandwidth', type=float, default=10.)
 
-    parser.add_argument('--model', type=str, default='PACOH')
+    # -- NP
+    parser.add_argument('--use_cross_attention', type=int, default=1)
+    parser.add_argument('--use_self_attention', type=int, default=1)
+    parser.add_argument('--lr', type=float, default=1e-3)
+    parser.add_argument('--latent_dim', type=int, default=128)
+    parser.add_argument('--hidden_dim', type=int, default=32)
 
     args = parser.parse_args()
     main(args)

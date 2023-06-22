@@ -61,6 +61,7 @@ def regression_experiment(
                           bandwidth_score_estim: float = None,
                           ssge_kernel_type: str = 'SE',
                           num_f_samples: int = 128,
+                          switch_score_estimator_frac: float = 0.6667,
 
                           # BNN_SVGD_DistillPrior
                           num_distill_steps: int = 500000,
@@ -102,7 +103,7 @@ def regression_experiment(
                           **standard_model_params)
     elif 'BNN_FSVGD_SimPrior' in model:
         score_estimator = model.split('_')[-1]
-        assert score_estimator in ['SSGE', 'ssge', 'GP', 'gp', 'KDE', 'kde', 'nu-method', 'nu_method']
+        assert score_estimator in ['SSGE', 'ssge', 'GP', 'gp', 'KDE', 'kde', 'nu-method', 'gp+nu-method']
         model = BNN_FSVGD_SimPrior(domain=sim.domain,
                                    function_sim=sim,
                                    num_particles=num_particles,
@@ -112,6 +113,7 @@ def regression_experiment(
                                    ssge_kernel_type=ssge_kernel_type,
                                    num_f_samples=num_f_samples,
                                    score_estimator=score_estimator,
+                                   switch_score_estimator_frac=switch_score_estimator_frac,
                                    **standard_model_params)
     elif model == 'BNN_MMD_SimPrior':
         model = BNN_MMD_SimPrior(domain=sim.domain,
@@ -221,7 +223,7 @@ if __name__ == '__main__':
     parser.add_argument('--data_seed', type=int, default=77698)
 
     # standard BNN parameters
-    parser.add_argument('--model', type=str, default='BNN_FSVGD_SimPrior_nu-method')
+    parser.add_argument('--model', type=str, default='BNN_FSVGD_SimPrior_gp+nu-method')
     parser.add_argument('--model_seed', type=int, default=892616)
     parser.add_argument('--likelihood_std', type=float, default=0.1)
     parser.add_argument('--data_batch_size', type=int, default=8)
@@ -246,6 +248,7 @@ if __name__ == '__main__':
     parser.add_argument('--bandwidth_score_estim', type=float, default=None)
     parser.add_argument('--ssge_kernel_type', type=str, default='IMQ')
     parser.add_argument('--num_f_samples', type=int, default=64)
+    parser.add_argument('--switch_score_estimator_frac', type=float, default=0.6667)
 
     # FSVGD_SimPrior parameters
     parser.add_argument('--num_distill_steps', type=int, default=50000)

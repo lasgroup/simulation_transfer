@@ -15,6 +15,12 @@ MODEL_SPECIFIC_CONFIG = {
         'meta_batch_size': {'values': [4, 8, 16]},
         'bandwidth': {'distribution': 'log_uniform_10', 'min': 0., 'max': 2.},
     },
+    'NP': {
+        'num_iter_meta_train': {'values': [40000]},
+        'latent_dim': {'values': [64, 128]},
+        'hidden_dim': {'values': [32, 64]},
+        'lr': {'distribution': 'log_uniform_10', 'min': -4., 'max': -3},
+    },
 }
 
 
@@ -79,7 +85,7 @@ if __name__ == '__main__':
     parser.add_argument('--data_source', type=str, default='pendulum')
 
     # # standard BNN parameters
-    parser.add_argument('--model', type=str, default='PACOH')
+    parser.add_argument('--model', type=str, default='NP')
 
     args = parser.parse_args()
     main(args)
