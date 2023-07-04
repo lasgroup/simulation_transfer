@@ -295,7 +295,7 @@ class RaceCar(DynamicsModel):
 
     def rk_integration(self, x, u, params: PyTree):
         integration_factors = jnp.asarray([self.dt_integration / 2.,
-                                           self.dt_integration / 2., self.dt_integration / 2.0,
+                                           self.dt_integration / 2., self.dt_integration,
                                            self.dt_integration])
         integration_weights = jnp.asarray([self.dt_integration / 6.,
                                            self.dt_integration / 3., self.dt_integration / 3.0,
@@ -303,12 +303,12 @@ class RaceCar(DynamicsModel):
 
         def body(carry, _):
             """one step of rk integration.
-            k1 = self.ode(x, u)
-            k2 = self.ode(x + self.dt_integration / 2. * k1, u)
-            k3 = self.ode(x + self.dt_integration / 2. * k2, u)
-            k4 = self.ode(x + self.dt_integration * k3, u)
+            k_0 = self.ode(x, u)
+            k_1 = self.ode(x + self.dt_integration / 2. * k_0, u)
+            k_2 = self.ode(x + self.dt_integration / 2. * k_1, u)
+            k_3 = self.ode(x + self.dt_integration * k_2, u)
 
-            x_next = x + self.dt_integration * (k1 / 6. + k2 / 3. + k3 / 3. + k4 / 6.)
+            x_next = x + self.dt_integration * (k_0 / 6. + k_1 / 3. + k_2 / 3. + k_3 / 6.)
             """
             def rk_integrate(carry, ins):
                 k = self.ode(carry, u, params)
