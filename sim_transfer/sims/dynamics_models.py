@@ -52,7 +52,8 @@ class CarParams(NamedTuple):
     c_rr: Union[jax.Array, float] = jnp.array(0.003)  # [0.001, 0.01]
     c_d: Union[jax.Array, float] = jnp.array(0.052)  # [0.01, 0.1]
     steering_limit: Union[jax.Array, float] = jnp.array(0.35)
-    use_blend: Union[jax.Array, float] = jnp.array(0.0)  # 0.0 -> no blend (only kinematics), 1.0 -> (kinematics + dynamics)
+    use_blend: Union[jax.Array, float] = jnp.array(
+        0.0)  # 0.0 -> no blend (only kinematics), 1.0 -> (kinematics + dynamics)
 
 
 class DynamicsModel(ABC):
@@ -270,7 +271,6 @@ class Pendulum(DynamicsModel):
 
 
 class RaceCar(DynamicsModel):
-
     """
     local_coordinates: bool
         Used to indicate if local or global coordinates shall be used.
@@ -284,13 +284,40 @@ class RaceCar(DynamicsModel):
 
     """
 
-    def __init__(self, dt, encode_angle: bool = False, local_coordinates=False):
+    def __init__(self, dt, encode_angle: bool = False, local_coordinates: bool = False, rk_integrator: bool = False):
         super().__init__(dt=dt, x_dim=6, u_dim=2, params=CarParams(), angle_idx=2)
         self.encode_angle = encode_angle
         self.local_coordinates = local_coordinates
         self.angle_idx = 2
         self.velocity_start_idx = 4 if self.encode_angle else 3
         self.velocity_end_idx = 5 if self.encode_angle else 4
+        self.rk_integrator = rk_integrator
+
+    def rk_integration(self, x, u, params: PyTree):
+        integration_factors = jnp.asarray([self.dt_integration / 2.,
+                                           self.dt_integration / 2., self.dt_integration / 2.0,
+                                           self.dt_integration])
+        integration_weights = jnp.asarray([self.dt_integration / 6.,
+                                           self.dt_integration / 3., self.dt_integration / 3.0,
+                                           self.dt_integration / 6.0])
+
+        def body(carry, _):
+            def rk_integrate(carry, ins):
+                k = self.ode(carry, u, params)
+                carry = carry + k * ins
+                outs = k
+                return carry, outs
+
+            _, dxs = jax.lax.scan(rk_integrate, carry, xs=integration_factors, length=4)
+            dx = (dxs.T * integration_weights).sum(axis=-1)
+            q = carry + dx
+            return q, None
+        next_state, _ = jax.lax.scan(body, x, xs=None, length=self._num_steps_integrate)
+        if self.angle_idx is not None:
+            theta = next_state[self.angle_idx]
+            sin_theta, cos_theta = jnp.sin(theta), jnp.cos(theta)
+            next_state = next_state.at[self.angle_idx].set(jnp.arctan2(sin_theta, cos_theta))
+        return next_state
 
     def next_step(self, x, u, params):
         theta_x = jnp.arctan2(x[..., self.angle_idx], x[..., self.angle_idx + 1]) if self.encode_angle else \
@@ -307,12 +334,18 @@ class RaceCar(DynamicsModel):
             x_reduced = jnp.concatenate([x[..., 0:self.angle_idx], jnp.atleast_1d(theta),
                                          x[..., self.velocity_start_idx:]],
                                         axis=-1)
-            x_reduced = super().next_step(x_reduced, u, params)
+            if self.rk_integrator:
+                x_reduced = self.rk_integration(x_reduced, u, params)
+            else:
+                x_reduced = super().next_step(x_reduced, u, params)
             next_theta = jnp.atleast_1d(x_reduced[..., self.angle_idx])
             next_x = jnp.concatenate([x_reduced[..., 0:self.angle_idx], jnp.sin(next_theta), jnp.cos(next_theta),
-                                x_reduced[..., self.angle_idx + 1:]], axis=-1)
+                                      x_reduced[..., self.angle_idx + 1:]], axis=-1)
         else:
-            next_x = super().next_step(x, u, params)
+            if self.rk_integrator:
+                next_x = self.rk_integration(x, u, params)
+            else:
+                next_x = super().next_step(x, u, params)
 
         if self.local_coordinates:
             # convert position to local frame
@@ -335,7 +368,6 @@ class RaceCar(DynamicsModel):
         rot_x = v_x * jnp.cos(theta) - v_y * jnp.sin(theta)
         rot_y = v_x * jnp.sin(theta) + v_y * jnp.cos(theta)
         return jnp.concatenate([jnp.atleast_1d(rot_x), jnp.atleast_1d(rot_y)], axis=-1)
-
 
     @staticmethod
     def _ode_kin(x, u, params: CarParams):
@@ -563,6 +595,7 @@ if __name__ == "__main__":
     key = jax.random.PRNGKey(0)
     keys = random.split(key, 4)
     params = vmap(pendulum.sample_params_uniform, in_axes=(0, None, None, None))(keys, 1, upper_bound, lower_bound)
+
 
     def simulate_car(init_pos=jnp.zeros(2), horizon=150):
         dt = 0.01
