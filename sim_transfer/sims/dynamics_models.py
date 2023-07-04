@@ -302,6 +302,14 @@ class RaceCar(DynamicsModel):
                                            self.dt_integration / 6.0])
 
         def body(carry, _):
+            """one step of rk integration.
+            k1 = self.ode(x, u)
+            k2 = self.ode(x + self.dt_integration / 2. * k1, u)
+            k3 = self.ode(x + self.dt_integration / 2. * k2, u)
+            k4 = self.ode(x + self.dt_integration * k3, u)
+
+            x_next = x + self.dt_integration * (k1 / 6. + k2 / 3. + k3 / 3. + k4 / 6.)
+            """
             def rk_integrate(carry, ins):
                 k = self.ode(carry, u, params)
                 carry = carry + k * ins
