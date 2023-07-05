@@ -284,8 +284,9 @@ class RaceCar(DynamicsModel):
 
     """
 
-    def __init__(self, dt, encode_angle: bool = False, local_coordinates: bool = False, rk_integrator: bool = False):
-        super().__init__(dt=dt, x_dim=6, u_dim=2, params=CarParams(), angle_idx=2)
+    def __init__(self, dt, encode_angle: bool = True, local_coordinates: bool = False, rk_integrator: bool = True):
+        super().__init__(dt=dt, x_dim=6, u_dim=2, params=CarParams(), angle_idx=2,
+                         dt_integration=1/90.)
         self.encode_angle = encode_angle
         self.local_coordinates = local_coordinates
         self.angle_idx = 2
@@ -567,9 +568,8 @@ class RaceCar(DynamicsModel):
         dx: jnp.ndarray, derivative of x
         """
         delta, d = u[0], u[1]
-        delta = jnp.clip(delta, a_min=-params.steering_limit,
-                         a_max=params.steering_limit)
-        d = jnp.clip(d, a_min=0., a_max=1)  # throttle
+        delta = jnp.clip(delta, a_min=-1, a_max=1) * params.steering_limit
+        d = jnp.clip(d, a_min=-1., a_max=1)  # throttle
         u = u.at[0].set(delta)
         u = u.at[1].set(d)
         v_x = x[3]
