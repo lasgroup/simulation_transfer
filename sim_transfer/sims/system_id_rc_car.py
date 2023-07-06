@@ -6,6 +6,7 @@ import jax
 import optax
 from functools import partial
 from sim_transfer.sims.dynamics_models import RaceCar, CarParams
+from sim_transfer.sims.util import angle_diff, plot_rc_trajectory
 
 import tensorflow_probability.substrates.jax.distributions as tfd
 
@@ -22,18 +23,12 @@ def load_recordings(recordings_dir: str):
         dfs.append(df)
     return dfs
 
-def prepare_data(df: pd.DataFrame, encode_angle: bool = ENCODE_ANGLE):
+def prepare_data(df: pd.DataFrame):
     u = df[['steer', 'throttle']].to_numpy()
     x = df[['pos x', 'pos y', 'theta', 's vel x', 's vel y', 's omega']].to_numpy()
 
-    # encode angle to sin and cos
-    if encode_angle:
-        angle_idx = 2
-        theta = x[:, angle_idx:angle_idx+1]
-        x = jnp.concatenate([x[..., 0:angle_idx], jnp.sin(theta), jnp.cos(theta), x[..., angle_idx + 1:]], axis=-1)
-    else:
-        # project theta into [-\pi, \pi]
-        x[:, 2] = x[:, 2] % (2 * jnp.pi) - jnp.pi
+    # project theta into [-\pi, \pi]
+    x[:, 2] = (x[:, 2] + jnp.pi) % (2 * jnp.pi) - jnp.pi
 
     x_next = x[1:]
     u = u[:-1]
@@ -41,18 +36,19 @@ def prepare_data(df: pd.DataFrame, encode_angle: bool = ENCODE_ANGLE):
     return x, u, x_next
 
 recordings_dir = os.path.join(DATA_DIR, 'recordings_rc_car_v0')
-datasets = list(map(partial(prepare_data, encode_angle=ENCODE_ANGLE), load_recordings(recordings_dir))) # TODO use all recordings
+datasets = list(map(prepare_data, load_recordings(recordings_dir)))
 
 
 x_train, u_train, x_next_train = map(lambda x: jnp.concatenate(x, axis=0), zip(datasets[0], datasets[1]))
 x_test, u_test, x_next_test = datasets[2]
 
-dynamics = RaceCar(dt=1 / 30., encode_angle=ENCODE_ANGLE, rk_integrator=True)
+# plot_rc_trajectory(x_test[200:400], show=True)
 
+dynamics = RaceCar(dt=1 / 30., encode_angle=False, rk_integrator=True)
 step_jitted = jax.jit(jax.vmap(dynamics.next_step, in_axes=(0, 0, None), out_axes=0))
 
 params_car_model = {
-    'm': jnp.array(0.05),  # TODO 1.3
+    #'m': jnp.array(0.05),
     'i_com': jnp.array(27.8e-6),
     'l_f': jnp.array(0.03),  # length to the front from COM  #TODO 0.3
     'l_r': jnp.array(0.035),  # length to the back from COM  #TODO 0.3
@@ -72,15 +68,22 @@ params_car_model = {
 }
 
 params = {'car_model': params_car_model,
-          'noise_log_std': -1. * jnp.ones(7 if ENCODE_ANGLE else 6)}
+          'noise_log_std': -1. * jnp.ones(6)}
 
 optim = optax.adam(1e-3)
 opt_state = optim.init(params)
 
 def loss_fn(params, x, u, x_next):
-    x_pred = step_jitted(x, u, CarParams(**params['car_model']))
-    pred_dist = tfd.MultivariateNormalDiag(x_pred, jnp.exp(params['noise_log_std']))
-    loss = - jnp.mean(pred_dist.log_prob(x_next))
+    x_pred = step_jitted(x, u, CarParams(**params['car_model'], m=1.3, g=9.81, use_blend=0.0))
+    # compute diff between x_pred and x_next
+    diff = x_pred - x_next
+
+    # special treatment for theta (i.e. shortest distance between angles on the circle)
+    theta_diff = angle_diff(x_pred[:, 2], x_next[:, 2])
+    diff = jnp.concatenate([diff[:, :2], theta_diff[:, None], diff[:, 3:]], axis=1)
+
+    pred_dist = tfd.MultivariateNormalDiag(jnp.zeros(6), jnp.exp(params['noise_log_std']))
+    loss = - jnp.mean(pred_dist.log_prob(diff))
     return loss
 
 @jax.jit
