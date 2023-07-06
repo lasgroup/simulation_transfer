@@ -33,8 +33,6 @@ class CarParams(NamedTuple):
     https://video.ethz.ch/lectures/d-mavt/2021/spring/151-0593-00L/00718f4f-116b-4645-91da-b9482164a3c7.html :
     lecture 2 part 2
     c_m_1: max current of motor: [0.2 - 0.5] c_m_2: motor resistance due to shaft: [0.01 - 0.15]
-
-    c_rr: zero torque current: [0 0.1]
     """
     m: Union[jax.Array, float] = jnp.array(0.05)  # [0.04, 0.08]
     i_com: Union[jax.Array, float] = jnp.array(27.8e-6)  # [1e-6, 5e-6]
@@ -49,7 +47,6 @@ class CarParams(NamedTuple):
     b_r: Union[jax.Array, float] = jnp.array(3.39)  # [2.0, 4.0]
     c_m_1: Union[jax.Array, float] = jnp.array(0.2)  # [0.2, 0.5]
     c_m_2: Union[jax.Array, float] = jnp.array(0.05)  # [0.00, 0.007]
-    c_rr: Union[jax.Array, float] = jnp.array(0.003)  # [0.001, 0.01]
     c_d: Union[jax.Array, float] = jnp.array(0.052)  # [0.01, 0.1]
     steering_limit: Union[jax.Array, float] = jnp.array(0.35)
     use_blend: Union[jax.Array, float] = jnp.array(
@@ -378,39 +375,6 @@ class RaceCar(DynamicsModel):
         rot_y = v_x * jnp.sin(theta) + v_y * jnp.cos(theta)
         return jnp.concatenate([jnp.atleast_1d(rot_x), jnp.atleast_1d(rot_y)], axis=-1)
 
-    @staticmethod
-    def _ode_kin(x, u, params: CarParams):
-        """Compute kinematics derivative for localized state.
-        Inputs
-        -----
-        x: jnp.ndarray,
-            shape = (4, ) -> [x, y, theta, v_r], v_r: Radial velocity
-        u: jnp.ndarray,
-            shape = (2, ) -> [steering_angle, throttle]
-
-        Output
-        ------
-        dx_kin: jnp.ndarray,
-            shape = (4, ) -> derivative of x
-        """
-        p_x, p_y, theta, v_x = x[0], x[1], x[2], x[3]  # progress
-        m = params.m
-        l_f = params.l_f
-        l_r = params.l_r
-        c_m_1 = params.c_m_1
-        c_m_2 = params.c_m_2
-        c_d = params.c_d
-        c_rr = params.c_rr
-        delta, d = u[0], u[1]
-        f_r_x = ((c_m_1 - c_m_2 * v_x) * d - c_rr - c_d * (v_x ** 2)) / m
-        beta = jnp.arctan(l_r * jnp.tan(delta) / (l_r + l_f))
-        p_x_dot = v_x * jnp.cos(beta)  # s_dot
-        p_y_dot = v_x * jnp.sin(beta)  # d_dot
-        w = v_x * jnp.sin(beta) / l_r
-        p_g_x_dot = p_x_dot * jnp.cos(theta) - p_y_dot * jnp.sin(theta)
-        p_g_y_dot = p_x_dot * jnp.sin(theta) + p_y_dot * jnp.cos(theta)
-        dx_kin = jnp.asarray([p_g_x_dot, p_g_y_dot, w, f_r_x])
-        return dx_kin
 
     def _accelerations(self, x, u, params: CarParams):
         """Compute acceleration forces for dynamic model.
@@ -439,7 +403,6 @@ class RaceCar(DynamicsModel):
         b_r = params.b_r
         c_m_1 = params.c_m_1
         c_m_2 = params.c_m_2
-        c_rr = params.c_rr
 
         c_d = params.c_d
 
@@ -455,7 +418,7 @@ class RaceCar(DynamicsModel):
         )
         f_f_y = d_f * jnp.sin(c_f * jnp.arctan(b_f * alpha_f))
         f_r_y = d_r * jnp.sin(c_r * jnp.arctan(b_r * alpha_r))
-        f_r_x = (c_m_1 - c_m_2 * v_x) * d - c_rr - c_d * (v_x ** 2)
+        f_r_x = (c_m_1 - c_m_2 * v_x) * d - c_d * (v_x ** 2)
 
         v_x_dot = (f_r_x - f_f_y * jnp.sin(delta) + m * v_y * w) / m
         v_y_dot = (f_r_y + f_f_y * jnp.cos(delta) - m * v_x * w) / m
@@ -492,33 +455,38 @@ class RaceCar(DynamicsModel):
         x_dot = jnp.concatenate([p_x_dot, accelerations], axis=-1)
         return x_dot
 
-    def _compute_dx_kin(self, x, u, params: CarParams):
-        """Compute derivative using kinematic model.
+    @staticmethod
+    def _compute_dx_kin(x, u, params: CarParams):
+        """Compute kinematics derivative for localized state.
         Inputs
-        -------
+        -----
         x: jnp.ndarray,
-            shape = (6, ) -> [x, y, theta, velocity_r, velocity_t, angular_velocity_z]
+            shape = (6, ) -> [x, y, theta, v_x, v_y, w], velocities in local frame
         u: jnp.ndarray,
             shape = (2, ) -> [steering_angle, throttle]
 
         Output
         ------
-        dx_kin_full: jnp.ndarray,
-            shape = (6, ) -> time derivative of x
+        dx_kin: jnp.ndarray,
+            shape = (6, ) -> derivative of x
+
+        Assumption: \dot{\delta} = 0.
         """
-        l_r = params.l_r
+        p_x, p_y, theta, v_x, v_y, w = x[0], x[1], x[2], x[3], x[4], x[5]  # progress
+        m = params.m
         l_f = params.l_f
-        v_x = x[3]
-        v_y = x[4]
-        x_kin = jnp.asarray([x[0], x[1], x[2], jnp.sqrt(v_x ** 2 + v_y ** 2)])
-        dxkin = self._ode_kin(x_kin, u, params)
-        delta = u[0]
-        beta = jnp.arctan(l_r * jnp.tan(delta) / l_f + l_r)
-        d_v_x_state = dxkin[3] * jnp.cos(beta)  # V*cos(beta)
-        d_v_y_state = dxkin[3] * jnp.sin(beta)  # V*sin(beta)
-        w = dxkin[3] * jnp.arctan(delta) / (l_f + l_r)
-        dx_kin_full = jnp.asarray([dxkin[0], dxkin[1], dxkin[2], d_v_x_state, d_v_y_state, w])
-        return dx_kin_full
+        l_r = params.l_r
+        c_m_1 = params.c_m_1
+        c_m_2 = params.c_m_2
+        c_d = params.c_d
+        delta, d = u[0], u[1]
+        v_x_dot = ((c_m_1 - c_m_2 * v_x) * d - c_d * (v_x * jnp.abs(v_x))) / m
+        v_y_dot = jnp.tan(delta) * l_r / (l_r + l_f) * v_x_dot
+        w_dot = jnp.tan(delta) * v_x_dot * 1 / (l_r + l_f)
+        p_g_x_dot = v_x * jnp.cos(theta) - v_y * jnp.sin(theta)
+        p_g_y_dot = v_x * jnp.sin(theta) + v_y * jnp.cos(theta)
+        dx_kin = jnp.asarray([p_g_x_dot, p_g_y_dot, w, v_x_dot, v_y_dot, w_dot])
+        return dx_kin
 
     def _compute_dx(self, x, u, params: CarParams):
         """Calculate time derivative of state.
@@ -572,23 +540,22 @@ class RaceCar(DynamicsModel):
         d = jnp.clip(d, a_min=-1., a_max=1)  # throttle
         u = u.at[0].set(delta)
         u = u.at[1].set(d)
-        v_x = x[3]
-
         # velocity is <= 0.1 and throttle is small -> velocity and accelerations are 0.
-        idx = jnp.logical_and(v_x <= 0.1,
-                              d <= (params.c_rr + params.c_d * v_x ** 2) / (params.c_m_1 - params.c_m_2 * v_x))
-
-        def stop_acceleration_update(x, u, param: CarParams):
-            return jnp.zeros_like(x)
-
-        dx = jax.lax.cond(
-            idx,
-            stop_acceleration_update,
-            self._compute_dx,
-            x,
-            u,
-            params,
-        )
+        # idx = jnp.logical_and(v_x <= 0.1,
+        #                       d <= (params.c_d * v_x ** 2) / (params.c_m_1 - params.c_m_2 * v_x))
+        #
+        # def stop_acceleration_update(x, u, param: CarParams):
+        #     return jnp.zeros_like(x)
+        #
+        # dx = jax.lax.cond(
+        #     idx,
+        #     self._compute_dx_kin,
+        #     self._compute_dx,
+        #     x,
+        #     u,
+        #     params,
+        # )
+        dx = self._compute_dx(x, u, params)
         return dx
 
 
@@ -606,8 +573,8 @@ if __name__ == "__main__":
 
 
     def simulate_car(init_pos=jnp.zeros(2), horizon=150):
-        dt = 0.01
-        car = RaceCar(dt)
+        dt = 0.1
+        car = RaceCar(dt=dt, encode_angle=False)
         params = CarParams(use_blend=0.0)
         x = jnp.zeros(6)
         x_traj = jnp.zeros([horizon, 2])
