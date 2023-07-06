@@ -283,7 +283,7 @@ class RaceCar(DynamicsModel):
 
     def __init__(self, dt, encode_angle: bool = True, local_coordinates: bool = False, rk_integrator: bool = True):
         super().__init__(dt=dt, x_dim=6, u_dim=2, params=CarParams(), angle_idx=2,
-                         dt_integration=1/90.)
+                         dt_integration=1 / 90.)
         self.encode_angle = encode_angle
         self.local_coordinates = local_coordinates
         self.angle_idx = 2
@@ -308,6 +308,7 @@ class RaceCar(DynamicsModel):
 
             x_next = x + self.dt_integration * (k_0 / 6. + k_1 / 3. + k_2 / 3. + k_3 / 6.)
             """
+
             def rk_integrate(carry, ins):
                 k = self.ode(carry, u, params)
                 carry = carry + k * ins
@@ -318,6 +319,7 @@ class RaceCar(DynamicsModel):
             dx = (dxs.T * integration_weights).sum(axis=-1)
             q = carry + dx
             return q, None
+
         next_state, _ = jax.lax.scan(body, x, xs=None, length=self._num_steps_integrate)
         if self.angle_idx is not None:
             theta = next_state[self.angle_idx]
@@ -375,7 +377,6 @@ class RaceCar(DynamicsModel):
         rot_y = v_x * jnp.sin(theta) + v_y * jnp.cos(theta)
         return jnp.concatenate([jnp.atleast_1d(rot_x), jnp.atleast_1d(rot_y)], axis=-1)
 
-
     def _accelerations(self, x, u, params: CarParams):
         """Compute acceleration forces for dynamic model.
         Inputs
@@ -408,10 +409,10 @@ class RaceCar(DynamicsModel):
 
         delta, d = u[0], u[1]
 
-        alpha_f = jnp.arctan(
+        alpha_f = - jnp.arctan(
             (w * l_f + v_y) /
             (v_x + 1e-6)
-        ) - delta
+        ) + delta
         alpha_r = jnp.arctan(
             (w * l_r - v_y) /
             (v_x + 1e-6)
@@ -455,8 +456,7 @@ class RaceCar(DynamicsModel):
         x_dot = jnp.concatenate([p_x_dot, accelerations], axis=-1)
         return x_dot
 
-    @staticmethod
-    def _compute_dx_kin(x, u, params: CarParams):
+    def _compute_dx_kin(self, x, u, params: CarParams):
         """Compute kinematics derivative for localized state.
         Inputs
         -----
@@ -480,9 +480,13 @@ class RaceCar(DynamicsModel):
         c_m_2 = params.c_m_2
         c_d = params.c_d
         delta, d = u[0], u[1]
-        v_x_dot = ((c_m_1 - c_m_2 * v_x) * d - c_d * (v_x * jnp.abs(v_x))) / m
-        v_y_dot = jnp.tan(delta) * l_r / (l_r + l_f) * v_x_dot
-        w_dot = jnp.tan(delta) * v_x_dot * 1 / (l_r + l_f)
+        v_r = v_x
+        v_r_dot = ((c_m_1 - c_m_2 * v_r) * d - c_d * (v_r * jnp.abs(v_r))) / m
+        beta = jnp.tan(delta) * 1 / (l_r + l_f)
+        v_x_dot = v_r_dot
+        # Determine accelerations from the kinematic model using FD.
+        v_y_dot = (v_r * beta * l_r - v_y) / self.dt_integration
+        w_dot = (beta * v_r - w) / self.dt_integration
         p_g_x_dot = v_x * jnp.cos(theta) - v_y * jnp.sin(theta)
         p_g_y_dot = v_x * jnp.sin(theta) + v_y * jnp.cos(theta)
         dx_kin = jnp.asarray([p_g_x_dot, p_g_y_dot, w, v_x_dot, v_y_dot, w_dot])
@@ -540,21 +544,6 @@ class RaceCar(DynamicsModel):
         d = jnp.clip(d, a_min=-1., a_max=1)  # throttle
         u = u.at[0].set(delta)
         u = u.at[1].set(d)
-        # velocity is <= 0.1 and throttle is small -> velocity and accelerations are 0.
-        # idx = jnp.logical_and(v_x <= 0.1,
-        #                       d <= (params.c_d * v_x ** 2) / (params.c_m_1 - params.c_m_2 * v_x))
-        #
-        # def stop_acceleration_update(x, u, param: CarParams):
-        #     return jnp.zeros_like(x)
-        #
-        # dx = jax.lax.cond(
-        #     idx,
-        #     self._compute_dx_kin,
-        #     self._compute_dx,
-        #     x,
-        #     u,
-        #     params,
-        # )
         dx = self._compute_dx(x, u, params)
         return dx
 
