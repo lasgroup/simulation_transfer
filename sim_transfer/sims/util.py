@@ -34,7 +34,11 @@ def angle_diff(theta1: jnp.array, theta2: jnp.array) -> jnp.array:
     return diff
 
 
-def plot_rc_trajectory(traj: jnp.array, show: bool = True):
+def plot_rc_trajectory(traj: jnp.array, show: bool = True, encode_angle: bool = False):
+    """ Plots the trajectory of the RC car """
+    if encode_angle:
+        traj = decode_angles(traj, 2)
+
     import matplotlib.pyplot as plt
     scale_factor = 1.5
     fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(scale_factor * 12, scale_factor * 8))

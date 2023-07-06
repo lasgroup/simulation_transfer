@@ -8,6 +8,75 @@ from sim_transfer.sims.util import encode_angles, decode_angles, plot_rc_traject
 from typing import Union, Dict, Any, Callable, Tuple, Optional, List
 
 
+class ToleranceReward:
+    def __init__(self, lower_bound: float, upper_bound: float, margin_coef: float, value_at_margin: float):
+        self.bounds = [lower_bound, upper_bound]
+        self.margin = margin_coef * (upper_bound - lower_bound)
+        self.value_at_margin = value_at_margin
+
+        if lower_bound > upper_bound:
+            raise ValueError('Lower bound must be <= upper bound.')
+        if margin_coef < 0:
+            raise ValueError('`margin` must be non-negative.')
+
+    def forward(self, x: jnp.array) -> jnp.array:
+        lower, upper = self.bounds
+        in_bounds = (x >= lower) & (x <= upper)
+        if self.margin == 0:
+            return jnp.where(in_bounds, 1.0, 0.0)
+        else:
+            d = jnp.where(x < lower, lower - x, x - upper) / self.margin
+            return jnp.where(in_bounds, 1.0, self.value_at_margin * self._smooth_ramp(d))
+
+    def _smooth_ramp(self, x: jnp.array) -> jnp.array:
+        scale = jnp.sqrt(1 / self.value_at_margin - 1)
+        return 1 / ((x * scale) ** 2 + 1)
+
+    def __call__(self, *args, **kwargs):
+        return self.forward(*args, **kwargs)
+
+class RCCarEnvReward:
+    _angle_idx: int = 2
+    dim_action: Tuple[int] = (2,)
+
+    def __init__(self, goal: jnp.array, encode_angle: bool = False, ctrl_cost_weight: float = 0.005):
+        self.goal = goal
+        self.ctrl_cost_weight = ctrl_cost_weight
+        self.encode_angle = encode_angle
+
+        self.tolerance_pos = ToleranceReward(lower_bound=0.0, upper_bound=0.1, margin_coef=5,
+                                             value_at_margin=0.2)
+        self.tolerance_theta = ToleranceReward(lower_bound=0.0, upper_bound=0.1, margin_coef=5,
+                                               value_at_margin=0.2)
+
+
+    def forward(self, obs: jnp.array, action: jnp.array, next_obs: jnp.array):
+        """ Computes the reward for the given transition """
+        reward_ctrl = self.action_reward(action)
+        reward_state = self.state_reward(obs, next_obs)
+        reward = reward_state + self.ctrl_cost_weight * reward_ctrl
+        return reward
+
+    @staticmethod
+    def action_reward(action: jnp.array) -> jnp.array:
+        """ Computes the reward/penalty for the given action """
+        return - (action ** 2).sum(-1)
+
+    def state_reward(self, obs: jnp.array, next_obs: jnp.array) -> jnp.array:
+        """ Computes the reward for the given observations """
+        if self.encode_angle:
+            next_obs = decode_angles(next_obs, angle_idx=self._angle_idx)
+        pos_diff = next_obs[..., :2] - self.goal[:2]
+        theta_diff = next_obs[..., 2] - self.goal[2]
+        pos_dist = jnp.sqrt(jnp.sum(jnp.square(pos_diff), axis=-1))
+        theta_dist = jnp.abs(((theta_diff + jnp.pi) % (2 * jnp.pi)) - jnp.pi)
+        reward = self.tolerance_pos(pos_dist) + 0.5 * self.tolerance_theta(theta_dist)
+        return reward
+
+    def __call__(self, *args, **kwargs):
+        self.forward(*args, **kwargs)
+
+
 class RCCarSimEnv:
     max_steps: int = 200
     _dt: float = 1/30.
@@ -25,14 +94,16 @@ class RCCarSimEnv:
         self._rds_key = jax.random.PRNGKey(seed)
 
         # initialize dynamics and observation noise models
-        self._dynamics_model = RaceCar(dt=self._dt, encode_angle=self.encode_angle)
+        self._dynamics_model = RaceCar(dt=self._dt, encode_angle=False)
         self._dynamics_params = CarParams(use_blend=0.0)  # TODO allow setting the params
         self._next_step_fn = jax.jit(partial(self._dynamics_model.next_step, params=self._dynamics_params))
 
         self.use_obs_noise = use_obs_noise
 
         # initialize reward model
-        self._reward_model = None  # TODO
+        self._reward_model = RCCarEnvReward(goal=self._goal,
+                                            ctrl_cost_weight=ctrl_cost_weight,
+                                            encode_angle=self.encode_angle)
 
         # initialize time and state
         self._time: int = 0
@@ -43,7 +114,7 @@ class RCCarSimEnv:
         rng_key = self.rds_key if rng_key is None else rng_key
 
         # sample random initial state
-        key_pos, key_theta, key_vel = jax.random.split(rng_key, 3)
+        key_pos, key_theta, key_vel, key_obs = jax.random.split(rng_key, 4)
         init_pos = self._init_pose[:2] + jax.random.uniform(key_pos, shape=(2,), minval=-0.10, maxval=0.10)
         init_theta = self._init_pose[2:] + \
                      jax.random.uniform(key_pos, shape=(1,), minval=-0.10 * jnp.pi, maxval=0.10 * jnp.pi)
@@ -52,14 +123,14 @@ class RCCarSimEnv:
 
         self._state = init_state
         self._time = 0
-        return self._state
+        return self._state_to_obs(self._state, rng_key=key_obs)
 
     def step(self, action: jnp.array, rng_key: Optional[jax.random.PRNGKey] = None) \
             -> Tuple[jnp.array, float, bool, Dict[str, Any]]:
         """ Performs one step in the environment """
 
         assert action.shape[-1:] == self.dim_action
-        assert jnp.all(-1 <= action) and jnp.all(action <= 1), "action must be in [-1, 1]"
+        #xassert jnp.all(-1 <= action) and jnp.all(action <= 1), "action must be in [-1, 1]"
         rng_key = self.rds_key if rng_key is None else rng_key
 
         # compute next state
@@ -68,13 +139,14 @@ class RCCarSimEnv:
         obs = self._state_to_obs(self._state, rng_key=rng_key)
 
         # compute reward
-        reward = 10.   # TODO
+        reward = self._reward_model.forward(obs=None, action=action, next_obs=obs)
 
         # check if done
         done = self._time >= self.max_steps
 
         # return observation, reward, done, info
-        return obs, reward, done, {'time': self._time, 'state': self._state}
+        return obs, reward, done, {'time': self._time, 'state': self._state,
+                                   'reward': reward}
 
     def _state_to_obs(self, state: jnp.array, rng_key: Optional[jax.random.PRNGKey] = None) -> jnp.array:
         """ Adds observation noise to the state """
@@ -89,7 +161,7 @@ class RCCarSimEnv:
 
         # encode angle to sin(theta) and cos(theta) if desired
         if self.encode_angle:
-            obs = encode_angles(state, self._angle_idx)
+            obs = encode_angles(obs, self._angle_idx)
         assert (obs.shape[-1] == 7 and self.encode_angle) or (obs.shape[-1] == 6 and not self.encode_angle)
         return obs
 
@@ -105,21 +177,28 @@ class RCCarSimEnv:
 
 
 if __name__ == '__main__':
-    env = RCCarSimEnv(encode_angle=False,
-                      use_obs_noise=False,)
+    ENCODE_ANGLE = False
+    env = RCCarSimEnv(encode_angle=ENCODE_ANGLE,
+                      use_obs_noise=True)
 
     t_start = time.time()
 
     s = env.reset()
     traj = [s]
+    rewards = []
     for i in range(200):
         t = i / 30.
-        a = jnp.array([- 0.8 * jnp.cos(2 * t), 0.5 / (t+1)])
-        s, _, _, _ = env.step(a)
+        a = jnp.array([- 0.5 * jnp.cos(1.5 * t), 0.8 / (t+1)])
+        s, r, _, _ = env.step(a)
         traj.append(s)
+        rewards.append(r)
 
     duration = time.time() - t_start
     print(f'Duration of trajectory sim {duration} sec')
     traj = jnp.stack(traj)
 
-    plot_rc_trajectory(traj)
+    plot_rc_trajectory(traj, encode_angle=ENCODE_ANGLE)
+
+    from matplotlib import pyplot as plt
+    plt.plot(jnp.arange(len(rewards)), rewards)
+    plt.show()
