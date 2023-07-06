@@ -294,7 +294,7 @@ class RaceCar(DynamicsModel):
         self.velocity_end_idx = 5 if self.encode_angle else 4
         self.rk_integrator = rk_integrator
 
-    def rk_integration(self, x, u, params: PyTree):
+    def rk_integration(self, x: jnp.array, u: jnp.array, params: CarParams) -> jnp.array:
         integration_factors = jnp.asarray([self.dt_integration / 2.,
                                            self.dt_integration / 2., self.dt_integration,
                                            self.dt_integration])
@@ -328,7 +328,7 @@ class RaceCar(DynamicsModel):
             next_state = next_state.at[self.angle_idx].set(jnp.arctan2(sin_theta, cos_theta))
         return next_state
 
-    def next_step(self, x, u, params):
+    def next_step(self, x: jnp.array, u: jnp.array, params: CarParams) -> jnp.array:
         theta_x = jnp.arctan2(x[..., self.angle_idx], x[..., self.angle_idx + 1]) if self.encode_angle else \
             x[..., self.angle_idx]
         if not self.local_coordinates:
