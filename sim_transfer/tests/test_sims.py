@@ -6,6 +6,7 @@ from typing import Dict
 
 from sim_transfer.sims.mset_sampler import UniformMSetSampler
 from sim_transfer.sims.simulators import GaussianProcessSim, AdditiveSim, FunctionSimulator
+from sim_transfer.sims.util import decode_angles, encode_angles, angle_diff
 
 class TestUniformMSetSampler(unittest.TestCase):
 
@@ -112,6 +113,53 @@ class TestAdditiveSim(unittest.TestCase):
         assert jnp.array_equal(norm_stats['x_std'], 2**(0.5) * jnp.ones(2))
         assert jnp.array_equal(norm_stats['y_mean'], 2 * jnp.ones(1))
         assert jnp.array_equal(norm_stats['y_std'], (2 * 0.5**2)**(0.5) * jnp.ones(1))
+
+
+class TestAngleEncodingDecoding(unittest.TestCase):
+
+    def test_encoding_decoding_consitency(self):
+        x = jnp.array([0.2, 0.2, 0.5, -2.3, -0.5, 2.])
+        assert jnp.allclose(x, decode_angles(encode_angles(x, angle_idx=2), angle_idx=2))
+
+    def test_encoding_decoding_shapes(self):
+        x = jnp.array([-1.2, 5.2, 2.5])
+        x_encoded = encode_angles(x, angle_idx=0)
+        x_reconst = decode_angles(x_encoded, angle_idx=0)
+        assert x_encoded.shape == (4,)
+        assert x_reconst.shape == (3,)
+
+    def test_encoding_decoding_boundaries1(self):
+        x = jnp.array([-1.2, 5.2, 2.5, -2.3, -234.5, 2.])
+        x_encoded = encode_angles(x, angle_idx=0)
+        assert jnp.all(-1 <= x_encoded[:2]) and jnp.all(x_encoded[:2] <= 1)
+
+    def test_encoding_decoding_boundaries2(self):
+        x = jnp.array([-5.2, 5.2, 2.5, -2.3, -234.5, 2.])
+        x_reconst = decode_angles(encode_angles(x, angle_idx=3), angle_idx=3)
+        assert -jnp.pi <= x_reconst[3] <= jnp.pi
+
+
+class TestAngleDiff(unittest.TestCase):
+    def test_angle_dist1(self):
+        alpha = jnp.array([jnp.pi - 0.1, -jnp.pi + 0.1, 0.1])
+        beta = jnp.array([-jnp.pi + 0.1, jnp.pi - 0.3, -0.3])
+        dist = angle_diff(alpha, beta)
+        assert jnp.allclose(dist, jnp.array([-0.2, 0.4, 0.4]))
+
+    def test_angle_dist2(self):
+        alpha = jnp.array([jnp.pi - 0.1, -jnp.pi + 0.1, 0.1, 0.0])
+        beta_diff = jnp.array([0.23, -0.4, 1.4, 2.0])
+        beta = (alpha + beta_diff + jnp.pi) % (2 * jnp.pi) - jnp.pi
+        diff = angle_diff(alpha, beta)
+        assert jnp.allclose(diff, - beta_diff)
+
+    def test_angle_dist3(self):
+        alpha = jnp.array([0.0])
+        beta_diff = jnp.array([jnp.pi + 0.5])
+        beta = (alpha + beta_diff + jnp.pi) % (2 * jnp.pi) - jnp.pi
+        diff = angle_diff(alpha, beta)
+        assert jnp.allclose(diff, jnp.pi - 0.5)
+
 
 if __name__ == '__main__':
     pytest.main()
