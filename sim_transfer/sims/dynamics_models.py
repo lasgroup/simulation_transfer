@@ -408,10 +408,10 @@ class RaceCar(DynamicsModel):
 
         delta, d = u[0], u[1]
 
-        alpha_f = -jnp.arctan(
+        alpha_f = jnp.arctan(
             (w * l_f + v_y) /
             (v_x + 1e-6)
-        ) + delta
+        ) - delta
         alpha_r = jnp.arctan(
             (w * l_r - v_y) /
             (v_x + 1e-6)
