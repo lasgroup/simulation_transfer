@@ -95,7 +95,15 @@ class RCCarSimEnv:
 
         # initialize dynamics and observation noise models
         self._dynamics_model = RaceCar(dt=self._dt, encode_angle=False)
-        self._dynamics_params = CarParams(use_blend=0.0)  # TODO allow setting the params
+        self._dynamics_params = CarParams(
+            use_blend=0.0,
+            m=1.3,
+            c_m_1=1.0,
+            c_m_2=0.2,
+            c_d=0.5,
+            l_f=0.3,
+            l_r=0.3
+        )  # TODO allow setting the params
         self._next_step_fn = jax.jit(partial(self._dynamics_model.next_step, params=self._dynamics_params))
 
         self.use_obs_noise = use_obs_noise
@@ -188,7 +196,7 @@ if __name__ == '__main__':
     rewards = []
     for i in range(200):
         t = i / 30.
-        a = jnp.array([- 0.5 * jnp.cos(1.5 * t), 0.8 / (t+1)])
+        a = jnp.array([- 1 * jnp.cos(1.0 * t), 0.8 / (t+1)])
         s, r, _, _ = env.step(a)
         traj.append(s)
         rewards.append(r)
