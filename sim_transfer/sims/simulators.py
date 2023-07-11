@@ -330,14 +330,16 @@ class LinearBimodalSim(FunctionSimulator):
     def __init__(self):
         super().__init__(input_size=1, output_size=1)
         # Define the intervals.  They should be disjoint.
-        self.slope_intervals = jnp.array([[-1.2, -0.8], [0.8, 1.2]])
+        self.slope_intervals_neg = jnp.array([-0.6, -0.4])
+        self.slope_intervals_pos = jnp.array([[-1.2, -0.8], [0.8, 1.2]])
         # Choose one number uniformly inside the set
 
     def sample_function_vals(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
         assert x.ndim == 2 and x.shape[-1] == self.input_size
-        neg_slopes = jax.random.uniform(rng_key, shape=(num_samples,), minval=-1.2, maxval=-0.8)
+        neg_slopes = jax.random.uniform(rng_key, shape=(num_samples,), minval=self.slope_intervals_neg[0],
+                                        maxval=self.slope_intervals_neg[1])
 
-        intervals = jax.random.choice(rng_key, self.slope_intervals, shape=(num_samples,))
+        intervals = jax.random.choice(rng_key, self.slope_intervals_pos, shape=(num_samples,))
         rng_keys = jax.random.split(rng_key, num_samples)
 
         def one_sample(key, interval):
