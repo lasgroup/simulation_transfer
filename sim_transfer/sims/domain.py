@@ -3,6 +3,7 @@ from typing import Union, Tuple, List
 import jax
 import jax.numpy as jnp
 
+
 class Domain:
     def __init__(self, num_dims: int):
         self._num_dims = num_dims
@@ -11,10 +12,10 @@ class Domain:
                          support_mode: str = 'full') -> jnp.ndarray:
         raise NotImplementedError
 
-
     @property
     def num_dims(self) -> int:
         return self._num_dims
+
 
 class HypercubeDomain(Domain):
 
@@ -40,7 +41,7 @@ class HypercubeDomain(Domain):
             num_samples = sample_shape[0]
             mid = (self._lower + self._upper) / 2
             # cut of left 10% and right 10% of the domain
-            cutoff_scalar = (1 - 0.1)**(1 / self._num_dims)
+            cutoff_scalar = (1 - 0.1) ** (1 / self._num_dims)
             l = mid + cutoff_scalar * (self._lower - mid)
             u = mid + cutoff_scalar * (self._upper - mid)
 
@@ -108,7 +109,6 @@ class HypercubeDomainWithAngles(HypercubeDomain):
                 lower_bounds.append(self._lower[i])
         assert len(lower_bounds) == self.num_dims
         return jnp.array(lower_bounds)
-
 
     @property
     def u(self) -> jnp.ndarray:

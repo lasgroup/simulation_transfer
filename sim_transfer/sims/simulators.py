@@ -1,3 +1,4 @@
+from functools import cached_property
 from typing import Callable, Tuple, Dict, Optional, List, Union
 
 import jax
@@ -5,11 +6,11 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 import tensorflow_probability.substrates.jax.distributions as tfd
 from jax import vmap, random
-from functools import cached_property
+from jax.lax import cond
 from tensorflow_probability.substrates import jax as tfp
 
-from sim_transfer.sims.dynamics_models import Pendulum, PendulumParams, RaceCar, CarParams
 from sim_transfer.sims.domain import Domain, HypercubeDomain, HypercubeDomainWithAngles
+from sim_transfer.sims.dynamics_models import Pendulum, PendulumParams, RaceCar, CarParams
 
 
 class FunctionSimulator:
@@ -101,7 +102,7 @@ class AdditiveSim(FunctionSimulator):
             if 'mean' in stat_name:
                 norm_stats[stat_name] = jnp.sum(stats_stack, axis=0)
             else:
-                norm_stats[stat_name] = jnp.sqrt(jnp.sum(stats_stack**2, axis=0))
+                norm_stats[stat_name] = jnp.sqrt(jnp.sum(stats_stack ** 2, axis=0))
         return norm_stats
 
     def _typical_f(self, x: jnp.array) -> jnp.array:
@@ -142,22 +143,24 @@ class GaussianProcessSim(FunctionSimulator):
         else:
             self.mean_fn = mean_fn
 
+        # self.kernels is a list of kernels, one per output dimension
         self.kernels = [tfp.math.psd_kernels.ExponentiatedQuadratic(length_scale=l) for l in self.length_scales]
 
     def _sample_f_val_per_dim(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey,
-                              lengthscale: Union[float, jnp.array], output_scale: Union[float, jnp.array]) -> jnp.ndarray:
+                              lengthscale: Union[float, jnp.array],
+                              output_scale: Union[float, jnp.array]) -> jnp.ndarray:
         gp_dist = self._gp_marginal_dist(x, lengthscale, output_scale)
         f_samples = gp_dist.sample(sample_shape=(num_samples,), seed=rng_key)
         return f_samples
 
-    def _gp_marginal_dist(self, x: jnp.ndarray, lengthscale: float, output_scale: float, jitter=1e-4) \
+    def _gp_marginal_dist(self, x: jnp.ndarray, lengthscale: float, output_scale: float, jitter: float = 1e-5) \
             -> tfd.MultivariateNormalFullCovariance:
         """ Returns the marginal distribution of a GP with SE kernel """
         assert x.ndim == 2 and x.shape[-1] == self.input_size
         kernel = tfp.math.psd_kernels.ExponentiatedQuadratic(length_scale=lengthscale)
         K = kernel.matrix(x, x) + jitter * jnp.eye(x.shape[0])
         m = self.mean_fn(x)
-        return tfd.MultivariateNormalFullCovariance(loc=m, covariance_matrix=output_scale**2 * K)
+        return tfd.MultivariateNormalFullCovariance(loc=m, covariance_matrix=output_scale ** 2 * K)
 
     def sample_function_vals(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
         """ Samples functions from a Gaussian Process (GP) with SE kernel
@@ -169,8 +172,8 @@ class GaussianProcessSim(FunctionSimulator):
         assert x.ndim == 2 and x.shape[-1] == self.input_size
         keys = random.split(rng_key, self.output_size)
         # sample f values per dimension via vmap
-        f_samples = jax.vmap(self._sample_f_val_per_dim, in_axes=(None, None, 0, 0, 0), out_axes=-1)\
-                                            (x, num_samples, keys, self.length_scales, self.output_scales)
+        f_samples = jax.vmap(self._sample_f_val_per_dim, in_axes=(None, None, 0, 0, 0), out_axes=-1) \
+            (x, num_samples, keys, self.length_scales, self.output_scales)
         # check final f_sample shape
         assert f_samples.shape == (num_samples, x.shape[0], self.output_size)
         return f_samples
@@ -323,11 +326,59 @@ class LinearSim(FunctionSimulator):
                 'y_std': 1.5 * jnp.ones(self.output_size)}
 
 
+class LinearBimodalSim(FunctionSimulator):
+    def __init__(self):
+        super().__init__(input_size=1, output_size=1)
+        # Define the intervals.  They should be disjoint.
+        self.slope_intervals = jnp.array([[-1.2, -0.8], [0.8, 1.2]])
+        # Choose one number uniformly inside the set
+
+    def sample_function_vals(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
+        assert x.ndim == 2 and x.shape[-1] == self.input_size
+        neg_slopes = jax.random.uniform(rng_key, shape=(num_samples,), minval=-1.2, maxval=-0.8)
+
+        intervals = jax.random.choice(rng_key, self.slope_intervals, shape=(num_samples,))
+        rng_keys = jax.random.split(rng_key, num_samples)
+
+        def one_sample(key, interval):
+            return jax.random.uniform(key, shape=(), minval=interval[0], maxval=interval[1])
+
+        pos_slopes = vmap(one_sample, in_axes=(0, 0))(rng_keys, intervals)
+
+        def positive(x, neg_slope, pos_slope):
+            return self._f(x, pos_slope)
+
+        def negative(x, neg_slope, pos_slope):
+            return self._f(x, neg_slope)
+
+        def fun(x, neg_slope, pos_slope):
+            assert x.shape == (self.input_size,) and neg_slope.shape == pos_slope.shape == ()
+            return cond(x.reshape() < 0, negative, positive, x, neg_slope, pos_slope)
+
+        fun_multiple_slope = jax.vmap(fun, in_axes=(None, 0, 0), out_axes=0)
+        return vmap(fun_multiple_slope, in_axes=(0, None, None), out_axes=0)(x, neg_slopes, pos_slopes)
+
+    def _f(self, x, slope):
+        return slope * x
+
+    def domain(self) -> Domain:
+        lower = jnp.array([-2.] * self.input_size)
+        upper = jnp.array([2.] * self.input_size)
+        return HypercubeDomain(lower=lower, upper=upper)
+
+    @property
+    def normalization_stats(self) -> Dict[str, jnp.ndarray]:
+        return {'x_mean': (self.domain.u + self.domain.l) / 2,
+                'x_std': (self.domain.u - self.domain.l) / 2,
+                'y_mean': jnp.zeros(self.output_size),
+                'y_std': 1.5 * jnp.ones(self.output_size)}
+
+
 class PendulumSim(FunctionSimulator):
     _domain_lower = jnp.array([-jnp.pi, -5, -2.5])
     _domain_upper = jnp.array([jnp.pi, 5, 2.5])
     _typical_params_lf = PendulumParams(m=jnp.array(1.), l=jnp.array(1.), g=jnp.array(9.81), nu=jnp.array(0.0),
-                                     c_d=jnp.array(0.0))
+                                        c_d=jnp.array(0.0))
     _typical_params_hf = PendulumParams(m=jnp.array(1.), l=jnp.array(1.), g=jnp.array(9.81), nu=jnp.array(0.5),
                                         c_d=jnp.array(0.5))
 
@@ -352,7 +403,6 @@ class PendulumSim(FunctionSimulator):
         assert jnp.all(jnp.stack(jtu.tree_flatten(jtu.tree_map(
             lambda l, u: l <= u, self._lower_bound_params, self._upper_bound_params))[0])), \
             'lower bounds have to be smaller than upper bounds'
-
 
         if self.encode_angle:
             self._domain = HypercubeDomainWithAngles(angle_indices=[0], lower=self._domain_lower,
@@ -382,14 +432,14 @@ class PendulumSim(FunctionSimulator):
         """ Bounds for uniform sampling of the parameters"""
         if self.high_fidelity:
             lower_bound = PendulumParams(m=jnp.array(.5), l=jnp.array(.5), g=jnp.array(5.0), nu=jnp.array(0.4),
-                                             c_d=jnp.array(0.4))
+                                         c_d=jnp.array(0.4))
             upper_bound = PendulumParams(m=jnp.array(1.5), l=jnp.array(1.5), g=jnp.array(15.0), nu=jnp.array(0.6),
-                                             c_d=jnp.array(0.6))
+                                         c_d=jnp.array(0.6))
         else:
             lower_bound = PendulumParams(m=jnp.array(.5), l=jnp.array(.5), g=jnp.array(5.0), nu=jnp.array(0.0),
-                                             c_d=jnp.array(0.0))
+                                         c_d=jnp.array(0.0))
             upper_bound = PendulumParams(m=jnp.array(1.5), l=jnp.array(1.5), g=jnp.array(15.0), nu=jnp.array(0.0),
-                                             c_d=jnp.array(0.0))
+                                         c_d=jnp.array(0.0))
 
         return lower_bound, upper_bound
 
@@ -563,6 +613,7 @@ class RaceCarSim(FunctionSimulator):
         params = self.model.sample_params_uniform(rng_key, sample_shape=(num_samples,),
                                                   lower_bound=self._lower_bound_params,
                                                   upper_bound=self._upper_bound_params)
+
         def batched_fun(z, params):
             x, u = self._split_state_action(z)
             return vmap(self.model.next_step, in_axes=(0, 0, None))(x, u, params)
@@ -594,16 +645,20 @@ class RaceCarSim(FunctionSimulator):
 
 
 if __name__ == '__main__':
-    from matplotlib import pyplot as plt
-
     key = jax.random.PRNGKey(2234)
-    dim_x = 4
-    function_sim = GaussianProcessSim(input_size=dim_x)
-    mset = jax.random.uniform(key, shape=(10, dim_x))
-    f_vals = function_sim.sample_function_vals(mset, num_samples=7, rng_key=key)
+    function_sim = LinearBimodalSim()
+    xs = function_sim.domain().sample_uniformly(key, 100)
+    num_f_samples = 20
+    f_vals = function_sim.sample_function_vals(xs, num_samples=num_f_samples, rng_key=key)
+    import matplotlib.pyplot as plt
+
+    for i in range(num_f_samples):
+        plt.scatter(xs, f_vals[:, i, 0])
+    plt.show()
+
     # key = jax.random.PRNGKey(675)
-    #sim = GaussianProcessSim(input_size=1, output_scale=3.0, mean_fn=lambda x: jnp.squeeze(2 * x, axis=-1))
-    #f_vals = sim.sample_function_vals(x=jax.random.normal(jax.random.PRNGKey(12312), (10, sim.input_size)), num_samples=5, rng_key=key)
+    # sim = GaussianProcessSim(input_size=1, output_scale=3.0, mean_fn=lambda x: jnp.squeeze(2 * x, axis=-1))
+    # f_vals = sim.sample_function_vals(x=jax.random.normal(jax.random.PRNGKey(12312), (10, sim.input_size)), num_samples=5, rng_key=key)
     # sim = RaceCarSim()
     # sim.sample_function_vals(x=jnp.zeros((1, sim.input_size)), num_samples=5, rng_key=key)
     # plt, axes = plt.subplots(ncols=1, figsize=(4.5, 4))
