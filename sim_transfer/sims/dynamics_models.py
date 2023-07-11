@@ -52,6 +52,11 @@ class CarParams(NamedTuple):
     use_blend: Union[jax.Array, float] = jnp.array(
         0.0)  # 0.0 -> no blend (only kinematics), 1.0 -> (kinematics + dynamics)
 
+    # parameters used to compute the blend ratio characteristics
+    blend_ratio_ub: Union[jax.Array, float] = jnp.array([0.5477225575])
+    blend_ratio_lb: Union[jax.Array, float] = jnp.array([0.4472135955])
+    angle_offset: Union[jax.Array, float] = jnp.array([0.0])
+
 
 class DynamicsModel(ABC):
     def __init__(self,
@@ -330,6 +335,8 @@ class RaceCar(DynamicsModel):
     def next_step(self, x: jnp.array, u: jnp.array, params: CarParams) -> jnp.array:
         theta_x = jnp.arctan2(x[..., self.angle_idx], x[..., self.angle_idx + 1]) if self.encode_angle else \
             x[..., self.angle_idx]
+        offset = jnp.clip(params.angle_offset, -jnp.pi, jnp.pi)
+        theta_x = theta_x + offset
         if not self.local_coordinates:
             # rotate velocity to local frame to compute dx
             velocity_global = x[..., self.velocity_start_idx: self.velocity_end_idx + 1]
@@ -364,6 +371,7 @@ class RaceCar(DynamicsModel):
             # convert velocity to global frame
             new_theta_x = jnp.arctan2(next_x[..., self.angle_idx], next_x[..., self.angle_idx + 1]) \
                 if self.encode_angle else next_x[..., self.angle_idx]
+            new_theta_x = new_theta_x + offset
             velocity = next_x[..., self.velocity_start_idx: self.velocity_end_idx + 1]
             rotated_vel = self.rotate_vector(velocity, new_theta_x)
             next_x = next_x.at[..., self.velocity_start_idx: self.velocity_end_idx + 1].set(rotated_vel)
@@ -419,7 +427,7 @@ class RaceCar(DynamicsModel):
         )
         f_f_y = d_f * jnp.sin(c_f * jnp.arctan(b_f * alpha_f))
         f_r_y = d_r * jnp.sin(c_r * jnp.arctan(b_r * alpha_r))
-        f_r_x = (c_m_1 - c_m_2 * v_x) * d - c_d * (v_x ** 2)
+        f_r_x = (c_m_1 * d - (c_m_2 ** 2) * v_x - (c_d ** 2) * (v_x * jnp.abs(v_x)))
 
         v_x_dot = (f_r_x - f_f_y * jnp.sin(delta) + m * v_y * w) / m
         v_y_dot = (f_r_y + f_f_y * jnp.cos(delta) - m * v_x * w) / m
@@ -481,12 +489,14 @@ class RaceCar(DynamicsModel):
         c_d = params.c_d
         delta, d = u[0], u[1]
         v_r = v_x
-        v_r_dot = ((c_m_1 - c_m_2 * v_r) * d - c_d * (v_r * jnp.abs(v_r))) / m
-        beta = jnp.tan(delta) * 1 / (l_r + l_f)
-        v_x_dot = v_r_dot
+        v_r_dot = (c_m_1 * d - (c_m_2 ** 2) * v_r - (c_d ** 2) * (v_r * jnp.abs(v_r))) / m
+        beta = jnp.arctan(jnp.tan(delta) * 1 / (l_r + l_f))
+        v_x_dot = v_r_dot * jnp.cos(beta)
         # Determine accelerations from the kinematic model using FD.
-        v_y_dot = (v_r * beta * l_r - v_y) / self.dt_integration
-        w_dot = (beta * v_r - w) / self.dt_integration
+        v_y_dot = (v_r * jnp.sin(beta) * l_r - v_y) / self.dt_integration
+        # v_x_dot = (v_r_dot + v_y * w)
+        # v_y_dot = - v_x * w
+        w_dot = (jnp.sin(beta) * v_r - w) / self.dt_integration
         p_g_x_dot = v_x * jnp.cos(theta) - v_y * jnp.sin(theta)
         p_g_y_dot = v_x * jnp.sin(theta) + v_y * jnp.cos(theta)
         dx_kin = jnp.asarray([p_g_x_dot, p_g_y_dot, w, v_x_dot, v_y_dot, w_dot])
@@ -512,7 +522,10 @@ class RaceCar(DynamicsModel):
         """
         use_kin = params.use_blend <= 0.5
         v_x = x[3]
-        blend_ratio = (v_x - 0.3) / 0.2
+        blend_ratio_ub = jnp.square(params.blend_ratio_ub)
+        blend_ratio_lb = jnp.square(params.blend_ratio_lb)
+        blend_ratio = (v_x - blend_ratio_ub) / (blend_ratio_lb + 1E-6)
+        blend_ratio = blend_ratio.squeeze()
         lambda_blend = jnp.min(jnp.asarray([
             jnp.max(jnp.asarray([blend_ratio, 0])), 1])
         )
