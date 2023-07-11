@@ -86,25 +86,62 @@ class RCCarSimEnv:
     _angle_idx: int = 2
     _obs_noise_stds: jnp.array = 0.05 * jnp.exp(jnp.array([-3.3170326, -3.7336411, -2.7081904,
                                                 -2.7841284, -2.7067015, -1.4446207]))
-    _default_car_model_params: Dict = {
+    _default_car_model_params_bicycle: Dict = {
         'use_blend': 0.0,
-        'm': 1.3,
-        'c_m_1': 1.0,
-        'c_m_2': 0.2,
-        'c_d': 0.5,
-        'l_f': 0.3,
-        'l_r': 0.3,
-        'steering_limit': 0.5
+        'm': 1.65,
+        'l_f': 0.13,
+        'l_r': 0.17,
+        'angle_offset': 0.02791893,
+        'b_f': 2.58,
+        'b_r': 3.39,
+        'blend_ratio_lb': 0.4472136,
+        'blend_ratio_ub': 0.5477226,
+        'c_d': -1.8698378e-36,
+        'c_f': 1.2,
+        'c_m_1': 10.431917,
+        'c_m_2': 1.5003588,
+        'c_r': 1.27,
+        'd_f': 0.02,
+        'd_r': 0.017,
+        'i_com': 2.78e-05,
+        'steering_limit': 0.19989373
+    }
+
+    _default_car_model_params_blend: Dict = {
+        'use_blend': 1.0,
+        'm': 1.65,
+        'l_f': 0.13,
+        'l_r': 0.17,
+        'angle_offset': 0.00731506,
+        'b_f': 2.5134025,
+        'b_r': 3.8303657,
+        'blend_ratio_lb': -0.00057009,
+        'blend_ratio_ub': -0.07274915,
+        'c_d': -6.9619144e-37,
+        'c_f': 1.2525784,
+        'c_m_1': 10.93334,
+        'c_m_2': 1.0498677,
+        'c_r': 1.2915123,
+        'd_f': 0.43698108,
+        'd_r': 0.43703166,
+        'i_com': 0.06707229,
+        'steering_limit': 0.5739077
     }
 
     def __init__(self, ctrl_cost_weight: float = 0.005, encode_angle: bool = False, use_obs_noise: bool = True,
-                 car_model_params: Dict = None, seed: int = 230492394):
+                 use_tire_model: bool = True, car_model_params: Dict = None, seed: int = 230492394):
         self.dim_state: Tuple[int] = (7,) if encode_angle else (6,)
         self.encode_angle: bool = encode_angle
         self._rds_key = jax.random.PRNGKey(seed)
 
         # initialize dynamics and observation noise models
         self._dynamics_model = RaceCar(dt=self._dt, encode_angle=False)
+
+        self.use_tire_model = use_tire_model
+        if use_tire_model:
+            self._default_car_model_params = self._default_car_model_params_blend
+        else:
+            self._default_car_model_params = self._default_car_model_params_bicycle
 
         if car_model_params is None:
             _car_model_params = self._default_car_model_params
@@ -202,7 +239,7 @@ if __name__ == '__main__':
     s = env.reset()
     traj = [s]
     rewards = []
-    for i in range(200):
+    for i in range(60):
         t = i / 30.
         a = jnp.array([- 1 * jnp.cos(1.0 * t), 0.8 / (t+1)])
         s, r, _, _ = env.step(a)
