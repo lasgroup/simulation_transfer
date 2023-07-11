@@ -358,11 +358,14 @@ class LinearBimodalSim(FunctionSimulator):
             return cond(x.reshape() < 0, negative, positive, x, neg_slope, pos_slope)
 
         fun_multiple_slope = jax.vmap(fun, in_axes=(None, 0, 0), out_axes=0)
-        return vmap(fun_multiple_slope, in_axes=(0, None, None), out_axes=0)(x, neg_slopes, pos_slopes)
+        fs = vmap(fun_multiple_slope, in_axes=(0, None, None), out_axes=1)(x, neg_slopes, pos_slopes)
+        assert fs.shape == (num_samples, x.shape[0], self.output_size)
+        return fs
 
     def _f(self, x, slope):
         return slope * x
 
+    @property
     def domain(self) -> Domain:
         lower = jnp.array([-2.] * self.input_size)
         upper = jnp.array([2.] * self.input_size)
@@ -649,13 +652,13 @@ class RaceCarSim(FunctionSimulator):
 if __name__ == '__main__':
     key = jax.random.PRNGKey(2234)
     function_sim = LinearBimodalSim()
-    xs = function_sim.domain().sample_uniformly(key, 100)
+    xs = function_sim.domain.sample_uniformly(key, 100)
     num_f_samples = 20
     f_vals = function_sim.sample_function_vals(xs, num_samples=num_f_samples, rng_key=key)
     import matplotlib.pyplot as plt
 
     for i in range(num_f_samples):
-        plt.scatter(xs, f_vals[:, i, 0])
+        plt.scatter(xs, f_vals[i, :, 0])
     plt.show()
 
     # key = jax.random.PRNGKey(675)

@@ -9,13 +9,13 @@ import numpy as np
 import tensorflow as tf
 import tensorflow_datasets as tfds
 import tensorflow_probability.substrates.jax.distributions as tfd
-from tensorflow_probability.substrates import jax as tfp
 import wandb
+from tensorflow_probability.substrates import jax as tfp
 
-from sim_transfer.modules.nn_modules import BatchedMLP
 from sim_transfer.modules.distribution import AffineTransform
-from sim_transfer.modules.util import RngKeyMixin, aggregate_stats
 from sim_transfer.modules.metrics import calibration_error_cum, calibration_error_bin
+from sim_transfer.modules.nn_modules import BatchedMLP
+from sim_transfer.modules.util import RngKeyMixin, aggregate_stats
 
 
 class AbstractRegressionModel(RngKeyMixin):
@@ -171,7 +171,8 @@ class AbstractRegressionModel(RngKeyMixin):
 
     def plot_1d(self, x_train: jnp.ndarray, y_train: jnp.ndarray,
                 domain_l: Optional[float] = None, domain_u: Optional[float] = None,
-                true_fun: Optional[Callable] = None, title: Optional[str] = '', show: bool = True):
+                true_fun: Optional[Callable] = None, title: Optional[str] = '', show: bool = True,
+                log_to_wandb: bool = False):
         assert self.input_size == 1, 'Can only plot if input_size = 1'
 
         # determine plotting domain
@@ -196,7 +197,7 @@ class AbstractRegressionModel(RngKeyMixin):
                 ax[i].plot(x_plot, true_fun(x_plot)[:, i], label='true fun')
             ax[i].plot(x_plot.flatten(), pred_mean[:, i], label='pred mean')
             ax[i].fill_between(x_plot.flatten(), pred_mean[:, i] - pred_std[:, i],
-                            pred_mean[:, i] + pred_std[:, i], alpha=0.3)
+                               pred_mean[:, i] + pred_std[:, i], alpha=0.3)
 
             if hasattr(self, 'predict_post_samples'):
                 y_post_samples = self.predict_post_samples(x_plot)
@@ -207,6 +208,8 @@ class AbstractRegressionModel(RngKeyMixin):
                 ax[i].set_title(f'Output dimension {i}')
             ax[i].legend()
         fig.suptitle(title)
+        if log_to_wandb:
+            wandb.log({title: wandb.Image(fig)})
         if show:
             fig.show()
 
