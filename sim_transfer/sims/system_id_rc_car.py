@@ -12,11 +12,20 @@ from matplotlib import pyplot as plt
 
 import tensorflow_probability.substrates.jax.distributions as tfd
 
-
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'data')
 BATCH_SIZE = 64
 NUM_STEPS_AHEAD = 3
-REAL_DATA = False
+REAL_DATA = True
+CHANGE_SIGNS = True
+ENCODE_ANGLE = False
+USE_BLEND = 0.0
+
+
+def rotate_vector(v, theta):
+    v_x, v_y = v[..., 0], v[..., 1]
+    rot_x = v_x * jnp.cos(theta) - v_y * jnp.sin(theta)
+    rot_y = v_x * jnp.sin(theta) + v_y * jnp.cos(theta)
+    return jnp.concatenate([jnp.atleast_2d(rot_x), jnp.atleast_2d(rot_y)], axis=0).T
 
 def load_recordings(recordings_dir: str):
     dfs = []
@@ -26,58 +35,70 @@ def load_recordings(recordings_dir: str):
         dfs.append(df)
     return dfs
 
+
 def get_tajectory_windows(arr: jnp.array, window_size: int = 10) -> jnp.array:
     """Sliding window over an array along the first axis."""
     arr_strided = jnp.stack([arr[i:(-window_size + i)] for i in range(window_size)], axis=-2)
     assert arr_strided.shape == (arr.shape[0] - window_size, window_size, arr.shape[-1])
     return jnp.array(arr_strided)
 
-def prepare_data(df: pd.DataFrame, window_size=10):
+
+def prepare_data(df: pd.DataFrame, window_size=10, encode_angles: bool = False):
     u = df[['steer', 'throttle']].to_numpy()
     x = df[['pos x', 'pos y', 'theta', 's vel x', 's vel y', 's omega']].to_numpy()
-
     # project theta into [-\pi, \pi]
+    if CHANGE_SIGNS:
+        x[:, [1, 4]] *= -1
     x[:, 2] = (x[:, 2] + jnp.pi) % (2 * jnp.pi) - jnp.pi
+    if encode_angles:
+        def angle_encode(obs):
+            theta = obs[2]
+            sin_theta, cos_theta = jnp.sin(theta), jnp.cos(theta)
+            encoded_obs = jnp.array([obs[0], obs[1], sin_theta, cos_theta, obs[3], obs[4], obs[5]])
+            return encoded_obs
 
+        x = jax.vmap(angle_encode)(x)
     x_strides = get_tajectory_windows(x, window_size)
     u_strides = get_tajectory_windows(u, window_size)
     return x_strides, u_strides
 
+
 recordings_dir = os.path.join(DATA_DIR, 'recordings_rc_car_v0' if REAL_DATA else 'simulated_rc_car_v0')
 num_train_traj = 2 if REAL_DATA else 7
 recording_dfs = load_recordings(recordings_dir)
-datasets_train = list(map(partial(prepare_data, window_size=11), recording_dfs[:num_train_traj]))
-datasets_test = list(map(partial(prepare_data, window_size=61), recording_dfs[num_train_traj:]))
+datasets_train = list(map(partial(prepare_data, window_size=11, encode_angles=ENCODE_ANGLE),
+                          recording_dfs[:num_train_traj]))
+datasets_test = list(map(partial(prepare_data, window_size=61, encode_angles=ENCODE_ANGLE),
+                         recording_dfs[num_train_traj:]))
 
 x_train, u_train = map(lambda x: jnp.concatenate(x, axis=0), zip(*datasets_train))
 x_test, u_test = map(lambda x: jnp.concatenate(x, axis=0), zip(*datasets_test))
 
 plot_rc_trajectory(x_test[0], show=True)
 
-dynamics = RaceCar(dt=1 / 30., encode_angle=False, rk_integrator=True)
+dynamics = RaceCar(dt=1 / 30., encode_angle=ENCODE_ANGLE, rk_integrator=True)
 step_vmap = jax.vmap(dynamics.next_step, in_axes=(0, 0, None), out_axes=0)
 
 params_car_model = {
-    #'m': jnp.array(0.05),
     'i_com': jnp.array(27.8e-6),
-    'l_f': jnp.array(0.03),  # length to the front from COM  #TODO 0.3
-    'l_r': jnp.array(0.035),  # length to the back from COM  #TODO 0.3
-    #'g': jnp.array(9.81),
     'd_f': jnp.array(0.02),
     'c_f': jnp.array(1.2),
     'b_f': jnp.array(2.58),
     'd_r': jnp.array(0.017),
     'c_r': jnp.array(1.27),
     'b_r': jnp.array(3.39),
-    'c_m_1': jnp.array(0.2),
+    'c_m_1': jnp.array(10.0),
     'c_m_2': jnp.array(0.05),
-    'c_d': jnp.array(0.052),
+    'c_d': jnp.array(0.52),
     'steering_limit': jnp.array(0.35),
-    #'use_blend': jnp.array(0.0),
+    'blend_ratio_ub': jnp.array([0.5477225575]),
+    'blend_ratio_lb': jnp.array([0.4472135955]),
+    'angle_offset': jnp.array([0.0]),
+    # 'use_blend': jnp.array(0.0),
 }
 
 params = {'car_model': params_car_model,
-          'noise_log_std': -1. * jnp.ones((NUM_STEPS_AHEAD, 6))}
+          'noise_log_std': -1. * jnp.ones((NUM_STEPS_AHEAD, 7 if ENCODE_ANGLE else 6))}
 
 optim = optax.adam(1e-3)
 opt_state = optim.init(params)
@@ -87,7 +108,8 @@ def simulate_traj(x0: jnp.array, u_traj, params, num_steps: int) -> jnp.array:
     pred_traj = [x0]
     x = x0
     for i in range(num_steps):
-        x_pred = step_vmap(x, u_traj[..., i, :], CarParams(**params['car_model'], m=1.3, g=9.81, use_blend=0.0))
+        x_pred = step_vmap(x, u_traj[..., i, :], CarParams(**params['car_model'], m=1.65, g=9.81, use_blend=USE_BLEND,
+                                                           l_f=0.13, l_r=0.17))
         pred_traj.append(x_pred)
         x = x_pred
     pred_traj = jnp.stack(pred_traj, axis=-2)
@@ -103,7 +125,7 @@ def trajecory_diff(traj1: jnp.array, traj2: jnp.array, angle_idx: int = 2) -> jn
 
     # special treatment for theta (i.e. shortest distance between angles on the circle)
     theta_diff = angle_diff(traj1[..., angle_idx], traj2[..., angle_idx])
-    diff = jnp.concatenate([diff[..., :angle_idx], theta_diff[..., None], diff[..., angle_idx+1:]], axis=-1)
+    diff = jnp.concatenate([diff[..., :angle_idx], theta_diff[..., None], diff[..., angle_idx + 1:]], axis=-1)
     assert diff.shape == traj1.shape
     return diff
 
@@ -116,20 +138,31 @@ def loss_fn(params, x_strided, u_strided, num_steps_ahead: int = 3,
     pred_traj = pred_traj[..., 1:, :]  # remove first state (which is the initial state)
 
     # compute diff between predicted and real trajectory
-    real_traj = x_strided[..., 1:1+num_steps_ahead, :]
+    real_traj = x_strided[..., 1:1 + num_steps_ahead, :]
     diff = trajecory_diff(real_traj, pred_traj)
 
     pred_dist = tfd.Normal(jnp.zeros_like(params['noise_log_std']), jnp.exp(params['noise_log_std']))
     if exclude_ang_vel:
-        loss = - jnp.mean(pred_dist.log_prob(diff)[..., :5])
+        angular_velocity_idx = 6 if ENCODE_ANGLE else 5
+        loss = - jnp.mean(pred_dist.log_prob(diff)[..., :angular_velocity_idx])
     else:
         loss = - jnp.mean(pred_dist.log_prob(diff))
     return loss
 
+
 def plot_trajectory_comparison(real_traj, sim_traj):
+    if ENCODE_ANGLE:
+        def decode_angle(obs):
+            sin_theta, cos_theta = obs[2], obs[3]
+            theta = jnp.arctan2(sin_theta, cos_theta)
+            new_obs = jnp.array([obs[0], obs[1], obs[4], theta, obs[5], obs[6]])
+            return new_obs
+
+        real_traj = jax.vmap(decode_angle)(real_traj)
+        sim_traj = jax.vmap(decode_angle)(sim_traj)
     assert real_traj.shape == sim_traj.shape and real_traj.shape[-1] == 6 and real_traj.ndim == 2
     fig, axes = plt.subplots(ncols=2)
-    #ax.scatter(sim_traj[0, 0], sim_traj[0, 1], color='green')
+    # ax.scatter(sim_traj[0, 0], sim_traj[0, 1], color='green')
     axes[0].plot(real_traj[:, 0], real_traj[:, 1], label='real', color='green')
     axes[0].plot(sim_traj[:, 0], sim_traj[:, 1], label='sim', color='orange')
     axes[0].set_title('trajectory pos')
@@ -190,8 +223,8 @@ key = jax.random.PRNGKey(234234)
 
 import wandb
 run = wandb.init(
-  project="system-id-rccar",
-  entity="jonasrothfuss"
+    project="system-id-rccar",
+    entity="jonasrothfuss"
 )
 
 for i in range(20000):
@@ -201,11 +234,8 @@ for i in range(20000):
     if i % 1000 == 0:
         loss_test = loss_fn(params, x_test, u_test)
         metrics_eval = eval(params, x_test, u_test, log_plots=True)
-        wandb.log({'iter': i,  'loss': loss, 'loss_test': loss_test, **metrics_eval})
+        wandb.log({'iter': i, 'loss': loss, 'loss_test': loss_test, **metrics_eval})
         print(f'Iter {i}, loss: {loss}, test loss: {loss_test}')
-
 
 from pprint import pprint
 pprint(params)
-
-
