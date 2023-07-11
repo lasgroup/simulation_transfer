@@ -2,26 +2,25 @@ import jax
 import jax.numpy as jnp
 from jax import vmap
 from jax.lax import cond
-import argparse
-
 
 import wandb
 from sim_transfer.models.bnn_fsvgd_sim_prior import BNN_FSVGD_SimPrior
 from sim_transfer.sims import LinearBimodalSim
 
-
-def experiment(score_estimator: str, seed: int, project_name: str):
+if __name__ == '__main__':
     def key_iter():
-        key = jax.random.PRNGKey(seed)
+        key = jax.random.PRNGKey(7644)
         while True:
             key, new_key = jax.random.split(key)
             yield new_key
+
 
     key_iter = key_iter()
     NUM_DIM_X = 1
     NUM_DIM_Y = 1
 
     sim = LinearBimodalSim()
+
 
     def fun(x):
         def positive(x):
@@ -32,10 +31,13 @@ def experiment(score_estimator: str, seed: int, project_name: str):
 
         return cond(x.reshape() > 0, positive, negative, x)
 
+
     v_fun = vmap(fun)
     domain = sim.domain
 
     num_train_points = 3
+    score_estimator = 'gp'
+
     x_train = jax.random.uniform(key=next(key_iter), shape=(num_train_points,),
                                  minval=domain.l, maxval=jnp.array([0.0])).reshape(-1, 1)
     y_train = v_fun(x_train)
@@ -53,9 +55,8 @@ def experiment(score_estimator: str, seed: int, project_name: str):
     bnn = BNN_FSVGD_SimPrior(NUM_DIM_X, NUM_DIM_Y, **bnn_config)
 
     wandb.init(
-        dir='/cluster/scratch/trevenl',
-        project=project_name,
-        group=score_estimator,
+        project="Linear Bimodal",
+        group='Testing',
         config=bnn_config,
     )
 
@@ -65,16 +66,3 @@ def experiment(score_estimator: str, seed: int, project_name: str):
             bnn.plot_1d(x_train, y_train, true_fun=v_fun,
                         title=f'FSVGD SimPrior {score_estimator}, iter {(i + 1) * 2000}',
                         domain_l=domain.l[0], domain_u=domain.u[0], log_to_wandb=True)
-
-
-def main(args):
-    experiment(args.score_estimator, args.seed, args.project_name)
-
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--score_estimator', type=str, default='gp')
-    parser.add_argument('--project_name', type=str, default='LinearBimodal')
-    args = parser.parse_args()
-    main(args)
