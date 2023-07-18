@@ -5,7 +5,7 @@ import time
 from functools import partial
 from sim_transfer.sims.dynamics_models import RaceCar, CarParams
 from sim_transfer.sims.util import encode_angles, decode_angles, plot_rc_trajectory
-from typing import Union, Dict, Any, Callable, Tuple, Optional, List
+from typing import Dict, Any, Tuple, Optional
 
 
 class ToleranceReward:
@@ -34,6 +34,7 @@ class ToleranceReward:
 
     def __call__(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
+
 
 class RCCarEnvReward:
     _angle_idx: int = 2
@@ -129,7 +130,20 @@ class RCCarSimEnv:
     }
 
     def __init__(self, ctrl_cost_weight: float = 0.005, encode_angle: bool = False, use_obs_noise: bool = True,
-                 use_tire_model: bool = True, car_model_params: Dict = None, seed: int = 230492394):
+                 use_tire_model: bool = False, action_delay: float = 0.0, car_model_params: Dict = None,
+                 seed: int = 230492394):
+        """
+        Race car simulator environment
+
+        Args:
+            ctrl_cost_weight: weight of the control penalty
+            encode_angle: whether to encode the angle as cos(theta), sin(theta)
+            use_obs_noise: whether to use observation noise
+            use_tire_model: whether to use the (high-fidelity) tire model, if False just uses a kinematic bicycle model
+            action_delay: whether to delay the action by a certain amount of time (in seconds)
+            car_model_params: dictionary of car model parameters that overwrite the default values
+            seed: random number generator seed
+        """
         self.dim_state: Tuple[int] = (7,) if encode_angle else (6,)
         self.encode_angle: bool = encode_angle
         self._rds_key = jax.random.PRNGKey(seed)
@@ -158,6 +172,19 @@ class RCCarSimEnv:
                                             ctrl_cost_weight=ctrl_cost_weight,
                                             encode_angle=self.encode_angle)
 
+        # set up action delay
+        assert action_delay >= 0.0, "Action delay must be non-negative"
+        self.action_delay = action_delay
+        if action_delay % self._dt == 0.0:
+            self._act_delay_interpolation_weights = jnp.array([1.0, 0.0])
+        else:
+            # if action delay is not a multiple of dt, compute weights to interpolate
+            # between temporally closest actions
+            weight_first = (action_delay % self._dt) / self._dt
+            self._act_delay_interpolation_weights = jnp.array([weight_first, 1.0 - weight_first])
+        action_delay_buffer_size = int(jnp.ceil(action_delay / self._dt)) + 1
+        self._action_buffer = jnp.zeros((action_delay_buffer_size, self.dim_action[0]))
+
         # initialize time and state
         self._time: int = 0
         self._state: jnp.array = jnp.zeros(self.dim_state)
@@ -183,8 +210,13 @@ class RCCarSimEnv:
         """ Performs one step in the environment """
 
         assert action.shape[-1:] == self.dim_action
-        #xassert jnp.all(-1 <= action) and jnp.all(action <= 1), "action must be in [-1, 1]"
+        #assert jnp.all(-1 <= action) and jnp.all(action <= 1), "action must be in [-1, 1]"
         rng_key = self.rds_key if rng_key is None else rng_key
+
+        if self.action_delay > 0.0:
+            # pushes action to action buffer and pops the oldest action
+            # computes delayed action as a linear interpolation between the relevant actions in the past
+            action = self._get_delayed_action(action)
 
         # compute next state
         self._state = self._next_step_fn(self._state, action)
@@ -219,6 +251,15 @@ class RCCarSimEnv:
         return obs
 
 
+    def _get_delayed_action(self, action: jnp.array) -> jnp.array:
+        # push action to action buffer
+        self._action_buffer = jnp.concatenate([self._action_buffer[1:], action[None, :]], axis=0)
+
+        # get delayed action (interpolate between two actions if the delay is not a multiple of dt)
+        delayed_action = jnp.sum(self._action_buffer[:2] * self._act_delay_interpolation_weights[:, None], axis=0)
+        assert delayed_action.shape == self.dim_action
+        return delayed_action
+
     @property
     def rds_key(self) -> jax.random.PRNGKey:
         self._rds_key, key = jax.random.split(self._rds_key)
@@ -232,6 +273,7 @@ class RCCarSimEnv:
 if __name__ == '__main__':
     ENCODE_ANGLE = False
     env = RCCarSimEnv(encode_angle=ENCODE_ANGLE,
+                      action_delay=0.07,
                       use_obs_noise=True)
 
     t_start = time.time()
