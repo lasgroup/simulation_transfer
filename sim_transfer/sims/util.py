@@ -1,5 +1,5 @@
 import jax.numpy as jnp
-
+from typing import Optional
 
 def encode_angles(state: jnp.array, angle_idx: int) -> jnp.array:
     """ Encodes the angle (theta) as sin(theta) and cos(theta) """
@@ -34,17 +34,20 @@ def angle_diff(theta1: jnp.array, theta2: jnp.array) -> jnp.array:
     return diff
 
 
-def plot_rc_trajectory(traj: jnp.array, show: bool = True, encode_angle: bool = False):
+def plot_rc_trajectory(traj: jnp.array, actions: Optional[jnp.array] = None, pos_domain_size: float = 5,
+                       show: bool = True, encode_angle: bool = False):
     """ Plots the trajectory of the RC car """
     if encode_angle:
         traj = decode_angles(traj, 2)
 
     import matplotlib.pyplot as plt
     scale_factor = 1.5
-    fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(scale_factor * 12, scale_factor * 8))
-    size = 3
-    axes[0][0].set_xlim(-size, size)
-    axes[0][0].set_ylim(-size, size)
+    if actions is None:
+        fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(scale_factor * 12, scale_factor * 8))
+    else:
+        fig, axes = plt.subplots(nrows=2, ncols=4, figsize=(scale_factor * 16, scale_factor * 8))
+    axes[0][0].set_xlim(-pos_domain_size, pos_domain_size)
+    axes[0][0].set_ylim(-pos_domain_size, pos_domain_size)
     axes[0][0].scatter(0, 0)
     # axes[0][0].plot(traj[:, 0], traj[:, 1])
     axes[0][0].set_title('x-y')
@@ -82,6 +85,20 @@ def plot_rc_trajectory(traj: jnp.array, show: bool = True, encode_angle: bool = 
     axes[1][2].set_xlabel('time')
     axes[1][2].set_ylabel('velocity y')
     axes[1][2].set_title('velocity y')
+
+    if actions is not None:
+        # steering
+        axes[0][3].plot(t[:actions.shape[0]], actions[:, 0])
+        axes[0][3].set_xlabel('time')
+        axes[0][3].set_ylabel('steer')
+        axes[0][3].set_title('steering')
+
+        # throttle
+        axes[1][3].plot(t[:actions.shape[0]], actions[:, 1])
+        axes[1][3].set_xlabel('time')
+        axes[1][3].set_ylabel('throttle')
+        axes[1][3].set_title('throttle')
+
 
     fig.tight_layout()
     if show:

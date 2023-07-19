@@ -207,7 +207,12 @@ class RCCarSimEnv:
 
     def step(self, action: jnp.array, rng_key: Optional[jax.random.PRNGKey] = None) \
             -> Tuple[jnp.array, float, bool, Dict[str, Any]]:
-        """ Performs one step in the environment """
+        """ Performs one step in the environment
+
+        Args:
+            action: array of size (2,) with [steering, throttle]
+            rng_key: rng key for the observation noise (optional)
+        """
 
         assert action.shape[-1:] == self.dim_action
         #assert jnp.all(-1 <= action) and jnp.all(action <= 1), "action must be in [-1, 1]"
@@ -274,6 +279,7 @@ if __name__ == '__main__':
     ENCODE_ANGLE = False
     env = RCCarSimEnv(encode_angle=ENCODE_ANGLE,
                       action_delay=0.07,
+                      use_tire_model=True,
                       use_obs_noise=True)
 
     t_start = time.time()
@@ -281,15 +287,18 @@ if __name__ == '__main__':
     s = env.reset()
     traj = [s]
     rewards = []
-    for i in range(60):
+    actions = []
+    for i in range(120):
         t = i / 30.
         a = jnp.array([- 1 * jnp.cos(1.0 * t), 0.8 / (t+1)])
         s, r, _, _ = env.step(a)
         traj.append(s)
+        actions.append(a)
         rewards.append(r)
 
     duration = time.time() - t_start
     print(f'Duration of trajectory sim {duration} sec')
     traj = jnp.stack(traj)
+    actions = jnp.stack(actions)
 
-    plot_rc_trajectory(traj, encode_angle=ENCODE_ANGLE)
+    plot_rc_trajectory(traj, actions, encode_angle=ENCODE_ANGLE)
