@@ -55,8 +55,9 @@ if __name__ == '__main__':
     bnn = BNN_FSVGD_SimPrior(NUM_DIM_X, NUM_DIM_Y, **bnn_config)
 
     wandb.init(
-        project="Linear Bimodal",
+        project="LinearBimodalSimPrior",
         group='Testing',
+        entity='simulation_transfer',
         config=bnn_config,
     )
 
