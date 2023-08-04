@@ -13,12 +13,19 @@ from matplotlib import pyplot as plt
 import tensorflow_probability.substrates.jax.distributions as tfd
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'data')
-BATCH_SIZE = 64
-NUM_STEPS_AHEAD = 3
+
+import argparse
+arg_parser = argparse.ArgumentParser()
+arg_parser.add_argument('--batch_size', type=int, default=64)
+arg_parser.add_argument('--num_steps_ahead', type=int, default=3)
+arg_parser.add_argument('--real_data', type=bool, default=True)
+arg_parser.add_argument('--use_blend', type=float, default=1.0)
+arg_parser.add_argument('--seed', type=int, default=456456)
+args = arg_parser.parse_args()
+
 REAL_DATA = True
 CHANGE_SIGNS = True
 ENCODE_ANGLE = False
-USE_BLEND = 0.0
 
 
 def rotate_vector(v, theta):
@@ -98,7 +105,7 @@ params_car_model = {
 }
 
 params = {'car_model': params_car_model,
-          'noise_log_std': -1. * jnp.ones((NUM_STEPS_AHEAD, 7 if ENCODE_ANGLE else 6))}
+          'noise_log_std': -1. * jnp.ones((args.num_steps_ahead, 7 if ENCODE_ANGLE else 6))}
 
 optim = optax.adam(1e-3)
 opt_state = optim.init(params)
@@ -108,7 +115,8 @@ def simulate_traj(x0: jnp.array, u_traj, params, num_steps: int) -> jnp.array:
     pred_traj = [x0]
     x = x0
     for i in range(num_steps):
-        x_pred = step_vmap(x, u_traj[..., i, :], CarParams(**params['car_model'], m=1.65, g=9.81, use_blend=USE_BLEND,
+        x_pred = step_vmap(x, u_traj[..., i, :], CarParams(**params['car_model'], m=1.65, g=9.81,
+                                                           use_blend=args.use_blend,
                                                            l_f=0.13, l_r=0.17))
         pred_traj.append(x_pred)
         x = x_pred
@@ -182,7 +190,7 @@ def plot_trajectory_comparison(real_traj, sim_traj):
 
 @jax.jit
 def step(params, opt_state, key: jax.random.PRNGKey):
-    idx_batch = jax.random.choice(key, x_train.shape[0], shape=(BATCH_SIZE,))
+    idx_batch = jax.random.choice(key, x_train.shape[0], shape=(args.batch_size,))
     x_batch, u_batch = x_train[idx_batch], u_train[idx_batch]
     loss, grads = jax.value_and_grad(loss_fn)(params, x_batch, u_batch)
     updates, opt_state = optim.update(grads, opt_state)
@@ -219,7 +227,7 @@ def eval(params, x_eval, u_eval, log_plots: bool = False):
         return metrics
 
 
-key = jax.random.PRNGKey(234234)
+key = jax.random.PRNGKey(args.seed)
 
 import wandb
 run = wandb.init(
