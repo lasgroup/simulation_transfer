@@ -576,37 +576,101 @@ class PendulumBiModalSim(PendulumSim):
 
 class RaceCarSim(FunctionSimulator):
 
-    def __init__(self, dt: float = 0.01, encode_angle: bool = True, use_blend: bool = False):
-        self.use_blend = use_blend
-        self._typical_f = CarParams(use_blend=self.use_blend)
+    _default_car_model_params_bicycle: Dict = {
+        'use_blend': 0.0,
+        'm': 1.65,
+        'l_f': 0.13,
+        'l_r': 0.17,
+        'angle_offset': 0.02791893,
+        'b_f': 2.58,
+        'b_r': 3.39,
+        'blend_ratio_lb': 0.4472136,
+        'blend_ratio_ub': 0.5477226,
+        'c_d': -1.8698378e-36,
+        'c_f': 1.2,
+        'c_m_1': 10.431917,
+        'c_m_2': 1.5003588,
+        'c_r': 1.27,
+        'd_f': 0.02,
+        'd_r': 0.017,
+        'i_com': 2.78e-05,
+        'steering_limit': 0.19989373
+    }
+
+    _bounds_car_model_params_bicycle: Dict = {
+        'use_blend': (0.0, 0.0),
+        'm': (1.6, 1.7),
+        'l_f': (0.12, 0.14),
+        'l_r': (0.16, 0.18),
+        'angle_offset': (0.0, 0.04),
+        'b_f': (2.2, 2.8),
+        'b_r': (3.0, 4.0),
+        'blend_ratio_lb': (-0.01, 0.01),
+        'blend_ratio_ub': (-0.1, 0.1),
+        'c_d': (0.0, 0.0),
+        'c_f': (1., 1.5),
+        'c_m_1': (10., 11.),
+        'c_m_2': (0.5, 2.0),
+        'c_r': (1., 1.5),
+        'd_f': (0.3, 0.5),
+        'd_r': (0.3, 0.5),
+        'i_com': (0.04, 0.08),
+        'steering_limit': (0.15, 0.3),
+    }
+
+    _default_car_model_params_blend: Dict = {
+        'use_blend': 1.0,
+        'm': 1.65,
+        'l_f': 0.13,
+        'l_r': 0.17,
+        'angle_offset': 0.00731506,
+        'b_f': 2.5134025,
+        'b_r': 3.8303657,
+        'blend_ratio_lb': -0.00057009,
+        'blend_ratio_ub': -0.07274915,
+        'c_d': -6.9619144e-37,
+        'c_f': 1.2525784,
+        'c_m_1': 10.93334,
+        'c_m_2': 1.0498677,
+        'c_r': 1.2915123,
+        'd_f': 0.43698108,
+        'd_r': 0.43703166,
+        'i_com': 0.06707229,
+        'steering_limit': 0.5739077,
+    }
+
+    _bounds_car_model_params_blend = {**_bounds_car_model_params_bicycle, 'steering_limit': (0.35, 0.7),
+                                      'use_blend': (1.0, 1.0)}
+
+    _dt: float = 1/30.
+
+    def __init__(self, encode_angle: bool = True, use_blend: bool = False):
         FunctionSimulator.__init__(self, input_size=9 if encode_angle else 8, output_size=7 if encode_angle else 6)
-        self.model = RaceCar(dt=dt, encode_angle=encode_angle)
-        self._state_action_spit_idx = 7 if encode_angle else 6
+
+        # set up typical parameters
+        self.use_blend = use_blend
+        _default_params = self._default_car_model_params_blend if use_blend else self._default_car_model_params_bicycle
+        self._typical_params = CarParams(**_default_params)
+
         self.encode_angle = encode_angle
-        self.max_steering = 0.35
+        self.model = RaceCar(dt=self._dt, encode_angle=encode_angle)
+        self._state_action_spit_idx = 7 if encode_angle else 6
+
         # parameter bounds for the 1st part of the dist
-        self._lower_bound_params = CarParams(
-            m=jnp.array(.04), i_com=jnp.array(1e-6), l_f=jnp.array(0.025), l_r=jnp.array(0.025), g=jnp.array(9.0),
-            d_f=jnp.array(0.015), c_f=jnp.array(1.2), b_f=jnp.array(2.2), d_r=jnp.array(0.015), c_r=jnp.array(1.2),
-            b_r=jnp.array(2.2), c_m_1=jnp.array(0.2), c_m_2=jnp.array(0.04), c_rr=jnp.array(0.001), c_d=jnp.array(0.01),
-            use_blend=jnp.array(0.0), steering_limit=jnp.array(self.max_steering))
-        self._upper_bound_params = CarParams(
-            m=jnp.array(.08), i_com=jnp.array(5e-6), l_f=jnp.array(0.05), l_r=jnp.array(0.05), g=jnp.array(10.0),
-            d_f=jnp.array(0.025), c_f=jnp.array(1.5), b_f=jnp.array(2.5), d_r=jnp.array(0.025), c_r=jnp.array(1.5),
-            b_r=jnp.array(2.8), c_m_1=jnp.array(0.4), c_m_2=jnp.array(0.07), c_rr=jnp.array(0.01), c_d=jnp.array(0.1),
-            use_blend=jnp.array(self.use_blend), steering_limit=jnp.array(self.max_steering))
+        _bounds_car_model_params = self._bounds_car_model_params_blend if use_blend \
+            else self._bounds_car_model_params_bicycle
+        self._lower_bound_params = CarParams(**{k: jnp.array(v[0]) for k, v in _bounds_car_model_params.items()})
+        self._upper_bound_params = CarParams(**{k: jnp.array(v[1]) for k, v in _bounds_car_model_params.items()})
 
         assert jnp.all(jnp.stack(jtu.tree_flatten(
             jtu.tree_map(lambda l, u: l <= u, self._lower_bound_params, self._upper_bound_params))[0])), \
             'lower bounds have to be smaller than upper bounds'
+        self._domain_lower = jnp.array([-4., -4., -jnp.pi, -6., -6., -8., -1., -1.])
+        self._domain_upper = jnp.array([4., 4., jnp.pi, 6., 6., 8., 1., 1.])
         if self.encode_angle:
-            self._domain_lower = jnp.array([-50, -50, -jnp.pi, -10, -10, 10, -self.max_steering, -1])
-            self._domain_upper = jnp.array([50, 50, jnp.pi, 10, 10, 10, self.max_steering, 1])
             self._domain = HypercubeDomainWithAngles(angle_indices=[2], lower=self._domain_lower,
                                                      upper=self._domain_upper)
         else:
-            self._domain_lower = jnp.array([-50, -50, -jnp.pi, -10, -10, 10, -self.max_steering, -1])
-            self._domain_upper = jnp.array([50, 50, jnp.pi, 10, 10, 10, self.max_steering, 1])
             self._domain = HypercubeDomain(lower=self._domain_lower, upper=self._domain_upper)
 
     def _split_state_action(self, z: jnp.array) -> Tuple[jnp.array, jnp.array]:
@@ -627,6 +691,16 @@ class RaceCarSim(FunctionSimulator):
         assert f.shape == (num_samples, x.shape[0], self.output_size)
         return f
 
+    def sample_functions(self, num_samples: int, rng_key: jax.random.PRNGKey) -> Callable:
+        params = self.model.sample_params_uniform(rng_key, sample_shape=(num_samples,),
+                                                  lower_bound=self._lower_bound_params,
+                                                  upper_bound=self._upper_bound_params)
+        def stacked_fun(z):
+            x, u = self._split_state_action(z)
+            return vmap(self.model.next_step, in_axes=(0, 0, 0))(x, u, params)
+
+        return stacked_fun
+
     @property
     def domain(self) -> Domain:
         return self._domain
@@ -635,14 +709,14 @@ class RaceCarSim(FunctionSimulator):
     def normalization_stats(self) -> Dict[str, jnp.ndarray]:
         if self.encode_angle:
             return {'x_mean': jnp.zeros(self.input_size),
-                    'x_std': jnp.array([5, 5, 1.0, 1.0, 1.5, 1.5, 1.5, 1.0, self.max_steering]),
+                    'x_std': jnp.array([3., 3., 1.0, 1.0, 4.0, 4.0, 5.0, 1.0, 1.0]),
                     'y_mean': jnp.zeros(self.output_size),
-                    'y_std': jnp.array([5, 5, 1.0, 1.0, 1.5, 1.5, 1.5])}
+                    'y_std': jnp.array([3., 3., 1.0, 1.0, 4.0, 4.0, 5.0])}
         else:
             return {'x_mean': jnp.zeros(self.input_size),
-                    'x_std': jnp.array([5, 5, 2.5, 1.5, 1.5, 1.5, 1.0, self.max_steering]),
+                    'x_std': jnp.array([3., 3., 2.5, 4.0, 4.0, 5.0, 1.0, 1.0]),
                     'y_mean': jnp.zeros(self.output_size),
-                    'y_std': jnp.array([5, 5, 2.5, 1.5, 1.5, 1.5])}
+                    'y_std': jnp.array([3., 3., 2.5, 4.0, 4.0, 5.0])}
 
     def _typical_f(self, x: jnp.array) -> jnp.array:
         s, u = self._split_state_action(x)
@@ -650,15 +724,39 @@ class RaceCarSim(FunctionSimulator):
 
 
 if __name__ == '__main__':
-    key = jax.random.PRNGKey(2234)
-    function_sim = LinearBimodalSim()
+    key = jax.random.PRNGKey(435345)
+    function_sim = RaceCarSim(use_blend=False)
     xs = function_sim.domain.sample_uniformly(key, 100)
     num_f_samples = 20
     f_vals = function_sim.sample_function_vals(xs, num_samples=num_f_samples, rng_key=key)
-    import matplotlib.pyplot as plt
 
-    for i in range(num_f_samples):
-        plt.scatter(xs, f_vals[i, :, 0])
+
+    NUM_PARALLEL = 20
+    fun_stacked = function_sim.sample_functions(num_samples=NUM_PARALLEL, rng_key=key)
+    #fun_stacked = jax.vmap(function_sim._typical_f)
+    fun_stacked = jax.jit(fun_stacked)
+
+    s = jnp.repeat(jnp.array([-9.5005625e-01, -1.4144412e+00,  9.9892426e-01,  4.6371352e-02,
+                              7.2260178e-04,  8.1058703e-03, -7.7542849e-03])[None, :], NUM_PARALLEL, axis=0)
+    traj = [s]
+    actions = []
+    for i in range(60):
+        t = i / 30.
+        a = jnp.array([- 1 * jnp.cos(2 * t), 0.8 / (t+1)])
+        a = jnp.repeat(a[None, :], NUM_PARALLEL, axis=0)
+        x = jnp.concatenate([s, a], axis=-1)
+        s = fun_stacked(x)
+        traj.append(s)
+        actions.append(a)
+
+    traj = jnp.stack(traj, axis=0)
+    actions = jnp.stack(actions, axis=0)
+    from matplotlib import pyplot as plt
+
+    for i in range(NUM_PARALLEL):
+        plt.plot(traj[:, i, 0], traj[:, i, 1])
+    plt.xlim(-3, 1)
+    plt.ylim(-2, 3)
     plt.show()
 
     # key = jax.random.PRNGKey(675)

@@ -34,28 +34,30 @@ class CarParams(NamedTuple):
     lecture 2 part 2
     c_m_1: max current of motor: [0.2 - 0.5] c_m_2: motor resistance due to shaft: [0.01 - 0.15]
     """
-    m: Union[jax.Array, float] = jnp.array(0.05)  # [0.04, 0.08]
-    i_com: Union[jax.Array, float] = jnp.array(27.8e-6)  # [1e-6, 5e-6]
-    l_f: Union[jax.Array, float] = jnp.array(0.03)  # [0.025, 0.05]
-    l_r: Union[jax.Array, float] = jnp.array(0.035)  # [0.025, 0.05]
+    m: Union[jax.Array, float] = jnp.array(1.65)  # [0.04, 0.08]
+    i_com: Union[jax.Array, float] = jnp.array(2.78e-05)  # [1e-6, 5e-6]
+    l_f: Union[jax.Array, float] = jnp.array(0.13)  # [0.025, 0.05]
+    l_r: Union[jax.Array, float] = jnp.array(0.17)  # [0.025, 0.05]
     g: Union[jax.Array, float] = jnp.array(9.81)
+
     d_f: Union[jax.Array, float] = jnp.array(0.02)  # [0.015, 0.025]
     c_f: Union[jax.Array, float] = jnp.array(1.2)  # [1.0, 2.0]
     b_f: Union[jax.Array, float] = jnp.array(2.58)  # [2.0, 4.0]
+
     d_r: Union[jax.Array, float] = jnp.array(0.017)  # [0.015, 0.025]
     c_r: Union[jax.Array, float] = jnp.array(1.27)  # [1.0, 2.0]
     b_r: Union[jax.Array, float] = jnp.array(3.39)  # [2.0, 4.0]
-    c_m_1: Union[jax.Array, float] = jnp.array(0.2)  # [0.2, 0.5]
-    c_m_2: Union[jax.Array, float] = jnp.array(0.05)  # [0.00, 0.007]
-    c_d: Union[jax.Array, float] = jnp.array(0.052)  # [0.01, 0.1]
-    steering_limit: Union[jax.Array, float] = jnp.array(0.35)
-    use_blend: Union[jax.Array, float] = jnp.array(
-        0.0)  # 0.0 -> no blend (only kinematics), 1.0 -> (kinematics + dynamics)
+
+    c_m_1: Union[jax.Array, float] = jnp.array(10.431917)  # [0.2, 0.5]
+    c_m_2: Union[jax.Array, float] = jnp.array(1.5003588)  # [0.00, 0.007]
+    c_d: Union[jax.Array, float] = jnp.array(0.0)  # [0.01, 0.1]
+    steering_limit: Union[jax.Array, float] = jnp.array(0.19989373)
+    use_blend: Union[jax.Array, float] = jnp.array(0.0)  # 0.0 -> (only kinematics), 1.0 -> (kinematics + dynamics)
 
     # parameters used to compute the blend ratio characteristics
     blend_ratio_ub: Union[jax.Array, float] = jnp.array([0.5477225575])
     blend_ratio_lb: Union[jax.Array, float] = jnp.array([0.4472135955])
-    angle_offset: Union[jax.Array, float] = jnp.array([0.0])
+    angle_offset: Union[jax.Array, float] = jnp.array([0.02791893])
 
 
 class DynamicsModel(ABC):
@@ -283,7 +285,6 @@ class RaceCar(DynamicsModel):
     u = [steering_angle, throttle]
     encode_angle: bool
         Encodes angle to sin and cos if true
-
     """
 
     def __init__(self, dt, encode_angle: bool = True, local_coordinates: bool = False, rk_integrator: bool = True):
