@@ -1,5 +1,6 @@
 from typing import Dict, Any
 import jax
+import jax.numpy as jnp
 
 DATASET_CONFIGS = {
     'sinusoids1d': {
@@ -32,6 +33,13 @@ DEFAULTS_PENDULUM = {
     'param_mode': 'random'
 }
 
+DEFAULTS_RACECAR = {
+    'obs_noise_std': 0.05 * jnp.exp(jnp.array([-3.3170326, -3.7336411, -2.7081904,
+                                                -2.7841284, -2.7067015, -1.4446207])),
+    'x_support_mode_train': 'full',
+    'param_mode': 'random'
+}
+
 def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed: int = 845672):
     # load data
     key_train, key_test = jax.random.split(jax.random.PRNGKey(data_seed), 2)
@@ -58,6 +66,15 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
         else:
             sim_hf = sim_lf = PendulumBiModalSim(encode_angle=True)
         assert {'num_samples_train'} <= set(data_spec.keys()) <= {'num_samples_train'}.union(DEFAULTS_PENDULUM.keys())
+    elif data_source == 'racecar' or data_source == 'racecar_hf':
+        from sim_transfer.sims.simulators import RaceCarSim
+        DEFAULTS = DEFAULTS_RACECAR
+        if data_source == 'racecar_hf':
+            sim_hf = RaceCarSim(encode_angle=True, use_blend=True)
+            sim_lf = RaceCarSim(encode_angle=True, use_blend=False)
+        else:
+            sim_hf = sim_lf = RaceCarSim(encode_angle=True, use_blend=True)
+        assert {'num_samples_train'} <= set(data_spec.keys()) <= {'num_samples_train'}.union(DEFAULTS_RACECAR.keys())
     else:
         raise ValueError('Unknown data source %s' % data_source)
 

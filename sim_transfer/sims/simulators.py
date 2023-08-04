@@ -11,6 +11,7 @@ from tensorflow_probability.substrates import jax as tfp
 
 from sim_transfer.sims.domain import Domain, HypercubeDomain, HypercubeDomainWithAngles
 from sim_transfer.sims.dynamics_models import Pendulum, PendulumParams, RaceCar, CarParams
+from sim_transfer.sims.util import encode_angles, decode_angles
 
 
 class FunctionSimulator:
@@ -27,7 +28,7 @@ class FunctionSimulator:
         raise NotImplementedError
 
     def sample_datasets(self, rng_key: jax.random.PRNGKey, num_samples_train: int,
-                        num_samples_test: int = 10000, obs_noise_std: float = 0.1,
+                        num_samples_test: int = 10000, obs_noise_std: Union[jnp.ndarray, float] = 0.1,
                         x_support_mode_train: str = 'full', param_mode: str = 'random') \
             -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
         key1, key2 = jax.random.split(rng_key, 2)
@@ -46,7 +47,7 @@ class FunctionSimulator:
             raise ValueError(f'param_mode {param_mode} not supported')
 
         # 3) add noise
-        y = f + obs_noise_std * jax.random.normal(key2, shape=f.shape)
+        y = self._add_observation_noise(f_vals=f, obs_noise_std=obs_noise_std, rng_key=key2)
 
         # 4) split into train and test
         y_train = y[:num_samples_train]
@@ -65,6 +66,12 @@ class FunctionSimulator:
 
     def _typical_f(self, x: jnp.array) -> jnp.array:
         raise NotImplementedError
+
+    def _add_observation_noise(self, f_vals: jnp.ndarray, obs_noise_std: Union[jnp.ndarray, float],
+                               rng_key: jax.random.PRNGKey) -> jnp.ndarray:
+        y = f_vals + obs_noise_std * jax.random.normal(rng_key, shape=f_vals.shape)
+        assert f_vals.shape == y.shape
+        return y
 
 
 class AdditiveSim(FunctionSimulator):
@@ -720,7 +727,19 @@ class RaceCarSim(FunctionSimulator):
 
     def _typical_f(self, x: jnp.array) -> jnp.array:
         s, u = self._split_state_action(x)
-        return self.model.next_step(x=s, u=u, params=self._typical_params)
+        return jax.vmap(self.model.next_step, in_axes=(0, 0, None))(s, u, self._typical_params)
+
+    def _add_observation_noise(self, f_vals: jnp.ndarray, obs_noise_std: Union[jnp.ndarray, float],
+                               rng_key: jax.random.PRNGKey) -> jnp.ndarray:
+        if self.encode_angle:
+            # decode angles -> add noise -> encode angles
+            f_decoded = decode_angles(f_vals, angle_idx=2)
+            y = f_decoded + obs_noise_std * jax.random.normal(rng_key, shape=f_decoded.shape)
+            y = encode_angles(y, angle_idx=2)
+        else:
+            y = f_vals + obs_noise_std * jax.random.normal(rng_key, shape=f_vals.shape)
+        assert f_vals.shape == y.shape
+        return y
 
 
 if __name__ == '__main__':
