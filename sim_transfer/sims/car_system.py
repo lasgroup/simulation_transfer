@@ -153,10 +153,10 @@ class CarDynamics(Dynamics[CarDynamicsParams]):
         assert delayed_action.shape == self.dim_action
         return delayed_action, new_action_buffer
 
-    def reset(self, rng_key: chex.PRNGKey) -> jnp.array:
+    def reset(self, key: chex.PRNGKey) -> jnp.array:
         """ Resets the environment to a random initial state close to the initial pose """
         # sample random initial state
-        key_pos, key_theta, key_vel, key_obs = jr.split(rng_key, 4)
+        key_pos, key_theta, key_vel, key_obs = jr.split(key, 4)
         init_pos = self._init_pose[:2] + jr.uniform(key_pos, shape=(2,), minval=-0.10, maxval=0.10)
         init_theta = self._init_pose[2:] + \
                      jr.uniform(key_pos, shape=(1,), minval=-0.10 * jnp.pi, maxval=0.10 * jnp.pi)
@@ -234,6 +234,12 @@ class CarSystem(System[CarDynamicsParams, CarRewardParams]):
                                                       key=key, ),
                            )
 
+    def reset(self, key: chex.PRNGKey) -> SystemState:
+        return SystemState(
+            x_next=self.dynamics.reset(key=key),
+            reward=jnp.array([0.0]).squeeze(),
+            system_params=self.init_params(key=key))
+
 
 if __name__ == '__main__':
     ENCODE_ANGLE = False
@@ -244,7 +250,7 @@ if __name__ == '__main__':
 
     t_start = time.time()
     system_params = system.init_params(key=jr.PRNGKey(0))
-    s = system.dynamics.reset(rng_key=jr.PRNGKey(0))
+    s = system.dynamics.reset(key=jr.PRNGKey(0))
 
     traj = [s]
     rewards = []
