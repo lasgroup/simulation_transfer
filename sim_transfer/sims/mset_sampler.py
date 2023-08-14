@@ -1,6 +1,6 @@
 import jax
 import jax.numpy as jnp
-from typing import Optional
+
 
 class MSetSampler:
 
@@ -10,6 +10,7 @@ class MSetSampler:
     @property
     def dim_x(self) -> int:
         raise NotImplementedError
+
 
 class UniformMSetSampler(MSetSampler):
 
@@ -44,4 +45,3 @@ class UniformMSetSampler(MSetSampler):
         """
         return jax.random.uniform(rng_key, shape=(mset_size, self.dim_x),
                                   minval=self.l_bound, maxval=self.u_bound)
-
