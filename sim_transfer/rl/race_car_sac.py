@@ -16,7 +16,7 @@ from sim_transfer.sims.util import plot_rc_trajectory
 
 ENCODE_ANGLE = False
 system = CarSystem(encode_angle=ENCODE_ANGLE,
-                   action_delay=0.07,
+                   action_delay=0.00,
                    use_tire_model=True, )
 
 # Create replay buffer
@@ -44,33 +44,36 @@ env = BraxWrapper(system=system,
 
 state = jit(env.reset)(rng=jr.PRNGKey(0))
 
+num_env_steps_between_updates = 16
+num_envs = 32
+
 sac_trainer = SAC(
     environment=env,
-    num_timesteps=20_000,
+    num_timesteps=300_000,
     num_evals=20,
-    reward_scaling=1,
+    reward_scaling=10,
     episode_length=200,
-    normalize_observations=True,
     action_repeat=1,
     discounting=0.99,
     lr_policy=3e-4,
     lr_alpha=3e-4,
     lr_q=3e-4,
-    num_envs=16,
-    batch_size=64,
-    grad_updates_per_step=2 * 16,
-    max_replay_size=2 ** 14,
-    min_replay_size=2 ** 7,
-    num_eval_envs=1,
-    deterministic_eval=True,
+    num_envs=num_envs,
+    batch_size=32,
+    grad_updates_per_step=num_env_steps_between_updates * num_envs,
+    num_env_steps_between_updates=num_env_steps_between_updates,
     tau=0.005,
     wd_policy=0,
     wd_q=0,
     wd_alpha=0,
+    num_eval_envs=1,
+    max_replay_size=5 * 10 ** 4,
+    min_replay_size=2 ** 11,
+    policy_hidden_layer_sizes=(256, 256),
+    critic_hidden_layer_sizes=(256, 256),
+    normalize_observations=True,
+    deterministic_eval=True,
     wandb_logging=False,
-    num_env_steps_between_updates=2,
-    policy_hidden_layer_sizes=(64, 64, 64),
-    critic_hidden_layer_sizes=(64, 64, 64),
 )
 
 max_y = 0

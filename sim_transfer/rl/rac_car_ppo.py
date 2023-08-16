@@ -1,4 +1,5 @@
 from datetime import datetime
+import wandb
 
 import jax.numpy as jnp
 import jax.random as jr
@@ -16,7 +17,7 @@ from sim_transfer.sims.util import plot_rc_trajectory
 
 ENCODE_ANGLE = False
 system = CarSystem(encode_angle=ENCODE_ANGLE,
-                   action_delay=0.07,
+                   action_delay=0.00,
                    use_tire_model=True, )
 
 # Create replay buffer
@@ -42,34 +43,33 @@ env = BraxWrapper(system=system,
                   sample_buffer=sampling_buffer,
                   system_params=system.init_params(jr.PRNGKey(0)), )
 
-state = jit(env.reset)(rng=jr.PRNGKey(0))
 
 sac_trainer = PPO(
     environment=env,
-    num_timesteps=100_000,
+    num_timesteps=10_000_000,
     episode_length=200,
     action_repeat=1,
     num_envs=4,
     num_eval_envs=1,
     lr=3e-3,
     wd=0,
-    entropy_cost=0.0,
+    entropy_cost=1e-3,
     discounting=0.99,
     seed=0,
-    unroll_length=20,
-    batch_size=64,
-    num_minibatches=16,
+    unroll_length=200,
+    batch_size=32,
+    num_minibatches=64,
     num_updates_per_batch=4,
     num_evals=20,
     normalize_observations=True,
-    reward_scaling=1,
-    clipping_epsilon=0.2,
+    reward_scaling=10,
+    clipping_epsilon=0.3,
     gae_lambda=0.95,
     deterministic_eval=True,
     normalize_advantage=True,
-    policy_hidden_layer_sizes=(64, 64, 64),
-    critic_hidden_layer_sizes=(64, 64, 64),
-    wandb_logging=False,
+    policy_hidden_layer_sizes=(64, 64),
+    critic_hidden_layer_sizes=(64, 64),
+    wandb_logging=True,
 )
 
 max_y = 0
@@ -90,6 +90,10 @@ def progress(num_steps, metrics):
     plt.plot(xdata, ydata)
     plt.show()
 
+wandb.init(
+    project='car_ppo_test',
+)
+
 
 params, metrics = sac_trainer.run_training(key=jr.PRNGKey(0), progress_fn=progress)
 
@@ -103,7 +107,7 @@ def policy(x):
     return make_inference_fn(params, deterministic=True)(x, jr.PRNGKey(0))[0]
 
 
-system_state_init = system.reset(key=jr.PRNGKey(0))
+system_state_init = init_sys_state
 x_init = system_state_init.x_next
 system_params = system_state_init.system_params
 

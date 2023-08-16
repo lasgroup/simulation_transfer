@@ -1,11 +1,12 @@
-import jax.numpy as jnp
-import jax
 import time
-
 from functools import partial
+from typing import Dict, Any, Tuple, Optional
+
+import jax
+import jax.numpy as jnp
+
 from sim_transfer.sims.dynamics_models import RaceCar, CarParams
 from sim_transfer.sims.util import encode_angles, decode_angles, plot_rc_trajectory
-from typing import Dict, Any, Tuple, Optional
 
 
 class ToleranceReward:
@@ -50,7 +51,6 @@ class RCCarEnvReward:
         self.tolerance_theta = ToleranceReward(lower_bound=0.0, upper_bound=0.1, margin_coef=5,
                                                value_at_margin=0.2)
 
-
     def forward(self, obs: jnp.array, action: jnp.array, next_obs: jnp.array):
         """ Computes the reward for the given transition """
         reward_ctrl = self.action_reward(action)
@@ -80,13 +80,13 @@ class RCCarEnvReward:
 
 class RCCarSimEnv:
     max_steps: int = 200
-    _dt: float = 1/30.
+    _dt: float = 1 / 30.
     dim_action: Tuple[int] = (2,)
     _goal: jnp.array = jnp.array([0.0, 0.0, - jnp.pi / 2.])
     _init_pose: jnp.array = jnp.array([-1.04, -1.42, jnp.pi / 2.])
     _angle_idx: int = 2
     _obs_noise_stds: jnp.array = 0.05 * jnp.exp(jnp.array([-3.3170326, -3.7336411, -2.7081904,
-                                                -2.7841284, -2.7067015, -1.4446207]))
+                                                           -2.7841284, -2.7067015, -1.4446207]))
     _default_car_model_params_bicycle: Dict = {
         'use_blend': 0.0,
         'm': 1.65,
@@ -215,7 +215,7 @@ class RCCarSimEnv:
         """
 
         assert action.shape[-1:] == self.dim_action
-        #assert jnp.all(-1 <= action) and jnp.all(action <= 1), "action must be in [-1, 1]"
+        # assert jnp.all(-1 <= action) and jnp.all(action <= 1), "action must be in [-1, 1]"
         rng_key = self.rds_key if rng_key is None else rng_key
 
         if self.action_delay > 0.0:
@@ -255,7 +255,6 @@ class RCCarSimEnv:
         assert (obs.shape[-1] == 7 and self.encode_angle) or (obs.shape[-1] == 6 and not self.encode_angle)
         return obs
 
-
     def _get_delayed_action(self, action: jnp.array) -> jnp.array:
         # push action to action buffer
         self._action_buffer = jnp.concatenate([self._action_buffer[1:], action[None, :]], axis=0)
@@ -290,7 +289,7 @@ if __name__ == '__main__':
     actions = []
     for i in range(120):
         t = i / 30.
-        a = jnp.array([- 1 * jnp.cos(1.0 * t), 0.8 / (t+1)])
+        a = jnp.array([- 1 * jnp.cos(1.0 * t), 0.8 / (t + 1)])
         s, r, _, _ = env.step(a)
         traj.append(s)
         actions.append(a)
