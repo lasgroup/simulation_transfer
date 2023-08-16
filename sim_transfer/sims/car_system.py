@@ -12,7 +12,7 @@ from mbpo.systems.base_systems import Dynamics, Reward, System, SystemState, Sys
 
 from sim_transfer.sims.dynamics_models import RaceCar, CarParams
 from sim_transfer.sims.envs import RCCarEnvReward
-from sim_transfer.sims.util import plot_rc_trajectory
+from sim_transfer.sims.util import plot_rc_trajectory, encode_angles
 
 
 @chex.dataclass
@@ -74,7 +74,7 @@ class CarDynamics(Dynamics[CarDynamicsParams]):
     }
 
     def __init__(self, encode_angle: bool = False, use_tire_model: bool = False, action_delay: float = 0.0,
-                 car_model_params: Dict = None):
+                 car_model_params: Dict = None, use_obs_noise: bool = True, ):
         """
         Race car simulator environment
 
@@ -93,7 +93,6 @@ class CarDynamics(Dynamics[CarDynamicsParams]):
 
         # initialize dynamics and observation noise models
         self._dynamics_model = RaceCar(dt=self._dt, encode_angle=False)
-
         self.use_tire_model = use_tire_model
         if use_tire_model:
             self._default_car_model_params = self._default_car_model_params_blend
@@ -106,6 +105,7 @@ class CarDynamics(Dynamics[CarDynamicsParams]):
             _car_model_params = self._default_car_model_params
             _car_model_params.update(car_model_params)
         self._dynamics_params = CarParams(**_car_model_params)
+        self.use_obs_noise = use_obs_noise
 
         # set up action delay
         assert action_delay >= 0.0, "Action delay must be non-negative"
@@ -128,6 +128,21 @@ class CarDynamics(Dynamics[CarDynamicsParams]):
                                  action_buffer=self._action_buffer,
                                  key=key)
 
+    def _state_to_obs(self, state: jnp.array, rng_key: chex.PRNGKey) -> jnp.array:
+        """ Adds observation noise to the state """
+        assert state.shape[-1] == 6
+        # add observation noise
+        if self.use_obs_noise:
+            obs = state + self._obs_noise_stds * jr.normal(rng_key, shape=state.shape)
+        else:
+            obs = state
+
+        # encode angle to sin(theta) and cos(theta) if desired
+        if self.encode_angle:
+            obs = encode_angles(obs, self._angle_idx)
+        assert (obs.shape[-1] == 7 and self.encode_angle) or (obs.shape[-1] == 6 and not self.encode_angle)
+        return obs
+
     def next_state(self,
                    x: chex.Array,
                    u: chex.Array,
@@ -140,8 +155,12 @@ class CarDynamics(Dynamics[CarDynamicsParams]):
             # computes delayed action as a linear interpolation between the relevant actions in the past
             u, action_buffer = self._get_delayed_action(u, action_buffer)
 
-        x_next = self._dynamics_model.next_step(x, u, dynamics_params.car_params)
-        new_params = dynamics_params.replace(action_buffer=action_buffer)
+        # Move forward one step in the dynamics using the delayed action and the hidden state
+        new_key, key_for_sampling_obs_noise = jr.split(dynamics_params.key)
+        x_mean_next = self._dynamics_model.next_step(x, u, dynamics_params.car_params)
+        x_next = self._state_to_obs(x_mean_next, key_for_sampling_obs_noise)
+
+        new_params = dynamics_params.replace(action_buffer=action_buffer, key=new_key)
         return Normal(x_next, jnp.zeros_like(x_next)), new_params
 
     def _get_delayed_action(self, action: jnp.array, action_buffer: chex.PRNGKey) -> jnp.array:
@@ -200,12 +219,14 @@ class CarReward(Reward[CarRewardParams]):
 
 class CarSystem(System[CarDynamicsParams, CarRewardParams]):
     def __init__(self, encode_angle: bool = False, use_tire_model: bool = False, action_delay: float = 0.0,
-                 car_model_params: Dict = None, ctrl_cost_weight: float = 0.1, action_cost_weight: float = 0.0):
+                 car_model_params: Dict = None, ctrl_cost_weight: float = 0.1, action_cost_weight: float = 0.0,
+                 use_obs_noise: bool = True):
         System.__init__(self,
                         dynamics=CarDynamics(encode_angle=encode_angle,
                                              use_tire_model=use_tire_model,
                                              action_delay=action_delay,
-                                             car_model_params=car_model_params),
+                                             car_model_params=car_model_params,
+                                             use_obs_noise=use_obs_noise),
                         reward=CarReward(ctrl_cost_weight=ctrl_cost_weight,
                                          action_cost_weight=action_cost_weight,
                                          encode_angle=encode_angle)
@@ -224,14 +245,15 @@ class CarSystem(System[CarDynamicsParams, CarRewardParams]):
              system_params: SystemParams[CarDynamicsParams, CarRewardParams],
              ) -> SystemState:
         assert x.shape == (self.x_dim,) and u.shape == (self.u_dim,)
-        key, subkey = jr.split(system_params.reward_params.key)
+        new_key, key_x_next, key_reward = jr.split(system_params.key, 3)
         x_next_dist, next_dynamics_params = self.dynamics.next_state(x, u, system_params.dynamics_params)
-        reward_dist, next_reward_params = self.reward(x, u, system_params.reward_params, x_next_dist.mean())
-        return SystemState(x_next=x_next_dist.mean(),
-                           reward=reward_dist.mean(),
+        x_next = x_next_dist.sample(seed=key_x_next)
+        reward_dist, next_reward_params = self.reward(x, u, system_params.reward_params, x_next)
+        return SystemState(x_next=x_next,
+                           reward=reward_dist.sample(seed=key_reward),
                            system_params=SystemParams(dynamics_params=next_dynamics_params,
                                                       reward_params=next_reward_params,
-                                                      key=key, ),
+                                                      key=new_key),
                            )
 
     def reset(self, key: chex.PRNGKey) -> SystemState:

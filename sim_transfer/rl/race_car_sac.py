@@ -17,7 +17,9 @@ from sim_transfer.sims.util import plot_rc_trajectory
 ENCODE_ANGLE = False
 system = CarSystem(encode_angle=ENCODE_ANGLE,
                    action_delay=0.00,
-                   use_tire_model=True, )
+                   use_tire_model=True,
+                   use_obs_noise=True,
+                   )
 
 # Create replay buffer
 init_sys_state = system.reset(key=jr.PRNGKey(0))
@@ -69,8 +71,8 @@ sac_trainer = SAC(
     num_eval_envs=1,
     max_replay_size=5 * 10 ** 4,
     min_replay_size=2 ** 11,
-    policy_hidden_layer_sizes=(256, 256),
-    critic_hidden_layer_sizes=(256, 256),
+    policy_hidden_layer_sizes=(64, 64),
+    critic_hidden_layer_sizes=(64, 64),
     normalize_observations=True,
     deterministic_eval=True,
     wandb_logging=False,
