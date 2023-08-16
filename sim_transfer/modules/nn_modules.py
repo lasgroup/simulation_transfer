@@ -1,23 +1,23 @@
-from typing import Optional, Sequence, Callable, Union, List, Dict, Tuple, Any
-from functools import partial
 import math
+from functools import partial
+from typing import Optional, Sequence, Callable, Union, List, Dict, Tuple, Any
 
 import flax.linen
 import jax.nn
 import jax.numpy as jnp
-from jax._src import dtypes
 import tensorflow_probability.substrates.jax.distributions as tfd
-from jax import random, vmap, jit
-from jax.flatten_util import ravel_pytree
-from jax.tree_util import tree_map, tree_leaves
-
 from flax import linen as nn
 from flax.core import FrozenDict
 from flax.linen.dtypes import promote_dtype
+from jax import random, vmap, jit
+from jax._src import dtypes
+from jax.flatten_util import ravel_pytree
+from jax.tree_util import tree_map, tree_leaves
 
 from sim_transfer.modules.util import RngKeyMixin
 
 Array = Any
+
 
 class BatchedModule(RngKeyMixin):
     def __init__(self, base_module: nn.Module, num_batched_modules: int, rng_key: random.PRNGKey):
@@ -96,7 +96,7 @@ class BatchedModule(RngKeyMixin):
         variables = self.base_module.init(key, jnp.ones(shape=(self.base_module.input_size,)))
         # Split state and params (which are updated by optimizer).
         if 'params' in variables:
-            state, params = variables.pop('params')
+            state, params = flax.core.pop(variables, 'params')
         else:
             state, params = variables, FrozenDict({})
         del variables  # Delete variables to avoid wasting resources
@@ -145,8 +145,8 @@ class CustomDense(nn.Dense):
             bias = None
         inputs, kernel, bias = promote_dtype(inputs, kernel, bias, dtype=self.dtype)
         y = jax.lax.dot_general(inputs, kernel,
-                            (((inputs.ndim - 1,), (0,)), ((), ())),
-                            precision=self.precision)
+                                (((inputs.ndim - 1,), (0,)), ((), ())),
+                                precision=self.precision)
         if bias is not None:
             y += jnp.reshape(bias, (1,) * (y.ndim - 1) + (-1,))
         return y
@@ -166,7 +166,7 @@ class MLP(nn.Module):
     def __call__(self, x, train=False):
         for feat in self.hidden_layer_sizes:
             x = CustomDense(features=feat, kernel_init=self.kernel_init,
-                         bias_init=self.bias_init)(x)
+                            bias_init=self.bias_init)(x)
             if self.layer_norm:
                 x = flax.linen.LayerNorm(reduction_axes=-1)(x)
             x = self.hidden_activation(x)

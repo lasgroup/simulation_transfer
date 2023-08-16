@@ -1,15 +1,13 @@
 from collections import OrderedDict
-from functools import partial
 from typing import List, Optional, Callable, Dict, Union
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 import tensorflow_probability.substrates.jax.distributions as tfd
 from tensorflow_probability.substrates import jax as tfp
 
 from sim_transfer.models.bnn import AbstractFSVGD_BNN
-from sim_transfer.sims import Domain, HypercubeDomain
+from sim_transfer.sims import Domain
 
 
 class BNN_FSVGD(AbstractFSVGD_BNN):
@@ -55,7 +53,7 @@ class BNN_FSVGD(AbstractFSVGD_BNN):
                            num_train_points: Union[float, int], key: jax.random.PRNGKey):
         nll = - num_train_points * self._ll(pred_raw, likelihood_std, y_batch, train_data_till_idx)
         neg_log_prior = - self._gp_prior_log_prob(x_stacked, pred_raw, eps=1e-3)
-        neg_log_post =  nll + neg_log_prior
+        neg_log_post = nll + neg_log_prior
         stats = OrderedDict(train_nll_loss=nll, neg_log_prior=neg_log_prior)
         if self.learn_likelihood_std:
             stats['likelihood_std'] = jnp.mean(likelihood_std)
@@ -70,11 +68,13 @@ class BNN_FSVGD(AbstractFSVGD_BNN):
 if __name__ == '__main__':
     from sim_transfer.sims import SinusoidsSim, QuadraticSim, LinearSim
 
+
     def key_iter():
         key = jax.random.PRNGKey(7644)
         while True:
             key, new_key = jax.random.split(key)
             yield new_key
+
 
     key_iter = key_iter()
     NUM_DIM_X = 1
