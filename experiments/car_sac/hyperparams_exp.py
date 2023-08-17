@@ -23,7 +23,8 @@ def experiment(num_envs: int,
     ENCODE_ANGLE = False
     system = CarSystem(encode_angle=ENCODE_ANGLE,
                        action_delay=0.00,
-                       use_tire_model=True)
+                       use_tire_model=True,
+                       ctrl_cost_weight=0.005)
 
     # Create replay buffer
     init_sys_state = system.reset(key=jr.PRNGKey(0))
