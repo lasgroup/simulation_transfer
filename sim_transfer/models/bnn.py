@@ -31,7 +31,6 @@ class LikelihoodMixin:
         else:
             self.likelihood_std = likelihood_std
 
-
         assert hasattr(self, 'params'), 'super class must have params attribute'
 
     @property
