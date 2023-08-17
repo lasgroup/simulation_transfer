@@ -1,4 +1,4 @@
-from typing import Optional, Dict, Union
+from typing import Optional, Dict, Union, List
 from functools import partial
 from collections import OrderedDict
 from jaxtyping import PyTree
@@ -15,10 +15,13 @@ from sim_transfer.models.abstract_model import BatchedNeuralNetworkModel
 
 class LikelihoodMixin:
 
-    def __init__(self, likelihood_std: Union[float, jnp.array] = 0.2,
+    def __init__(self, likelihood_std: Union[float, jnp.array, List[float]] = 0.2,
                  learn_likelihood_std: bool = False,
                  normalize_likelihood_std: bool = False):
         self.learn_likelihood_std = learn_likelihood_std
+
+        if isinstance(likelihood_std, list):
+            likelihood_std = jnp.array(likelihood_std)  # convert to jnp.array if necessary
 
         if normalize_likelihood_std:
             assert hasattr(self, '_y_std') and self._y_std is not None and self.normalize_data, \
