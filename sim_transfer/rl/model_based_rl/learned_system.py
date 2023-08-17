@@ -34,10 +34,12 @@ class LearnedDynamics(Dynamics[DynamicsParams]):
         assert x.shape == (self.x_dim,) and u.shape == (self.u_dim,)
         # Create state-action pair
         z = jnp.concatenate([x, u])
+        z = z.reshape((1, -1))
         x_next_dist = self.model.predict_dist(z, include_noise=self.include_noise)
         next_key, key_sample_x_next = jr.split(dynamics_params.key)
-        x_next = x_next_dist.sample(seed=dynamics_params.key_sample_x_next)
-        new_dynamics_params = dynamics_params.update(key=next_key)
+        x_next = x_next_dist.sample(seed=key_sample_x_next)
+        x_next = x_next.reshape((self.x_dim,))
+        new_dynamics_params = dynamics_params.replace(key=next_key)
         return Normal(loc=x_next, scale=jnp.zeros_like(x_next)), new_dynamics_params
 
     def init_params(self, key: chex.PRNGKey) -> DynamicsParams:
@@ -45,7 +47,10 @@ class LearnedDynamics(Dynamics[DynamicsParams]):
 
 
 class LearnedCarSystem(System[DynamicsParams, CarRewardParams]):
-    def __init__(self, model, include_noise, **car_reward_kwargs):
+    def __init__(self,
+                 model: BatchedNeuralNetworkModel,
+                 include_noise: bool,
+                 **car_reward_kwargs: dict):
         reward = CarReward(**car_reward_kwargs)
         dynamics = LearnedDynamics(x_dim=reward.x_dim, u_dim=reward.u_dim, model=model, include_noise=include_noise)
         System.__init__(self, dynamics=dynamics, reward=CarReward(**car_reward_kwargs))

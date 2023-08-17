@@ -19,6 +19,7 @@ system = CarSystem(encode_angle=ENCODE_ANGLE,
                    action_delay=0.00,
                    use_tire_model=True,
                    use_obs_noise=True,
+                   ctrl_cost_weight=0.005,
                    )
 
 # Create replay buffer
@@ -46,7 +47,7 @@ env = BraxWrapper(system=system,
 
 state = jit(env.reset)(rng=jr.PRNGKey(0))
 
-num_env_steps_between_updates = 16
+num_env_steps_between_updates = 4
 num_envs = 32
 
 sac_trainer = SAC(
