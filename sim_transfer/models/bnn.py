@@ -290,7 +290,6 @@ class AbstractFSVGD_BNN(AbstractParticleBNN, MeasurementSetMixin):
         return self.num_batched_nns
 
 
-
 class AbstractSVGD_BNN(AbstractParticleBNN):
 
 

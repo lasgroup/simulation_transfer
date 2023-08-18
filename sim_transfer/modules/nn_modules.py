@@ -94,14 +94,8 @@ class BatchedModule(RngKeyMixin):
 
     def _init_params_one_model(self, key: random.PRNGKey) -> FrozenDict:
         variables = self.base_module.init(key, jnp.ones(shape=(self.base_module.input_size,)))
-        # Split state and params (which are updated by optimizer).
-        if 'params' in variables:
-            state, params = flax.core.pop(variables, 'params')
-        else:
-            state, params = variables, FrozenDict({})
-        del variables  # Delete variables to avoid wasting resources
-        # TODO: incorporate state as well in the training
-        return params
+        # TODO: incorporate state as well in the training?
+        return variables['params']
 
 
 class UniformBiasInitializer:

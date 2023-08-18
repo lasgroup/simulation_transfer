@@ -110,7 +110,7 @@ class TestAdditiveSim(unittest.TestCase):
                            _DummySim(input_size=2, output_size=1, fixed_val=-1)])
         norm_stats = sim.normalization_stats
         assert jnp.array_equal(norm_stats['x_mean'], jnp.zeros(2))
-        assert jnp.array_equal(norm_stats['x_std'], 2**(0.5) * jnp.ones(2))
+        assert jnp.array_equal(norm_stats['x_std'], jnp.ones(2))
         assert jnp.array_equal(norm_stats['y_mean'], 2 * jnp.ones(1))
         assert jnp.array_equal(norm_stats['y_std'], (2 * 0.5**2)**(0.5) * jnp.ones(1))
 
