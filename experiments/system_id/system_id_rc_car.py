@@ -1,11 +1,13 @@
 import pandas as pd
 import os
-import glob
 import jax.numpy as jnp
 import jax
 import optax
 import numpy as np
+import argparse
 from functools import partial
+
+from experiments.util import load_csv_recordings, get_trajectory_windows
 from sim_transfer.sims.dynamics_models import RaceCar, CarParams
 from sim_transfer.sims.util import angle_diff, plot_rc_trajectory
 from matplotlib import pyplot as plt
@@ -14,7 +16,7 @@ import tensorflow_probability.substrates.jax.distributions as tfd
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'data')
 
-import argparse
+
 arg_parser = argparse.ArgumentParser()
 arg_parser.add_argument('--batch_size', type=int, default=64)
 arg_parser.add_argument('--num_steps_ahead', type=int, default=3)
@@ -34,21 +36,6 @@ def rotate_vector(v, theta):
     rot_y = v_x * jnp.sin(theta) + v_y * jnp.cos(theta)
     return jnp.concatenate([jnp.atleast_2d(rot_x), jnp.atleast_2d(rot_y)], axis=0).T
 
-def load_recordings(recordings_dir: str):
-    dfs = []
-    for path in glob.glob(os.path.join(recordings_dir, '*sampled.csv')):
-        df = pd.read_csv(path)
-        df.columns = [c[1:] for c in df.columns]
-        dfs.append(df)
-    return dfs
-
-
-def get_tajectory_windows(arr: jnp.array, window_size: int = 10) -> jnp.array:
-    """Sliding window over an array along the first axis."""
-    arr_strided = jnp.stack([arr[i:(-window_size + i)] for i in range(window_size)], axis=-2)
-    assert arr_strided.shape == (arr.shape[0] - window_size, window_size, arr.shape[-1])
-    return jnp.array(arr_strided)
-
 
 def prepare_data(df: pd.DataFrame, window_size=10, encode_angles: bool = False):
     u = df[['steer', 'throttle']].to_numpy()
@@ -65,14 +52,14 @@ def prepare_data(df: pd.DataFrame, window_size=10, encode_angles: bool = False):
             return encoded_obs
 
         x = jax.vmap(angle_encode)(x)
-    x_strides = get_tajectory_windows(x, window_size)
-    u_strides = get_tajectory_windows(u, window_size)
+    x_strides = get_trajectory_windows(x, window_size)
+    u_strides = get_trajectory_windows(u, window_size)
     return x_strides, u_strides
 
 
 recordings_dir = os.path.join(DATA_DIR, 'recordings_rc_car_v0' if REAL_DATA else 'simulated_rc_car_v0')
 num_train_traj = 2 if REAL_DATA else 7
-recording_dfs = load_recordings(recordings_dir)
+recording_dfs = load_csv_recordings(recordings_dir)
 datasets_train = list(map(partial(prepare_data, window_size=11, encode_angles=ENCODE_ANGLE),
                           recording_dfs[:num_train_traj]))
 datasets_test = list(map(partial(prepare_data, window_size=61, encode_angles=ENCODE_ANGLE),

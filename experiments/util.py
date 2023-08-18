@@ -1,3 +1,5 @@
+from typing import Dict, Optional, Any, List
+
 import sys
 import os
 import json
@@ -5,8 +7,9 @@ import glob
 import numpy as np
 import hashlib
 import pandas as pd
+import multiprocessing
+import jax.numpy as jnp
 
-from typing import Dict, Optional, Any, List
 
 """ Relevant Directories """
 
@@ -14,7 +17,28 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, 'data')
 RESULT_DIR = os.path.join(BASE_DIR, 'results')
 
+""" Data Utilities """
+
+
+def load_csv_recordings(recordings_dir: str) -> List[pd.DataFrame]:
+    """ Load all csv files in a directory into a list of pandas dataframes."""
+    dfs = []
+    for path in glob.glob(os.path.join(recordings_dir, '*sampled.csv')):
+        df = pd.read_csv(path)
+        df.columns = [c[1:] for c in df.columns]
+        dfs.append(df)
+    return dfs
+
+
+def get_trajectory_windows(arr: jnp.array, window_size: int = 10) -> jnp.array:
+    """Sliding window over an array along the first axis."""
+    arr_strided = jnp.stack([arr[i:(-window_size + i)] for i in range(window_size)], axis=-2)
+    assert arr_strided.shape == (arr.shape[0] - window_size, window_size, arr.shape[-1])
+    return jnp.array(arr_strided)
+
+
 """ Custom Logger """
+
 
 class Logger:
     """ Trivial light-weight logger for writing output to the console and a log file.
@@ -33,9 +57,9 @@ class Logger:
         self.console.flush()
         self.file.flush()
 
-""" Async executer """
 
-import multiprocessing
+""" Async executor """
+
 
 class AsyncExecutor:
 
@@ -55,7 +79,7 @@ class AsyncExecutor:
                     self._pool[i].terminate()
                     if len(tasks) > 0:
                         if verbose:
-                          print(n_tasks-len(tasks))
+                            print(n_tasks-len(tasks))
                         next_task = tasks.pop(0)
                         self._pool[i] = _start_process(target, next_task)
                     else:
@@ -63,6 +87,7 @@ class AsyncExecutor:
 
     def _populate_pool(self):
         self._pool = [_start_process(_dummy_fun) for _ in range(self.num_workers)]
+
 
 def _start_process(target, args=None):
     if args:
@@ -72,18 +97,20 @@ def _start_process(target, args=None):
     p.start()
     return p
 
+
 def _dummy_fun():
     pass
 
 
 """ Command generators """
 
+
 def generate_base_command(module, flags: Optional[Dict[str, Any]] = None, unbuffered: bool = True) -> str:
     """ Generates the command to execute python module with provided flags
 
     Args:
         module: python module / file to run
-        flags: dictonary of flag names and the values to assign to them.
+        flags: dictionary of flag names and the values to assign to them.
                assumes that boolean flags are encoded as store_true flags with False as default.
         unbuffered: whether to invoke an unbuffered python output stream
 
@@ -112,7 +139,7 @@ def generate_base_command(module, flags: Optional[Dict[str, Any]] = None, unbuff
 def generate_run_commands(command_list: List[str], output_file_list: Optional[List[str]] = None,
                           num_cpus: int = 1, num_gpus: int = 0,
                           dry: bool = False, mem: int = 2 * 1028, duration: str = '3:59:00',
-                          mode: str = 'local', promt: bool = True) -> None:
+                          mode: str = 'local', prompt: bool = True) -> None:
 
     if mode == 'euler':
         cluster_cmds = []
@@ -136,8 +163,9 @@ def generate_run_commands(command_list: List[str], output_file_list: Optional[Li
             for cmd in cluster_cmds:
                 print(cmd)
         else:
-            if promt:
-                answer = input(f"about to launch {len(command_list)} jobs with {num_cpus} cores each. proceed? [yes/no]")
+            if prompt:
+                answer = input(f"about to launch {len(command_list)} jobs with {num_cpus} "
+                               f"cores each. proceed? [yes/no]")
             else:
                 answer = 'yes'
             if answer == 'yes':
@@ -145,7 +173,7 @@ def generate_run_commands(command_list: List[str], output_file_list: Optional[Li
                     os.system(cmd)
 
     elif mode == 'local':
-        if promt:
+        if prompt:
             answer = input(f"about to run {len(command_list)} jobs in a loop. proceed? [yes/no]")
         else:
             answer = 'yes'
@@ -158,8 +186,9 @@ def generate_run_commands(command_list: List[str], output_file_list: Optional[Li
                     os.system(cmd)
 
     elif mode == 'local_async':
-        if promt:
-            answer = input(f"about to launch {len(command_list)} commands in {num_cpus} local processes. proceed? [yes/no]")
+        if prompt:
+            answer = input(f"about to launch {len(command_list)} commands in {num_cpus} "
+                           f"local processes. proceed? [yes/no]")
         else:
             answer = 'yes'
 
@@ -168,13 +197,14 @@ def generate_run_commands(command_list: List[str], output_file_list: Optional[Li
                 for cmd in command_list:
                     print(cmd)
             else:
-                exec = AsyncExecutor(n_jobs=num_cpus)
-                cmd_exec_fun = lambda cmd: os.system(cmd)
-                exec.run(cmd_exec_fun, command_list)
+                executor = AsyncExecutor(n_jobs=num_cpus)
+                executor.run(lambda command: os.system(command), command_list)
     else:
         raise NotImplementedError
 
+
 """ Hashing and Encoding dicts to JSON """
+
 
 class NumpyArrayEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -189,6 +219,7 @@ class NumpyArrayEncoder(json.JSONEncoder):
         else:
             return super(NumpyArrayEncoder, self).default(obj)
 
+
 def hash_dict(d: Dict) -> str:
     dhash = hashlib.md5()
     dhash.update(json.dumps(d, sort_keys=True, cls=NumpyArrayEncoder, indent=4).encode())
@@ -197,20 +228,21 @@ def hash_dict(d: Dict) -> str:
 
 """ Randomly sampling flags """
 
+
 def sample_flag(sample_spec, rds=None):
     if rds is None:
         rds = np.random
     assert len(sample_spec) == 2
 
-    sample_type, range = sample_spec
+    sample_type, sample_range = sample_spec
     if sample_type == 'loguniform':
-        assert len(range) == 2
-        return 10**rds.uniform(*range)
+        assert len(sample_range) == 2
+        return 10**rds.uniform(*sample_range)
     elif sample_type == 'uniform':
-        assert len(range) == 2
-        return rds.uniform(*range)
+        assert len(sample_range) == 2
+        return rds.uniform(*sample_range)
     elif sample_type == 'choice':
-        return rds.choice(range)
+        return rds.choice(sample_range)
     else:
         raise NotImplementedError
 
@@ -238,7 +270,9 @@ def sample_param_flags(hyperparam_spec: Dict[str, Dict], rds: Optional[np.random
     assert flags_dict.keys() == hyperparam_spec.keys()
     return flags_dict
 
+
 """ Collecting the exp result"""
+
 
 def collect_exp_results(exp_name: str, dir_tree_depth: int = 3, verbose: bool = True):
     exp_dir = os.path.join(RESULT_DIR, exp_name)
@@ -278,6 +312,7 @@ def collect_exp_results(exp_name: str, dir_tree_depth: int = 3, verbose: bool = 
 
 
 """ Some aggregation functions """
+
 
 def ucb(row):
     if row.shape[0] > 1:

@@ -61,7 +61,7 @@ def main(args):
 
     print(command_list[0])
     generate_run_commands(command_list, output_file_list, num_cpus=args.num_cpus,
-                          num_gpus=1 if args.gpu else 0, mode=args.run_mode, promt=not args.yes)
+                          num_gpus=1 if args.gpu else 0, mode=args.run_mode, prompt=not args.yes)
 
 
 if __name__ == '__main__':

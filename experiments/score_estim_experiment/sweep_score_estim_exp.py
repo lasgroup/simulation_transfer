@@ -77,7 +77,7 @@ def main(args):
             command_list.append(cmd)
             output_file_list.append(os.path.join(exp_result_folder, f'{num_dim}_{num_samples}.out'))
 
-    generate_run_commands(command_list, output_file_list, num_cpus=args.num_cpus, mode=args.run_mode, promt=True,
+    generate_run_commands(command_list, output_file_list, num_cpus=args.num_cpus, mode=args.run_mode, prompt=True,
                           duration='0:20:00')
 
 
