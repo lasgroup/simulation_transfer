@@ -2,25 +2,6 @@ from typing import Dict, Any
 import jax
 import jax.numpy as jnp
 
-DATASET_CONFIGS = {
-    'sinusoids1d': {
-        'likelihood_std': {'value': 0.1},
-        'num_samples_train': {'value': 5},
-    },
-    'sinusoids2d': {
-        'likelihood_std': {'value': 0.1},
-        'num_samples_train': {'value': 5},
-    },
-    'pendulum': {
-        'likelihood_std': {'value': 0.02},
-        'num_samples_train': {'value': 20},
-    },
-    'pendulum_bimodal': {
-        'likelihood_std': {'value': 0.02},
-        'num_samples_train': {'value': 20},
-    }
-}
-
 DEFAULTS_SINUSOIDS = {
     'obs_noise_std': 0.1,
     'x_support_mode_train': 'full',
@@ -35,10 +16,46 @@ DEFAULTS_PENDULUM = {
 
 DEFAULTS_RACECAR = {
     'obs_noise_std': 0.05 * jnp.exp(jnp.array([-3.3170326, -3.7336411, -2.7081904,
-                                                -2.7841284, -2.7067015, -1.4446207])),
+                                               -2.7841284, -2.7067015, -1.4446207])),
     'x_support_mode_train': 'full',
     'param_mode': 'random'
 }
+_RACECAR_NOISE_STD_ENCODED = jnp.concatenate([DEFAULTS_RACECAR['obs_noise_std'][:2],
+                                              DEFAULTS_RACECAR['obs_noise_std'][2:3],
+                                              DEFAULTS_RACECAR['obs_noise_std'][2:3],
+                                              DEFAULTS_RACECAR['obs_noise_std'][3:]])
+
+DATASET_CONFIGS = {
+    'sinusoids1d': {
+        'likelihood_std': {'value': 0.1},
+        'num_samples_train': {'value': 5},
+    },
+    'sinusoids2d': {
+        'likelihood_std': {'value': 0.1},
+        'num_samples_train': {'value': 5},
+    },
+    'pendulum': {
+        'likelihood_std': {'value': [0.05, 0.05, 0.5]},
+        'num_samples_train': {'value': 20},
+    },
+    'pendulum_hf': {
+        'likelihood_std': {'value': [0.05, 0.05, 0.5]},
+        'num_samples_train': {'value': 20},
+    },
+    'pendulum_bimodal': {
+        'likelihood_std': {'value': [0.05, 0.05, 0.5]},
+        'num_samples_train': {'value': 20},
+    },
+    'racecar': {
+        'likelihood_std': {'value': 0.2},
+        'num_samples_train': {'value': 100},
+    },
+    'racecar_hf': {
+        'likelihood_std': {'value': 0.2},
+        'num_samples_train': {'value': 100},
+    }
+}
+
 
 def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed: int = 845672):
     # load data
