@@ -128,16 +128,23 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
         else:
             sim_hf = sim_lf = PendulumBiModalSim(encode_angle=True)
         assert {'num_samples_train'} <= set(data_spec.keys()) <= {'num_samples_train'}.union(DEFAULTS_PENDULUM.keys())
-    elif data_source == 'racecar' or data_source == 'racecar_hf':
+    elif data_source.startswith('racecar'):
         from sim_transfer.sims.simulators import RaceCarSim
         defaults = DEFAULTS_RACECAR
         if data_source == 'racecar_hf':
-            sim_hf = RaceCarSim(encode_angle=True, use_blend=True)
-            sim_lf = RaceCarSim(encode_angle=True, use_blend=False)
-        else:
+            sim_hf = RaceCarSim(encode_angle=True, use_blend=True, only_pose=False)
+            sim_lf = RaceCarSim(encode_angle=True, use_blend=False, only_pose=False)
+        elif data_source == 'racecar_hf_only_pose':
+            sim_hf = RaceCarSim(encode_angle=True, use_blend=True, only_pose=True)
+            sim_lf = RaceCarSim(encode_angle=True, use_blend=False, only_pose=True)
+        elif data_source == 'racecar_only_pose':
+            sim_hf = sim_lf = RaceCarSim(encode_angle=True, use_blend=True, only_pose=True)
+        elif data_source == 'racecar':
             sim_hf = sim_lf = RaceCarSim(encode_angle=True, use_blend=True)
+        else:
+            raise ValueError(f'Unknown data source {data_source}')
         assert {'num_samples_train'} <= set(data_spec.keys()) <= {'num_samples_train'}.union(DEFAULTS_RACECAR.keys())
-    elif data_source == 'rccar_real':
+    elif data_source == 'real_racecar':
         from sim_transfer.sims.simulators import RaceCarSim
         sim_lf = RaceCarSim(encode_angle=True, use_blend=True)
         x_train, y_train, x_test, y_test = get_rccar_recorded_data(encode_angle=True)

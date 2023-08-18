@@ -690,15 +690,24 @@ class RaceCarSim(FunctionSimulator):
     _domain_lower_dataset = jnp.array([-2., -2., -jnp.pi, -2., -2., -3., -1., -1.])
     _domain_upper_dataset = jnp.array([2., 2., jnp.pi, 2., 2., 3., 1., 1.])
 
+    def __init__(self, encode_angle: bool = True, use_blend: bool = False, only_pose: bool = False):
+        """ Race car simulator
 
-    def __init__(self, encode_angle: bool = True, use_blend: bool = False):
-        FunctionSimulator.__init__(self, input_size=9 if encode_angle else 8, output_size=7 if encode_angle else 6)
+        Args:
+            encode_angle: (bool) whether to encode the angle (theta) as sin(theta) and cos(theta)
+            use_blend: (bool) whether to use the blend model which captures dynamics or
+                        the bicycle model which is only a kinematic model
+            only_pose: (bool) whether to predict only the pose (x, y, theta) or also the velocities (vx, vy, vtheta)
+        """
+        FunctionSimulator.__init__(self, input_size=9 if encode_angle else 8,
+                                   output_size=(7 if encode_angle else 6) - (3 if only_pose else 0))
 
         # set up typical parameters
         self.use_blend = use_blend
         _default_params = self._default_car_model_params_blend if use_blend else self._default_car_model_params_bicycle
         self._typical_params = CarParams(**_default_params)
 
+        self.only_pose = only_pose
         self.encode_angle = encode_angle
         self.model = RaceCar(dt=self._dt, encode_angle=encode_angle)
         self._state_action_spit_idx = 7 if encode_angle else 6
@@ -723,7 +732,10 @@ class RaceCarSim(FunctionSimulator):
 
         def batched_fun(z, params):
             x, u = self._split_state_action(z)
-            return vmap(self.model.next_step, in_axes=(0, 0, None))(x, u, params)
+            f = vmap(self.model.next_step, in_axes=(0, 0, None))(x, u, params)
+            if self.only_pose:
+                f = f[..., :-3]
+            return f
 
         f = vmap(batched_fun, in_axes=(None, 0))(x, params)
         assert f.shape == (num_samples, x.shape[0], self.output_size)
@@ -735,7 +747,10 @@ class RaceCarSim(FunctionSimulator):
                                                   upper_bound=self._upper_bound_params)
         def stacked_fun(z):
             x, u = self._split_state_action(z)
-            return vmap(self.model.next_step, in_axes=(0, 0, 0))(x, u, params)
+            f = vmap(self.model.next_step, in_axes=(0, 0, 0))(x, u, params)
+            if self.only_pose:
+                f = f[..., :-3]
+            return f
 
         return stacked_fun
 
@@ -746,19 +761,26 @@ class RaceCarSim(FunctionSimulator):
     @property
     def normalization_stats(self) -> Dict[str, jnp.ndarray]:
         if self.encode_angle:
-            return {'x_mean': jnp.zeros(self.input_size),
-                    'x_std': jnp.array([3., 3., 1.0, 1.0, 4.0, 4.0, 5.0, 1.0, 1.0]),
-                    'y_mean': jnp.zeros(self.output_size),
-                    'y_std': jnp.array([3., 3., 1.0, 1.0, 4.0, 4.0, 5.0])}
+            stats = {'x_mean': jnp.zeros(self.input_size),
+                     'x_std': jnp.array([3., 3., 1.0, 1.0, 4.0, 4.0, 5.0, 1.0, 1.0]),
+                     'y_mean': jnp.zeros(self.output_size),
+                     'y_std': jnp.array([3., 3., 1.0, 1.0, 4.0, 4.0, 5.0])}
         else:
-            return {'x_mean': jnp.zeros(self.input_size),
-                    'x_std': jnp.array([3., 3., 2.5, 4.0, 4.0, 5.0, 1.0, 1.0]),
-                    'y_mean': jnp.zeros(self.output_size),
-                    'y_std': jnp.array([3., 3., 2.5, 4.0, 4.0, 5.0])}
+            stats = {'x_mean': jnp.zeros(self.input_size),
+                     'x_std': jnp.array([3., 3., 2.5, 4.0, 4.0, 5.0, 1.0, 1.0]),
+                     'y_mean': jnp.zeros(self.output_size),
+                     'y_std': jnp.array([3., 3., 2.5, 4.0, 4.0, 5.0])}
+        if self.only_pose:
+            stats['x_mean'] = stats['x_mean'][:-3]
+            stats['y_std'] = stats['y_std'][:-3]
+        return stats
 
     def _typical_f(self, x: jnp.array) -> jnp.array:
         s, u = self._split_state_action(x)
-        return jax.vmap(self.model.next_step, in_axes=(0, 0, None))(s, u, self._typical_params)
+        f = jax.vmap(self.model.next_step, in_axes=(0, 0, None))(s, u, self._typical_params)
+        if self.only_pose:
+            f = f[..., :-3]
+        return f
 
     def _split_state_action(self, z: jnp.array) -> Tuple[jnp.array, jnp.array]:
         assert z.shape[-1] == self.domain.num_dims
@@ -766,6 +788,8 @@ class RaceCarSim(FunctionSimulator):
 
     def _add_observation_noise(self, f_vals: jnp.ndarray, obs_noise_std: Union[jnp.ndarray, float],
                                rng_key: jax.random.PRNGKey) -> jnp.ndarray:
+        if self.only_pose:
+            obs_noise_std = obs_noise_std[..., :-3]
         if self.encode_angle:
             # decode angles -> add noise -> encode angles
             f_decoded = decode_angles(f_vals, angle_idx=2)
@@ -794,7 +818,8 @@ class RaceCarSim(FunctionSimulator):
 
 if __name__ == '__main__':
     key = jax.random.PRNGKey(435345)
-    function_sim = RaceCarSim(use_blend=False)
+    function_sim = RaceCarSim(use_blend=False, only_pose=True)
+    function_sim.normalization_stats
     xs = function_sim.domain.sample_uniformly(key, 100)
     num_f_samples = 20
     f_vals = function_sim.sample_function_vals(xs, num_samples=num_f_samples, rng_key=key)

@@ -3,7 +3,7 @@ from typing import Optional
 
 def encode_angles(state: jnp.array, angle_idx: int) -> jnp.array:
     """ Encodes the angle (theta) as sin(theta) and cos(theta) """
-    assert angle_idx < state.shape[-1] - 1
+    assert angle_idx <= state.shape[-1] - 1
     theta = state[..., angle_idx:angle_idx + 1]
     state_encoded = jnp.concatenate([state[..., :angle_idx], jnp.sin(theta), jnp.cos(theta),
                                      state[..., angle_idx + 1:]], axis=-1)
