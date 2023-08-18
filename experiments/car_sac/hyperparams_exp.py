@@ -6,6 +6,7 @@ import jax.tree_util as jtu
 import wandb
 from brax.training.replay_buffers import UniformSamplingQueue
 from brax.training.types import Transition
+from jax import vmap
 from mbpo.optimizers.policy_optimizers.sac.sac import SAC
 from mbpo.systems.brax_wrapper import BraxWrapper
 
@@ -19,6 +20,7 @@ def experiment(num_envs: int,
                batch_size: int,
                max_replay_size: int,
                num_env_steps_between_updates: int,
+               target_entropy: float,
                ):
     ENCODE_ANGLE = False
     system = CarSystem(encode_angle=ENCODE_ANGLE,
@@ -27,26 +29,31 @@ def experiment(num_envs: int,
                        ctrl_cost_weight=0.005)
 
     # Create replay buffer
-    init_sys_state = system.reset(key=jr.PRNGKey(0))
-    dummy_sample = Transition(observation=init_sys_state.x_next,
-                              action=jnp.zeros(shape=(system.u_dim,)),
+    # Create replay buffer
+    num_init_states = 1000
+    keys = jr.split(jr.PRNGKey(seed), num_init_states)
+    init_sys_state = vmap(system.reset)(key=keys)
+
+    init_samples = Transition(observation=init_sys_state.x_next,
+                              action=jnp.zeros(shape=(num_init_states, system.u_dim,)),
                               reward=init_sys_state.reward,
-                              discount=jnp.array(0.99),
+                              discount=0.99 * jnp.ones(shape=(num_init_states,)),
                               next_observation=init_sys_state.x_next)
 
-    sampling_buffer = UniformSamplingQueue(max_replay_size=1,
+    dummy_sample = jtu.tree_map(lambda x: x[0], init_samples)
+
+    sampling_buffer = UniformSamplingQueue(max_replay_size=num_init_states,
                                            dummy_data_sample=dummy_sample,
                                            sample_batch_size=1)
 
     sampling_buffer_state = sampling_buffer.init(jr.PRNGKey(0))
-    sampling_buffer_state = sampling_buffer.insert(sampling_buffer_state,
-                                                   jtu.tree_map(lambda x: x[None, ...], dummy_sample))
+    sampling_buffer_state = sampling_buffer.insert(sampling_buffer_state, init_samples)
 
     # Create brax environment
     env = BraxWrapper(system=system,
                       sample_buffer_state=sampling_buffer_state,
                       sample_buffer=sampling_buffer,
-                      system_params=system.init_params(jr.PRNGKey(0)), )
+                      system_params=system.init_params(jr.PRNGKey(seed)), )
 
     net_arch = {
         "small": dict(policy_hidden_layer_sizes=[64, 64], critic_hidden_layer_sizes=[64, 64]),
@@ -58,6 +65,7 @@ def experiment(num_envs: int,
         batch_size=batch_size,
         max_replay_size=max_replay_size,
         num_env_steps_between_updates=num_env_steps_between_updates,
+        target_entropy=target_entropy,
         **net_arch,
     )
 
@@ -65,10 +73,10 @@ def experiment(num_envs: int,
 
     sac_trainer = SAC(
         environment=env,
-        num_timesteps=300_000,
+        num_timesteps=2_000_000,
         num_evals=20,
         reward_scaling=10,
-        episode_length=200,
+        episode_length=300,
         action_repeat=1,
         discounting=0.99,
         lr_policy=3e-4,
@@ -89,7 +97,6 @@ def experiment(num_envs: int,
 
     wandb.init(
         dir='/cluster/scratch/trevenl',
-        entity="simulation_transfer",
         project=project_name,
         group=group_name,
         config=sac_config,
@@ -106,6 +113,7 @@ def main(args):
                batch_size=args.batch_size,
                max_replay_size=args.max_replay_size,
                num_env_steps_between_updates=args.num_env_steps_between_updates,
+               target_entropy=args.target_entropy,
                )
 
 
@@ -118,5 +126,6 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--max_replay_size', type=int, default=10 ** 6)
     parser.add_argument('--num_env_steps_between_updates', type=int, default=32)
+    parser.add_argument('--target_entropy', type=float, default=-10.0)
     args = parser.parse_args()
     main(args)
