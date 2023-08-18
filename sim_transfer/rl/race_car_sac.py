@@ -14,12 +14,12 @@ from mbpo.systems.brax_wrapper import BraxWrapper
 from sim_transfer.sims.car_system import CarSystem
 from sim_transfer.sims.util import plot_rc_trajectory
 
-ENCODE_ANGLE = True
+ENCODE_ANGLE = False
 system = CarSystem(encode_angle=ENCODE_ANGLE,
                    action_delay=0.00,
                    use_tire_model=True,
                    use_obs_noise=True,
-                   ctrl_cost_weight=1.0,
+                   ctrl_cost_weight=0.1,
                    )
 
 # Create replay buffer

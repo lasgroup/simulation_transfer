@@ -134,7 +134,8 @@ class ModelBasedRL:
         x_train, x_test, y_train, y_test = split_data(x_all, y_all, test_ratio=0.2, seed=42)
 
         # Train model
-        # TODO: Now we are just continuously training the model on the extended data. Should we do this?
+        # Todo: we should reinit the model only in the first few episodes and then continue training
+        self.bnn_model.reinit(rng_key=key)
         self.bnn_model.fit(x_train=x_train, y_train=y_train, x_eval=x_test, y_eval=y_test, num_steps=20000)
         return self.bnn_model
 

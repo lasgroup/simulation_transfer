@@ -1,9 +1,9 @@
+import os
 from abc import ABC, abstractmethod
 from typing import NamedTuple, Union, Optional, Tuple
 
 import jax
 import jax.numpy as jnp
-import os
 import jax.tree_util as jtu
 import numpy as np
 from jax import random, vmap
@@ -289,7 +289,7 @@ class RaceCar(DynamicsModel):
 
     def __init__(self, dt, encode_angle: bool = True, local_coordinates: bool = False, rk_integrator: bool = True):
         self.encode_angle = encode_angle
-        x_dim = 7 if encode_angle else 6
+        x_dim = 6
         super().__init__(dt=dt, x_dim=x_dim, u_dim=2, params=CarParams(), angle_idx=2,
                          dt_integration=1 / 90.)
         self.local_coordinates = local_coordinates
@@ -346,11 +346,7 @@ class RaceCar(DynamicsModel):
                                              -theta_x)
             x = x.at[..., self.velocity_start_idx: self.velocity_end_idx + 1].set(rotated_vel)
         if self.encode_angle:
-            theta = jnp.arctan2(x[..., self.angle_idx], x[..., self.angle_idx + 1])
-
-            x_reduced = jnp.concatenate([x[..., 0:self.angle_idx], jnp.atleast_1d(theta),
-                                         x[..., self.velocity_start_idx:]],
-                                        axis=-1)
+            x_reduced = self.reduce_x(x)
             if self.rk_integrator:
                 x_reduced = self.rk_integration(x_reduced, u, params)
             else:
@@ -379,6 +375,14 @@ class RaceCar(DynamicsModel):
             next_x = next_x.at[..., self.velocity_start_idx: self.velocity_end_idx + 1].set(rotated_vel)
 
         return next_x
+
+    def reduce_x(self, x):
+        theta = jnp.arctan2(x[..., self.angle_idx], x[..., self.angle_idx + 1])
+
+        x_reduced = jnp.concatenate([x[..., 0:self.angle_idx], jnp.atleast_1d(theta),
+                                     x[..., self.velocity_start_idx:]],
+                                    axis=-1)
+        return x_reduced
 
     @staticmethod
     def rotate_vector(v, theta):

@@ -92,7 +92,7 @@ class CarDynamics(Dynamics[CarDynamicsParams]):
         self.encode_angle: bool = encode_angle
 
         # initialize dynamics and observation noise models
-        self._dynamics_model = RaceCar(dt=self._dt, encode_angle=False)
+        self._dynamics_model = RaceCar(dt=self._dt, encode_angle=encode_angle)
         self.use_tire_model = use_tire_model
         if use_tire_model:
             self._default_car_model_params = self._default_car_model_params_blend
@@ -158,6 +158,8 @@ class CarDynamics(Dynamics[CarDynamicsParams]):
         # Move forward one step in the dynamics using the delayed action and the hidden state
         new_key, key_for_sampling_obs_noise = jr.split(dynamics_params.key)
         x_mean_next = self._dynamics_model.next_step(x, u, dynamics_params.car_params)
+        if self.encode_angle:
+            x_mean_next = self._dynamics_model.reduce_x(x_mean_next)
         x_next = self._state_to_obs(x_mean_next, key_for_sampling_obs_noise)
 
         new_params = dynamics_params.replace(action_buffer=action_buffer, key=new_key)
