@@ -32,6 +32,7 @@ class BNN_SVGD_DistillPrior(AbstractSVGD_BNN, MeasurementSetMixin):
                  num_measurement_points: int = 8,
                  likelihood_std: float = 0.2,
                  learn_likelihood_std: bool = False,
+                 likelihood_exponent: float = 1.0,
                  bandwith_mmd_range_log2: Tuple[int, int] = (-3, 6),
                  bandwidth_svgd: float = 10.0,
                  data_batch_size: int = 8,
@@ -53,6 +54,7 @@ class BNN_SVGD_DistillPrior(AbstractSVGD_BNN, MeasurementSetMixin):
                                   normalize_data=normalize_data, normalization_stats=normalization_stats,
                                   normalize_likelihood_std=normalize_likelihood_std, lr=lr, weight_decay=weight_decay,
                                   likelihood_std=likelihood_std, learn_likelihood_std=learn_likelihood_std,
+                                  likelihood_exponent=likelihood_exponent,
                                   bandwidth_svgd=bandwidth_svgd, use_prior=True)
         MeasurementSetMixin.__init__(self, domain=domain)
 

@@ -18,6 +18,7 @@ class BNN_VI(AbstractVariationalBNN):
                  rng_key: jax.random.PRNGKey,
                  likelihood_std: Union[float, jnp.array] = 0.2,
                  learn_likelihood_std: bool = False,
+                 likelihood_exponent: float = 1.0,
                  num_post_samples: int = 10,
                  data_batch_size: int = 16,
                  num_train_steps: int = 10000,
@@ -37,8 +38,8 @@ class BNN_VI(AbstractVariationalBNN):
                          num_batched_nns=num_post_samples, hidden_layer_sizes=hidden_layer_sizes,
                          hidden_activation=hidden_activation, last_activation=last_activation,
                          normalize_data=normalize_data, normalization_stats=normalization_stats,
-                         normalize_likelihood_std=normalize_likelihood_std,
-                         likelihood_std=likelihood_std, learn_likelihood_std=learn_likelihood_std)
+                         normalize_likelihood_std=normalize_likelihood_std, likelihood_std=likelihood_std,
+                         learn_likelihood_std=learn_likelihood_std, likelihood_exponent=likelihood_exponent)
         self.use_prior = use_prior
         self.kl_prefactor = kl_prefactor
 
@@ -81,7 +82,7 @@ class BNN_VI(AbstractVariationalBNN):
         posterior_dist = tfd.MultivariateNormalDiag(params['posterior_mean'], params['posterior_std'])
         params_sample = posterior_dist.sample(seed=key, sample_shape=self.num_post_samples)
 
-        # compute data log-likelihood
+        # compute average log-likelihood of the batch
         likelihood_std = self._likelihood_std_transform(params['likelihood_std_raw']) if self.learn_likelihood_std \
             else self.likelihood_std
         pred_raw = self.batched_model.forward_vec(x_batch, self.batched_model.unravel_batch(params_sample))
@@ -92,7 +93,7 @@ class BNN_VI(AbstractVariationalBNN):
             log_posterior = jnp.mean(posterior_dist.log_prob(params_sample))
             log_prior = jnp.mean(self._prior_dist.log_prob(params_sample))
             kl = log_posterior - log_prior
-            loss = -ll + self.kl_prefactor * kl / num_train_points
+            loss = - num_train_points**self.likelihood_exponent * ll + self.kl_prefactor * kl
             stats = OrderedDict(loss=loss, train_nll_loss=-ll, log_posterior=log_posterior,
                                 log_prior=log_prior, kl=kl)
         else:

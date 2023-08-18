@@ -25,6 +25,7 @@ class BNN_FSVGD_SN(AbstractFSVGD_BNN):
                  num_measurement_points: int = 8,
                  likelihood_std: Union[float, jnp.array] = 0.2,
                  learn_likelihood_std: bool = False,
+                 likelihood_exponent: float = 1.0,
                  bandwidth_svgd: float = 0.2,
                  data_batch_size: int = 8,
 
@@ -53,8 +54,8 @@ class BNN_FSVGD_SN(AbstractFSVGD_BNN):
                          hidden_activation=hidden_activation, last_activation=last_activation,
                          normalize_data=normalize_data, normalization_stats=normalization_stats,
                          normalize_likelihood_std=normalize_likelihood_std,
-                         lr=lr, weight_decay=weight_decay,
-                         likelihood_std=likelihood_std, learn_likelihood_std=learn_likelihood_std,
+                         lr=lr, weight_decay=weight_decay, likelihood_std=likelihood_std,
+                         learn_likelihood_std=learn_likelihood_std, likelihood_exponent=likelihood_exponent,
                          domain=domain, bandwidth_svgd=bandwidth_svgd)
         self.num_measurement_points = num_measurement_points
         self.independent_output_dims = independent_output_dims
@@ -205,9 +206,10 @@ class BNN_FSVGD_SN(AbstractFSVGD_BNN):
     #     super().fit(x_train, *args, **kwargs)
 
     def _neg_log_posterior(self, pred_raw: jnp.ndarray, likelihood_std: jnp.array, x_stacked: jnp.ndarray,
-                            y_batch: jnp.ndarray, train_data_till_idx: int,
-                            num_train_points: Union[float, int], key: jax.random.PRNGKey):
-        nll = - num_train_points * self._ll(pred_raw, likelihood_std, y_batch, train_data_till_idx)
+                           y_batch: jnp.ndarray, train_data_till_idx: int,
+                           num_train_points: Union[float, int], key: jax.random.PRNGKey):
+        nll = - num_train_points**self.likelihood_exponent\
+              * self._ll(pred_raw, likelihood_std, y_batch, train_data_till_idx)
 
         prior_score = self.score_net.pred_score(xm=x_stacked, f_vals=pred_raw)
         neg_log_post = nll - jnp.sum(jnp.mean(pred_raw * jax.lax.stop_gradient(prior_score), axis=-2))
