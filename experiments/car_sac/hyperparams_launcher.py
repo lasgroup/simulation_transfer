@@ -1,7 +1,7 @@
 import hyperparams_exp
 from experiments.util import generate_run_commands, generate_base_command
 
-PROJECT_NAME = 'RaceCarSACHyperparams'
+PROJECT_NAME = 'RaceCarSACHyperparamsCTRLCost0.005'
 
 applicable_configs = {
     'num_envs': [32, ],

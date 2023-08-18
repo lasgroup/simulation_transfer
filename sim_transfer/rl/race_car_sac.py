@@ -6,7 +6,7 @@ import jax.tree_util as jtu
 import matplotlib.pyplot as plt
 from brax.training.replay_buffers import UniformSamplingQueue
 from brax.training.types import Transition
-from jax import jit
+from jax import jit, vmap
 from jax.lax import scan
 from mbpo.optimizers.policy_optimizers.sac.sac import SAC
 from mbpo.systems.brax_wrapper import BraxWrapper
@@ -19,24 +19,31 @@ system = CarSystem(encode_angle=ENCODE_ANGLE,
                    action_delay=0.00,
                    use_tire_model=True,
                    use_obs_noise=True,
+                   ctrl_cost_weight=0.000,
                    )
 
 # Create replay buffer
-init_sys_state = system.reset(key=jr.PRNGKey(0))
+num_init_states = 500
+keys = jr.split(jr.PRNGKey(0), num_init_states)
+init_sys_state = vmap(system.reset)(key=keys)
 
-dummy_sample = Transition(observation=init_sys_state.x_next,
-                          action=jnp.zeros(shape=(system.u_dim,)),
+init_samples = Transition(observation=init_sys_state.x_next,
+                          action=jnp.zeros(shape=(num_init_states, system.u_dim,)),
                           reward=init_sys_state.reward,
-                          discount=jnp.array(0.99),
+                          discount=0.99 * jnp.ones(shape=(num_init_states,)),
                           next_observation=init_sys_state.x_next)
 
-sampling_buffer = UniformSamplingQueue(max_replay_size=1,
+dummy_sample = jtu.tree_map(lambda x: x[0], init_samples)
+
+sampling_buffer = UniformSamplingQueue(max_replay_size=num_init_states,
                                        dummy_data_sample=dummy_sample,
                                        sample_batch_size=1)
 
 sampling_buffer_state = sampling_buffer.init(jr.PRNGKey(0))
-sampling_buffer_state = sampling_buffer.insert(sampling_buffer_state,
-                                               jtu.tree_map(lambda x: x[None, ...], dummy_sample))
+
+
+
+sampling_buffer_state = sampling_buffer.insert(sampling_buffer_state, init_samples)
 
 # Create brax environment
 env = BraxWrapper(system=system,
@@ -46,14 +53,14 @@ env = BraxWrapper(system=system,
 
 state = jit(env.reset)(rng=jr.PRNGKey(0))
 
-num_env_steps_between_updates = 16
+num_env_steps_between_updates = 32
 num_envs = 32
 
 sac_trainer = SAC(
     environment=env,
     num_timesteps=300_000,
     num_evals=20,
-    reward_scaling=10,
+    reward_scaling=1,
     episode_length=200,
     action_repeat=1,
     discounting=0.99,
@@ -70,7 +77,7 @@ sac_trainer = SAC(
     wd_alpha=0,
     num_eval_envs=1,
     max_replay_size=5 * 10 ** 4,
-    min_replay_size=2 ** 11,
+    min_replay_size=10 ** 3,
     policy_hidden_layer_sizes=(64, 64),
     critic_hidden_layer_sizes=(64, 64),
     normalize_observations=True,
@@ -109,6 +116,13 @@ def policy(x):
     return make_inference_fn(params, deterministic=True)(x, jr.PRNGKey(0))[0]
 
 
+test_system = CarSystem(encode_angle=ENCODE_ANGLE,
+                        action_delay=0.00,
+                        use_tire_model=True,
+                        use_obs_noise=True,
+                        ctrl_cost_weight=0.005,
+                        )
+
 system_state_init = system.reset(key=jr.PRNGKey(0))
 x_init = system_state_init.x_next
 system_params = system_state_init.system_params
@@ -116,7 +130,7 @@ system_params = system_state_init.system_params
 
 def step(system_state, _):
     u = policy(system_state.x_next)
-    next_sys_state = system.step(system_state.x_next, u, system_state.system_params)
+    next_sys_state = test_system.step(system_state.x_next, u, system_state.system_params)
     return next_sys_state, (system_state.x_next, u, next_sys_state.reward)
 
 
@@ -128,6 +142,7 @@ plt.plot(trajectory[1], label='Us')
 plt.plot(trajectory[2], label='Rewards')
 plt.legend()
 plt.show()
+print('Reward: ', jnp.sum(trajectory[2]))
 
 traj = trajectory[0]
 actions = trajectory[1]
