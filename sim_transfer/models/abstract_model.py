@@ -301,15 +301,6 @@ class BatchedNeuralNetworkModel(AbstractRegressionModel):
             if step >= num_steps:
                 break
 
-    def _before_training_loop_callback(self) -> None:
-        """
-        Called right before the training loop starts.
-        """
-        pass
-
-    def _construct_nn_param_prior(self, weight_prior_std: float, bias_prior_std: float) -> tfd.MultivariateNormalDiag:
-        return self.batched_model.params_prior(weight_prior_std=weight_prior_std, bias_prior_std=bias_prior_std)
-
     def predict(self, x: jnp.ndarray, include_noise: bool = False) -> Tuple[jnp.ndarray, jnp.ndarray]:
         """ Returns the mean and std of the predictive distribution.
 
@@ -322,3 +313,12 @@ class BatchedNeuralNetworkModel(AbstractRegressionModel):
         """
         pred_dist = self.predict_dist(x=x, include_noise=include_noise)
         return pred_dist.mean, pred_dist.stddev
+
+    def _before_training_loop_callback(self) -> None:
+        """
+        Called right before the training loop starts.
+        """
+        pass
+
+    def _construct_nn_param_prior(self, weight_prior_std: float, bias_prior_std: float) -> tfd.MultivariateNormalDiag:
+        return self.batched_model.params_prior(weight_prior_std=weight_prior_std, bias_prior_std=bias_prior_std)

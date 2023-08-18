@@ -29,7 +29,7 @@ class BatchedModule(RngKeyMixin):
         self.flatten_batch, self.unravel_batch = self._get_flatten_batch_fns()
 
     @property
-    def param_vectors_stacked(self) -> jnp.ndarray:
+    def param_vectors_stacked(self) -> FrozenDict:
         return self._param_vectors_stacked
 
     @param_vectors_stacked.setter
@@ -47,6 +47,12 @@ class BatchedModule(RngKeyMixin):
     def forward_vec(self, x: jnp.ndarray, param_vectors_stacked: jnp.array):
         assert x.shape[0] == self.num_batched_modules
         return self._forward_vec_vmap(x, param_vectors_stacked)
+
+    def reinit_params(self, rng_key: Optional[random.PRNGKey] = None):
+        """ Reinitialize the parameters of the batched model """
+        if rng_key is None:
+            rng_key = self._next_rng_key()
+        self._param_vectors_stacked = self.get_init_param_vec_stacked(rng_key)
 
     @partial(jit, static_argnums=(0,))
     def _apply_one(self, x, params_one):
