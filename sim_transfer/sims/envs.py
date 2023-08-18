@@ -275,7 +275,7 @@ class RCCarSimEnv:
 
 
 if __name__ == '__main__':
-    ENCODE_ANGLE = False
+    ENCODE_ANGLE = True
     env = RCCarSimEnv(encode_angle=ENCODE_ANGLE,
                       action_delay=0.07,
                       use_tire_model=True,

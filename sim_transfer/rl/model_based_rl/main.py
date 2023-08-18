@@ -170,11 +170,13 @@ class ModelBasedRL:
 
 if __name__ == '__main__':
     ENCODE_ANGLE = True
+    ctrl_cost_weight = 0.1
     seed = 0
     gym_env = RCCarSimEnv(encode_angle=ENCODE_ANGLE,
                           action_delay=0.00,
                           use_tire_model=True,
                           use_obs_noise=True,
+                          ctrl_cost_weight=ctrl_cost_weight,
                           )
 
     x_dim = gym_env.dim_state[0]
@@ -190,7 +192,8 @@ if __name__ == '__main__':
                    )
     max_replay_size_true_data_buffer = 10000
     include_aleatoric_noise = True
-    car_reward_kwargs = {}
+    car_reward_kwargs = dict(encode_angle=ENCODE_ANGLE,
+                             ctrl_cost_weight=ctrl_cost_weight)
 
     wandb.init(
         project="Race car test MBRL",

@@ -288,9 +288,10 @@ class RaceCar(DynamicsModel):
     """
 
     def __init__(self, dt, encode_angle: bool = True, local_coordinates: bool = False, rk_integrator: bool = True):
-        super().__init__(dt=dt, x_dim=6, u_dim=2, params=CarParams(), angle_idx=2,
-                         dt_integration=1 / 90.)
         self.encode_angle = encode_angle
+        x_dim = 7 if encode_angle else 6
+        super().__init__(dt=dt, x_dim=x_dim, u_dim=2, params=CarParams(), angle_idx=2,
+                         dt_integration=1 / 90.)
         self.local_coordinates = local_coordinates
         self.angle_idx = 2
         self.velocity_start_idx = 4 if self.encode_angle else 3

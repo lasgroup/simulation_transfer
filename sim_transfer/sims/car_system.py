@@ -181,7 +181,8 @@ class CarDynamics(Dynamics[CarDynamicsParams]):
                      jr.uniform(key_pos, shape=(1,), minval=-0.10 * jnp.pi, maxval=0.10 * jnp.pi)
         init_vel = jnp.zeros((3,)) + jnp.array([0.005, 0.005, 0.02]) * jr.normal(key_vel, shape=(3,))
         init_state = jnp.concatenate([init_pos, init_theta, init_vel])
-        return init_state
+        return self._state_to_obs(init_state, rng_key=key_obs)
+        # return init_state
 
 
 @chex.dataclass
