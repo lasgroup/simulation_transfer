@@ -205,7 +205,7 @@ class AbstractVariationalBNN(BatchedNeuralNetworkModel, LikelihoodMixin):
         return pred_dist
 
     def predict_post_samples(self, x: jnp.ndarray, key: Optional[jax.random.PRNGKey] = None,
-                     num_post_samples: Optional[int] = None) -> jnp.ndarray:
+                             num_post_samples: Optional[int] = None) -> jnp.ndarray:
         # normalize input data
         x = self._normalize_data(x)
 

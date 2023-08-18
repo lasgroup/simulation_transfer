@@ -301,7 +301,7 @@ class BatchedNeuralNetworkModel(AbstractRegressionModel):
             if step >= num_steps:
                 break
 
-    def predict(self, x: jnp.ndarray, include_noise: bool = False) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    def predict(self, x: jnp.ndarray, include_noise: bool = False, **kwargs) -> Tuple[jnp.ndarray, jnp.ndarray]:
         """ Returns the mean and std of the predictive distribution.
 
         Args:
@@ -311,7 +311,7 @@ class BatchedNeuralNetworkModel(AbstractRegressionModel):
 
         Returns: predictive mean and std
         """
-        pred_dist = self.predict_dist(x=x, include_noise=include_noise)
+        pred_dist = self.predict_dist(x=x, include_noise=include_noise, **kwargs)
         return pred_dist.mean, pred_dist.stddev
 
     def _before_training_loop_callback(self) -> None:
