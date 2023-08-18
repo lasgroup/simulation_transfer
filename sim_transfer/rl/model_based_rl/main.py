@@ -115,7 +115,9 @@ class ModelBasedRL:
             obs = next_obs
 
         concatenated_transitions = jtu.tree_map(lambda *xs: jnp.stack(xs, axis=0), *transitions)
-        print('Reward on true system:', jnp.sum(concatenated_transitions.reward))
+        reward_on_true_system = jnp.sum(concatenated_transitions.reward)
+        print('Reward on true system:', reward_on_true_system)
+        wandb.log({'reward_on_true_system': reward_on_true_system})
         return concatenated_transitions
 
     def train_transition_model(self,
@@ -136,7 +138,8 @@ class ModelBasedRL:
         # Train model
         # Todo: we should reinit the model only in the first few episodes and then continue training
         self.bnn_model.reinit(rng_key=key)
-        self.bnn_model.fit(x_train=x_train, y_train=y_train, x_eval=x_test, y_eval=y_test, num_steps=20000)
+        self.bnn_model.fit(x_train=x_train, y_train=y_train, x_eval=x_test, y_eval=y_test, num_steps=20000,
+                           log_to_wandb=True)
         return self.bnn_model
 
     def do_episode(self,
