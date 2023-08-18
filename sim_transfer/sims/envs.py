@@ -72,6 +72,7 @@ class RCCarEnvReward:
         pos_dist = jnp.sqrt(jnp.sum(jnp.square(pos_diff), axis=-1))
         theta_dist = jnp.abs(((theta_diff + jnp.pi) % (2 * jnp.pi)) - jnp.pi)
         reward = self.tolerance_pos(pos_dist) + 0.5 * self.tolerance_theta(theta_dist)
+        # reward = self.tolerance_pos(pos_dist) + self.tolerance_theta(theta_dist)
         return reward
 
     def __call__(self, *args, **kwargs):
