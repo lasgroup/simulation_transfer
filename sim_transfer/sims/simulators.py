@@ -34,8 +34,8 @@ class FunctionSimulator:
         key1, key2 = jax.random.split(rng_key, 2)
 
         # 1) sample x
-        x_train = self.domain.sample_uniformly(key1, num_samples_train, support_mode=x_support_mode_train)
-        x_test = self.domain.sample_uniformly(key1, num_samples_test, support_mode='full')
+        x_train, x_test = self._sample_x_data(key1, num_samples_train, num_samples_test,
+                                              support_mode_train=x_support_mode_train)
         x = jnp.concatenate([x_train, x_test], axis=0)
 
         # 2) get function values
@@ -53,16 +53,29 @@ class FunctionSimulator:
         y_train = y[:num_samples_train]
         y_test = y[-num_samples_test:]
 
-        # check shapes and return dataset
-        assert x_train.shape == (num_samples_train, self.input_size)
-        assert y_train.shape == (num_samples_train, self.output_size)
-        assert x_test.shape == (num_samples_test, self.input_size)
-        assert y_test.shape == (num_samples_test, self.output_size)
+        # 5) check shapes and return dataset
+        self._check_dataset_shapes(x_train, y_train, x_test, y_test, num_samples_train, num_samples_test)
         return x_train, y_train, x_test, y_test
 
     @property
     def normalization_stats(self) -> Dict[str, jnp.ndarray]:
         raise NotImplementedError
+
+    def _sample_x_data(self, rng_key: jax.random.PRNGKey, num_samples_train: int, num_samples_test: int,
+                       support_mode_train: str = 'full') -> Tuple[jnp.ndarray, jnp.ndarray]:
+        """ Sample inputs for training and testing. """
+        x_train = self.domain.sample_uniformly(rng_key, num_samples_train, support_mode=support_mode_train)
+        x_test = self.domain.sample_uniformly(rng_key, num_samples_test, support_mode='full')
+        return x_train, x_test
+
+    def _check_dataset_shapes(self, x_train: jnp.ndarray, y_train: jnp.ndarray,
+                              x_test: jnp.ndarray, y_test: jnp.ndarray,
+                              num_samples_train: int, num_samples_test: int) -> None:
+        # check shapes
+        assert x_train.shape == (num_samples_train, self.input_size)
+        assert y_train.shape == (num_samples_train, self.output_size)
+        assert x_test.shape == (num_samples_test, self.input_size)
+        assert y_test.shape == (num_samples_test, self.output_size)
 
     def _typical_f(self, x: jnp.array) -> jnp.array:
         raise NotImplementedError
@@ -587,20 +600,20 @@ class RaceCarSim(FunctionSimulator):
         'm': 1.65,
         'l_f': 0.13,
         'l_r': 0.17,
-        'angle_offset': 0.02791893,
+        'angle_offset': -0.01929582,
         'b_f': 2.58,
         'b_r': 3.39,
-        'blend_ratio_lb': 0.4472136,
-        'blend_ratio_ub': 0.5477226,
-        'c_d': -1.8698378e-36,
-        'c_f': 1.2,
+        'blend_ratio_lb': 0.01,
+        'blend_ratio_ub': 0.01,
+        'c_d': 0.0,
+        'c_f': 1.4,
         'c_m_1': 10.431917,
-        'c_m_2': 1.5003588,
+        'c_m_2': 1.0,
         'c_r': 1.27,
-        'd_f': 0.02,
-        'd_r': 0.017,
-        'i_com': 2.78e-05,
-        'steering_limit': 0.19989373
+        'd_f': 0.4,
+        'd_r': 0.48,
+        'i_com': 0.85,
+        'steering_limit': 0.45
     }
 
     _bounds_car_model_params_bicycle: Dict = {
@@ -608,20 +621,20 @@ class RaceCarSim(FunctionSimulator):
         'm': (1.6, 1.7),
         'l_f': (0.12, 0.14),
         'l_r': (0.16, 0.18),
-        'angle_offset': (0.0, 0.04),
+        'angle_offset': (-0.05, 0.05),
         'b_f': (2.2, 2.8),
-        'b_r': (3.0, 4.0),
-        'blend_ratio_lb': (-0.01, 0.01),
-        'blend_ratio_ub': (-0.1, 0.1),
+        'b_r': (3.0, 4.5),
+        'blend_ratio_lb': (0.001, 0.1),
+        'blend_ratio_ub': (0.001, 0.3),
         'c_d': (0.0, 0.0),
-        'c_f': (1., 1.5),
-        'c_m_1': (10., 11.),
-        'c_m_2': (0.5, 2.0),
-        'c_r': (1., 1.5),
-        'd_f': (0.3, 0.5),
-        'd_r': (0.3, 0.5),
-        'i_com': (0.04, 0.08),
-        'steering_limit': (0.15, 0.3),
+        'c_f': (1.2, 1.6),
+        'c_m_1': (9., 12.),
+        'c_m_2': (0.9, 1.2),
+        'c_r': (1.2, 1.3),
+        'd_f': (0.35, 0.5),
+        'd_r': (0.45, 0.5),
+        'i_com': (0.08, 0.1),
+        'steering_limit': (0.2, 0.5),
     }
 
     _default_car_model_params_blend: Dict = {
@@ -632,23 +645,51 @@ class RaceCarSim(FunctionSimulator):
         'angle_offset': 0.00731506,
         'b_f': 2.5134025,
         'b_r': 3.8303657,
-        'blend_ratio_lb': -0.00057009,
-        'blend_ratio_ub': -0.07274915,
+        'blend_ratio_lb': 0.002,
+        'blend_ratio_ub': 0.015,
         'c_d': -6.9619144e-37,
-        'c_f': 1.2525784,
+        'c_f': 1.5,
         'c_m_1': 10.93334,
-        'c_m_2': 1.0498677,
-        'c_r': 1.2915123,
-        'd_f': 0.43698108,
-        'd_r': 0.43703166,
-        'i_com': 0.06707229,
-        'steering_limit': 0.5739077,
+        'c_m_2': 1.08,
+        'c_r': 1.28,
+        'd_f': 0.35,
+        'd_r': 0.463,
+        'i_com': 0.1,
+        'steering_limit': 0.55,
     }
 
-    _bounds_car_model_params_blend = {**_bounds_car_model_params_bicycle, 'steering_limit': (0.35, 0.7),
-                                      'use_blend': (1.0, 1.0)}
+    _bounds_car_model_params_blend = {
+        'use_blend': (1.0, 1.0),
+        'm': (1.6, 1.7),
+        'l_f': (0.12, 0.14),
+        'l_r': (0.16, 0.18),
+        'angle_offset': (-0.05, 0.05),
+        'b_f': (2.2, 2.8),
+        'b_r': (3.0, 4.5),
+        'blend_ratio_lb': (0.001, 0.1),
+        'blend_ratio_ub': (0.001, 0.3),
+        'c_d': (0.0, 0.0),
+        'c_f': (1.2, 1.6),
+        'c_m_1': (9., 12.),
+        'c_m_2': (0.9, 1.2),
+        'c_r': (1.2, 1.3),
+        'd_f': (0.35, 0.5),
+        'd_r': (0.45, 0.5),
+        'i_com': (0.08, 0.1),
+        'steering_limit': (0.5, 0.55),
+    }
 
     _dt: float = 1/30.
+    _angle_idx: int = 2
+
+    # domain for the simulator prior
+    _domain_lower = jnp.array([-4., -4., -jnp.pi, -6., -6., -8., -1., -1.])
+    _domain_upper = jnp.array([4., 4., jnp.pi, 6., 6., 8., 1., 1.])
+
+    # domain for generating data
+    _domain_lower_dataset = jnp.array([-2., -2., -jnp.pi, -2., -2., -3., -1., -1.])
+    _domain_upper_dataset = jnp.array([2., 2., jnp.pi, 2., 2., 3., 1., 1.])
+
 
     def __init__(self, encode_angle: bool = True, use_blend: bool = False):
         FunctionSimulator.__init__(self, input_size=9 if encode_angle else 8, output_size=7 if encode_angle else 6)
@@ -667,21 +708,12 @@ class RaceCarSim(FunctionSimulator):
             else self._bounds_car_model_params_bicycle
         self._lower_bound_params = CarParams(**{k: jnp.array(v[0]) for k, v in _bounds_car_model_params.items()})
         self._upper_bound_params = CarParams(**{k: jnp.array(v[1]) for k, v in _bounds_car_model_params.items()})
-
         assert jnp.all(jnp.stack(jtu.tree_flatten(
             jtu.tree_map(lambda l, u: l <= u, self._lower_bound_params, self._upper_bound_params))[0])), \
             'lower bounds have to be smaller than upper bounds'
-        self._domain_lower = jnp.array([-4., -4., -jnp.pi, -6., -6., -8., -1., -1.])
-        self._domain_upper = jnp.array([4., 4., jnp.pi, 6., 6., 8., 1., 1.])
-        if self.encode_angle:
-            self._domain = HypercubeDomainWithAngles(angle_indices=[2], lower=self._domain_lower,
-                                                     upper=self._domain_upper)
-        else:
-            self._domain = HypercubeDomain(lower=self._domain_lower, upper=self._domain_upper)
 
-    def _split_state_action(self, z: jnp.array) -> Tuple[jnp.array, jnp.array]:
-        assert z.shape[-1] == self.domain.num_dims
-        return z[..., :self._state_action_spit_idx], z[..., self._state_action_spit_idx:]
+        # setup domain
+        self._domain = self._create_domain(lower=self._domain_lower, upper=self._domain_upper)
 
     def sample_function_vals(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
         assert x.ndim == 2 and x.shape[-1] == self.input_size
@@ -728,6 +760,10 @@ class RaceCarSim(FunctionSimulator):
         s, u = self._split_state_action(x)
         return jax.vmap(self.model.next_step, in_axes=(0, 0, None))(s, u, self._typical_params)
 
+    def _split_state_action(self, z: jnp.array) -> Tuple[jnp.array, jnp.array]:
+        assert z.shape[-1] == self.domain.num_dims
+        return z[..., :self._state_action_spit_idx], z[..., self._state_action_spit_idx:]
+
     def _add_observation_noise(self, f_vals: jnp.ndarray, obs_noise_std: Union[jnp.ndarray, float],
                                rng_key: jax.random.PRNGKey) -> jnp.ndarray:
         if self.encode_angle:
@@ -739,6 +775,21 @@ class RaceCarSim(FunctionSimulator):
             y = f_vals + obs_noise_std * jax.random.normal(rng_key, shape=f_vals.shape)
         assert f_vals.shape == y.shape
         return y
+
+    def _sample_x_data(self, rng_key: jax.random.PRNGKey, num_samples_train: int, num_samples_test: int,
+                       support_mode_train: str = 'full') -> Tuple[jnp.ndarray, jnp.ndarray]:
+        """ Sample inputs for training and testing. """
+        dataset_domain = self._create_domain(lower=self._domain_lower_dataset, upper=self._domain_upper_dataset)
+        x_train = dataset_domain.sample_uniformly(rng_key, num_samples_train, support_mode=support_mode_train)
+        x_test = dataset_domain.sample_uniformly(rng_key, num_samples_test, support_mode='full')
+        return x_train, x_test
+
+    def _create_domain(self, lower: jnp.array, upper: jnp.array) -> Domain:
+        """ Creates the domain object from the given lower and up bounds. """
+        if self.encode_angle:
+            return HypercubeDomainWithAngles(angle_indices=[self._angle_idx], lower=lower, upper=upper)
+        else:
+            return HypercubeDomain(lower=lower, upper=upper)
 
 
 if __name__ == '__main__':

@@ -69,6 +69,33 @@ class TestBatchedMLP(unittest.TestCase):
         p_vecs2 = model.unravel_batch(model.flatten_batch(p_vecs1))
         assert all([jnp.allclose(param1, param2) for param1, param2 in zip(jax.tree_leaves(p_vecs1), jax.tree_leaves(p_vecs2))])
 
+    def test_reinit(self):
+        key_model, key_x = jax.random.split(jax.random.PRNGKey(7644), 2)
+        model = BatchedMLP(input_size=4, output_size=3, hidden_layer_sizes=[8],
+                             num_batched_modules=6, rng_key=key_model)
+
+        x = jax.random.uniform(key_x, shape=(7, 4), minval=-5, maxval=5)
+        y1 = model(x)
+        y2 = model(x)
+
+        # check that the mlp output is the same when not reinitialized
+        assert jnp.allclose(y1, y2)
+
+        # check that the mlp output is different when reinitialized
+        model.reinit_params()
+        y3 = model(x)
+        assert not jnp.allclose(y1, y3)
+
+        # check that the mlp output is the same when reinitialized with the same seed
+        model.reinit_params(jax.random.PRNGKey(7644))
+        y4 = model(x)
+        model.reinit_params(jax.random.PRNGKey(7644))
+        y5 = model(x)
+        model.reinit_params(jax.random.PRNGKey(345345))
+        y6 = model(x)
+        assert jnp.allclose(y4, y5)
+        assert not jnp.allclose(y4, y6)
+
 
 class TestUtil(unittest.TestCase):
 
@@ -203,6 +230,7 @@ class TestMMD(unittest.TestCase):
 
             kernel = tfp.math.psd_kernels.ExponentiatedQuadratic(length_scale=2.)
             assert jnp.array_equal(mmd2(self.x, self.y, kernel, include_diag=include_diag), mmd_joint[1])
+
 
 class TestCalibErr(unittest.TestCase):
 

@@ -1,4 +1,4 @@
-from typing import Optional, Dict, Union
+from typing import Optional, Dict, Union, List
 from functools import partial
 from collections import OrderedDict
 from jaxtyping import PyTree
@@ -15,19 +15,26 @@ from sim_transfer.models.abstract_model import BatchedNeuralNetworkModel
 
 class LikelihoodMixin:
 
-    def __init__(self, likelihood_std: Union[float, jnp.array] = 0.2,
+    def __init__(self, likelihood_std: Union[float, jnp.array, List[float]] = 0.2,
                  learn_likelihood_std: bool = False,
                  normalize_likelihood_std: bool = False):
         self.learn_likelihood_std = learn_likelihood_std
 
+        if isinstance(likelihood_std, list):
+            likelihood_std = jnp.array(likelihood_std)  # convert to jnp.array if necessary
+
+        # normalize likelihood std if desired
         if normalize_likelihood_std:
             assert hasattr(self, '_y_std') and self._y_std is not None and self.normalize_data, \
                 'normalize_likelihood_std requires normalization'
             assert self._y_std.shape == (self.output_size, )
-            self.likelihood_std = likelihood_std / self._y_std
-        else:
-            self.likelihood_std = likelihood_std
+            likelihood_std = likelihood_std / self._y_std
 
+        # store initial likelihood std
+        self._initial_likelihood_std = likelihood_std
+
+        # set likelihood std
+        self._init_likelihood()
 
         assert hasattr(self, 'params'), 'super class must have params attribute'
 
@@ -60,6 +67,8 @@ class LikelihoodMixin:
     def _likelihood_std_transform_inv(self, std_value: jnp.ndarray) -> jnp.ndarray:
         return tfp.math.softplus_inverse(std_value)
 
+    def _init_likelihood(self):
+        self.likelihood_std = self._initial_likelihood_std
 
 class AbstractParticleBNN(BatchedNeuralNetworkModel, LikelihoodMixin):
 
@@ -74,12 +83,20 @@ class AbstractParticleBNN(BatchedNeuralNetworkModel, LikelihoodMixin):
         self.params.update({'nn_params_stacked': self.batched_model.param_vectors_stacked})
 
         # initialize optimizer
-        if weight_decay > 0:
-            self.optim = optax.adamw(learning_rate=lr, weight_decay=weight_decay)
-        else:
-            self.optim = optax.adam(learning_rate=lr)
-        self.opt_state = self.optim.init(self.params)
+        self.lr = lr
+        self.weight_decay = weight_decay
+        self._init_optim()
 
+    def reinit(self, rng_key: Optional[jax.random.PRNGKey] = None):
+        """ Reinitializes the model parameters and the optimizer state."""
+        if rng_key is None:
+            rng_key = self.rng_key
+        key_model, key_rng = jax.random.split(rng_key)
+        self._rng_key = key_rng  # reinitialize rng_key
+        self.batched_model.reinit_params(key_model)  # reinitialize model parameters
+        self.params['nn_params_stacked'] = self.batched_model.param_vectors_stacked
+        self._init_likelihood()  # reinitialize likelihood std
+        self._init_optim()  # reinitialize optimizer
 
     def _surrogate_loss(self, param_vec_stack: jnp.array, x_batch: jnp.array, y_batch: jnp.array,
                         num_train_points: int, key: jax.random.PRNGKey) -> [jnp.ndarray, Dict]:
@@ -96,6 +113,15 @@ class AbstractParticleBNN(BatchedNeuralNetworkModel, LikelihoodMixin):
         updates, opt_state = self.optim.update(grad, opt_state, params)
         params = optax.apply_updates(params, updates)
         return opt_state, params, stats
+
+    def _init_optim(self):
+        """ Initializes the optimizer and the optimizer state.
+        Sets the attributes self.optim and self.opt_state. """
+        if self.weight_decay > 0:
+            self.optim = optax.adamw(learning_rate=self.lr, weight_decay=self.weight_decay)
+        else:
+            self.optim = optax.adam(learning_rate=self.lr)
+        self.opt_state = self.optim.init(self.params)
 
     def step(self, x_batch: jnp.ndarray, y_batch: jnp.ndarray, num_train_points: Union[float, int]) -> Dict[str, float]:
         self.opt_state, self.params, stats = self._step_jit(self.opt_state, self.params, x_batch, y_batch,
@@ -286,7 +312,6 @@ class AbstractFSVGD_BNN(AbstractParticleBNN, MeasurementSetMixin):
     @property
     def num_particles(self) -> int:
         return self.num_batched_nns
-
 
 
 class AbstractSVGD_BNN(AbstractParticleBNN):

@@ -3,6 +3,7 @@ import jax
 import jax.numpy as jnp
 
 from sim_transfer.models.abstract_model import AbstractRegressionModel
+from sim_transfer.models.bnn_svgd import BNN_SVGD
 
 class TestAbstractRegression(unittest.TestCase):
 
@@ -100,6 +101,51 @@ class TestAbstractRegression(unittest.TestCase):
             if len(x_batch_list) >= 5:
                 break
         assert set(jnp.concatenate(x_batch_list).flatten().tolist()) == set(x_data.flatten().tolist())
+
+
+class TestReinitialization(unittest.TestCase):
+
+    def test_reinit_bnn_svgd_1(self):
+        bnn_svgd = BNN_SVGD(input_size=1, output_size=1, rng_key=jax.random.PRNGKey(34534527))
+
+        # check that predictions are consistent when not reinitialized
+        x = jnp.linspace(-1, 1, 100).reshape((-1, 1))
+        y1_mean, y1_std = bnn_svgd.predict(x)
+        y2_mean, y2_std = bnn_svgd.predict(x)
+        assert jnp.allclose(y1_mean, y2_mean) and jnp.allclose(y1_std, y2_std)
+
+        # check that predictions are different when reinitialized
+        bnn_svgd.reinit()
+        y3_mean, y3_std = bnn_svgd.predict(x)
+        assert (not jnp.allclose(y1_mean, y3_mean)) and (not jnp.allclose(y1_std, y3_std))
+
+    def test_reinit_bnn_svgd_seed_consistency(self):
+        bnn_svgd = BNN_SVGD(input_size=1, output_size=1, rng_key=jax.random.PRNGKey(34534527))
+
+        # generate train and test data
+        x_train = jnp.linspace(-1, 1, 10).reshape((-1, 1))
+        y_train = jnp.sin(x_train)
+        x_test = jnp.linspace(-1, 1, 100).reshape((-1, 1))
+
+        # reinit model, train for 10 steps, then make predictions
+        key_reinit = jax.random.PRNGKey(904352)
+        bnn_svgd.reinit(rng_key=key_reinit)
+        bnn_svgd.fit(x_train, y_train, num_steps=10)
+        y1_mean, y1_std = bnn_svgd.predict(x_test)
+
+        # repeat
+        bnn_svgd.reinit(rng_key=key_reinit)
+        bnn_svgd.fit(x_train, y_train, num_steps=10)
+        y2_mean, y2_std = bnn_svgd.predict(x_test)
+
+        # check that predictions are the same
+        assert jnp.allclose(y1_mean, y2_mean) and jnp.allclose(y1_std, y2_std)
+
+        # check that if we reinitialize with a differnt seed, we get different predictions
+        bnn_svgd.reinit(rng_key=jax.random.PRNGKey(456456))
+        bnn_svgd.fit(x_train, y_train, num_steps=10)
+        y3_mean, y3_std = bnn_svgd.predict(x_test)
+        assert (not jnp.allclose(y1_mean, y3_mean)) and (not jnp.allclose(y1_std, y3_std))
 
 
 if __name__ == '__main__':
