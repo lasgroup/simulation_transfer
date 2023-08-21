@@ -143,12 +143,7 @@ def experiment(num_envs: int,
         plt.close('all')
         return concatenated_transitions
 
-    concatenated_transitions = simulate_on_true_envs(jr.PRNGKey(0))
-
-    fig, axes = plot_rc_trajectory(concatenated_transitions.next_observation,
-                                   concatenated_transitions.action, encode_angle=ENCODE_ANGLE,
-                                   show=False)
-    wandb.log({'True_trajectory_path': wandb.Image(fig)})
+    simulate_on_true_envs(jr.PRNGKey(0))
     plt.close('all')
 
     wandb.finish()

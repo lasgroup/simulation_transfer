@@ -182,7 +182,7 @@ class ModelBasedRL:
 
 if __name__ == '__main__':
     ENCODE_ANGLE = True
-    ctrl_cost_weight = 0.1
+    ctrl_cost_weight = 0.005
     seed = 0
     gym_env = RCCarSimEnv(encode_angle=ENCODE_ANGLE,
                           action_delay=0.00,
