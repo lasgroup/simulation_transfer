@@ -132,8 +132,9 @@ class AdditiveSim(FunctionSimulator):
 
 class GaussianProcessSim(FunctionSimulator):
 
-    def __init__(self, input_size: int = 1, output_size: int = 1, output_scale: Union[float, jnp.array] = 1.0,
-                 length_scale: Union[float, jnp.array] = 1.0,
+    def __init__(self, input_size: int = 1, output_size: int = 1,
+                 output_scale: Union[float, List[float], jnp.array] = 1.0,
+                 length_scale: Union[float, List[float], jnp.array] = 1.0,
                  mean_fn: Optional[Callable] = None):
         """ Samples functions from a Gaussian Process (GP) with SE kernel
         Args:
@@ -148,12 +149,16 @@ class GaussianProcessSim(FunctionSimulator):
         if isinstance(output_scale, float):
             self.output_scales = output_scale * jnp.ones((output_size,))
         else:
+            if isinstance(output_scale, list):
+                output_scale = jnp.array(output_scale)
             assert output_scale.shape == (output_size,)
             self.output_scales = output_scale
 
         if isinstance(length_scale, float):
             self.length_scales = length_scale * jnp.ones((output_size,))
         else:
+            if isinstance(output_scale, list):
+                length_scale = jnp.array(output_scale)
             assert length_scale.shape == (output_size,)
             self.length_scales = length_scale
 
@@ -723,7 +728,8 @@ class RaceCarSim(FunctionSimulator):
     _domain_lower_dataset = jnp.array([-2., -2., -jnp.pi, -2., -2., -3., -1., -1.])
     _domain_upper_dataset = jnp.array([2., 2., jnp.pi, 2., 2., 3., 1., 1.])
 
-    def __init__(self, encode_angle: bool = True, use_blend: bool = False, only_pose: bool = False):
+    def __init__(self, encode_angle: bool = True, use_blend: bool = False, only_pose: bool = False,
+                 no_angular_velocity: bool = False):
         """ Race car simulator
 
         Args:
@@ -732,15 +738,21 @@ class RaceCarSim(FunctionSimulator):
                         the bicycle model which is only a kinematic model
             only_pose: (bool) whether to predict only the pose (x, y, theta) or also the velocities (vx, vy, vtheta)
         """
+        _output_size = (7 if encode_angle else 6) - (3 if only_pose else 0) - (1 if no_angular_velocity else 0)
         FunctionSimulator.__init__(self, input_size=9 if encode_angle else 8,
-                                   output_size=(7 if encode_angle else 6) - (3 if only_pose else 0))
+                                   output_size=_output_size)
 
         # set up typical parameters
         self.use_blend = use_blend
         _default_params = self._default_car_model_params_blend if use_blend else self._default_car_model_params_bicycle
         self._typical_params = CarParams(**_default_params)
 
+        # modes for different number of outputs
+        assert not (only_pose and no_angular_velocity), \
+            "Cannot have both only_pose and no_angular_velocity set to True"
         self.only_pose = only_pose
+        self.no_angular_velocity = no_angular_velocity
+
         self.encode_angle = encode_angle
         self.model = RaceCar(dt=self._dt, encode_angle=encode_angle)
         self._state_action_spit_idx = 7 if encode_angle else 6
@@ -768,6 +780,8 @@ class RaceCarSim(FunctionSimulator):
             f = vmap(self.model.next_step, in_axes=(0, 0, None))(x, u, params)
             if self.only_pose:
                 f = f[..., :-3]
+            elif self.no_angular_velocity:
+                f = f[..., :-1]
             return f
 
         f = vmap(batched_fun, in_axes=(None, 0))(x, params)
@@ -783,6 +797,8 @@ class RaceCarSim(FunctionSimulator):
             f = vmap(self.model.next_step, in_axes=(0, 0, 0))(x, u, params)
             if self.only_pose:
                 f = f[..., :-3]
+            elif self.no_angular_velocity:
+                f = f[..., :-1]
             return f
 
         return stacked_fun
@@ -796,16 +812,19 @@ class RaceCarSim(FunctionSimulator):
         if self.encode_angle:
             stats = {'x_mean': jnp.zeros(self.input_size),
                      'x_std': jnp.array([3., 3., 1.0, 1.0, 4.0, 4.0, 5.0, 1.0, 1.0]),
-                     'y_mean': jnp.zeros(self.output_size),
+                     'y_mean': jnp.zeros(7),
                      'y_std': jnp.array([3., 3., 1.0, 1.0, 4.0, 4.0, 5.0])}
         else:
             stats = {'x_mean': jnp.zeros(self.input_size),
                      'x_std': jnp.array([3., 3., 2.5, 4.0, 4.0, 5.0, 1.0, 1.0]),
-                     'y_mean': jnp.zeros(self.output_size),
+                     'y_mean': jnp.zeros(7),
                      'y_std': jnp.array([3., 3., 2.5, 4.0, 4.0, 5.0])}
         if self.only_pose:
-            stats['x_mean'] = stats['x_mean'][:-3]
+            stats['y_mean'] = stats['y_mean'][:-3]
             stats['y_std'] = stats['y_std'][:-3]
+        elif self.no_angular_velocity:
+            stats['y_mean'] = stats['y_mean'][:-1]
+            stats['y_std'] = stats['y_std'][:-1]
         return stats
 
     def _typical_f(self, x: jnp.array) -> jnp.array:
@@ -813,6 +832,8 @@ class RaceCarSim(FunctionSimulator):
         f = jax.vmap(self.model.next_step, in_axes=(0, 0, None))(s, u, self._typical_params)
         if self.only_pose:
             f = f[..., :-3]
+        elif self.no_angular_velocity:
+            f = f[..., :-1]
         return f
 
     def _split_state_action(self, z: jnp.array) -> Tuple[jnp.array, jnp.array]:
@@ -823,6 +844,8 @@ class RaceCarSim(FunctionSimulator):
                                rng_key: jax.random.PRNGKey) -> jnp.ndarray:
         if self.only_pose:
             obs_noise_std = obs_noise_std[..., :-3]
+        elif self.no_angular_velocity:
+            obs_noise_std = obs_noise_std[..., :-1]
         if self.encode_angle:
             # decode angles -> add noise -> encode angles
             f_decoded = decode_angles(f_vals, angle_idx=2)
@@ -851,7 +874,7 @@ class RaceCarSim(FunctionSimulator):
 
 if __name__ == '__main__':
     key = jax.random.PRNGKey(435345)
-    function_sim = RaceCarSim(use_blend=False, only_pose=True)
+    function_sim = RaceCarSim(use_blend=False, no_angular_velocity=True)
     function_sim.normalization_stats
     xs = function_sim.domain.sample_uniformly(key, 100)
     num_f_samples = 20

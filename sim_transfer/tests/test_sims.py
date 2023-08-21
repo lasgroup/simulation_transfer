@@ -57,6 +57,13 @@ class TestGaussianProcessSim(unittest.TestCase):
         assert cov1[0][1] >= 90
         assert cov2[0][1] <= 1e-4
 
+    def test_different_outputscales(self):
+        sim = GaussianProcessSim(input_size=1, output_size=2, output_scale=jnp.array([0.1, 10.]))
+        f_samples = sim.sample_function_vals(x=jnp.linspace(0, 1, 5).reshape(-1, 1),
+                                 num_samples=100, rng_key=jax.random.PRNGKey(1234))
+        f_std = jnp.std(f_samples, axis=(0, 1))
+        assert f_std[0] <= 0.2 and f_std[1] >= 5.0
+
 
 class _DummySim(FunctionSimulator):
 
