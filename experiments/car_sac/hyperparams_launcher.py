@@ -1,17 +1,17 @@
 import hyperparams_exp
 from experiments.util import generate_run_commands, generate_base_command
 
-PROJECT_NAME = 'RaceCarSACHyperparamsRewardShaping'
+PROJECT_NAME = 'RaceCarSACHyperparamsRewardShapingN2'
 
 applicable_configs = {
     'num_envs': [32, 64, 128],
     'net_arch': ['small', 'medium'],
-    'seed': [0, 1, 2],
+    'seed': [0, 1],
     'project_name': [PROJECT_NAME],
-    'batch_size': [64, 128, 256, ],
-    'max_replay_size': [10 ** 5, 3 * 10 ** 5, ],
+    'batch_size': [64, 128, 256],
+    'max_replay_size': [10 ** 5, 3 * 10 ** 5],
     'num_env_steps_between_updates': [16, 32, 64, 128],
-    'target_entropy': [-10, -1]
+    'target_entropy': [-1]
 }
 
 
@@ -52,7 +52,8 @@ def main():
                                     command_list.append(cmd)
 
     # submit jobs
-    generate_run_commands(command_list, num_cpus=1, num_gpus=1, mode='euler', duration='3:59:00', prompt=True, mem=16000)
+    generate_run_commands(command_list, num_cpus=1, num_gpus=1, mode='euler', duration='3:59:00', prompt=True,
+                          mem=16000)
 
 
 if __name__ == '__main__':

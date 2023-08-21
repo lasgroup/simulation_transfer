@@ -1,8 +1,10 @@
 import argparse
 
+import chex
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree_util as jtu
+import matplotlib.pyplot as plt
 import wandb
 from brax.training.replay_buffers import UniformSamplingQueue
 from brax.training.types import Transition
@@ -11,6 +13,8 @@ from mbpo.optimizers.policy_optimizers.sac.sac import SAC
 from mbpo.systems.brax_wrapper import BraxWrapper
 
 from sim_transfer.sims.car_system import CarSystem
+from sim_transfer.sims.envs import RCCarSimEnv
+from sim_transfer.sims.util import plot_rc_trajectory
 
 
 def experiment(num_envs: int,
@@ -28,7 +32,6 @@ def experiment(num_envs: int,
                        use_tire_model=True,
                        ctrl_cost_weight=0.005)
 
-    # Create replay buffer
     # Create replay buffer
     num_init_states = 1000
     keys = jr.split(jr.PRNGKey(seed), num_init_states)
@@ -71,6 +74,7 @@ def experiment(num_envs: int,
 
     group_name = '_'.join(map(lambda x: str(x), list(value for key, value in sac_config.items() if key != 'seed')))
 
+    discounting = 0.99
     sac_trainer = SAC(
         environment=env,
         num_timesteps=2_000_000,
@@ -78,7 +82,7 @@ def experiment(num_envs: int,
         reward_scaling=10,
         episode_length=300,
         action_repeat=1,
-        discounting=0.99,
+        discounting=discounting,
         lr_policy=3e-4,
         lr_alpha=3e-4,
         lr_q=3e-4,
@@ -102,6 +106,51 @@ def experiment(num_envs: int,
         config=sac_config,
     )
     params, metrics = sac_trainer.run_training(key=jr.PRNGKey(seed))
+
+    def policy(x):
+        return sac_trainer.make_policy(params, deterministic=True)(x, jr.PRNGKey(0))[0]
+
+    gym_env = RCCarSimEnv(encode_angle=ENCODE_ANGLE,
+                          action_delay=0.00,
+                          use_tire_model=True,
+                          use_obs_noise=True,
+                          ctrl_cost_weight=0.005,
+                          )
+
+    def simulate_on_true_envs(key: chex.PRNGKey) -> Transition:
+        transitions = []
+        obs = gym_env.reset(key)
+        done = False
+        while not done:
+            action = policy(obs)
+            next_obs, reward, done, info = gym_env.step(action)
+            transitions.append(Transition(observation=obs,
+                                          action=action,
+                                          reward=jnp.array(reward),
+                                          discount=discounting,
+                                          next_observation=next_obs))
+            obs = next_obs
+
+        concatenated_transitions = jtu.tree_map(lambda *xs: jnp.stack(xs, axis=0), *transitions)
+        reward_on_true_system = jnp.sum(concatenated_transitions.reward)
+        print('Reward on true system:', reward_on_true_system)
+        wandb.log({'reward_on_true_system': reward_on_true_system})
+
+        fig, axes = plot_rc_trajectory(concatenated_transitions.next_observation,
+                                       concatenated_transitions.action, encode_angle=ENCODE_ANGLE,
+                                       show=False)
+        wandb.log({'True_trajectory_path': wandb.Image(fig)})
+        plt.close('all')
+        return concatenated_transitions
+
+    concatenated_transitions = simulate_on_true_envs(jr.PRNGKey(0))
+
+    fig, axes = plot_rc_trajectory(concatenated_transitions.next_observation,
+                                   concatenated_transitions.action, encode_angle=ENCODE_ANGLE,
+                                   show=False)
+    wandb.log({'True_trajectory_path': wandb.Image(fig)})
+    plt.close('all')
+
     wandb.finish()
 
 

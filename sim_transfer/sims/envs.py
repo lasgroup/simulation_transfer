@@ -19,11 +19,8 @@ class RCCarEnvReward:
         self.goal = goal
         self.ctrl_cost_weight = ctrl_cost_weight
         self.encode_angle = encode_angle
-
-        self.tolerance_pos = ToleranceReward(bounds=(0.0, bound), margin=5 * bound, value_at_margin=0.1,
-                                             sigmoid='long_tail')
-        self.tolerance_theta = ToleranceReward(bounds=(0.0, bound), margin=5 * bound, value_at_margin=0.1,
-                                               sigmoid='long_tail')
+        self.tolerance_reward = ToleranceReward(bounds=(0.0, bound), margin=10 * bound, value_at_margin=0.1,
+                                                sigmoid='long_tail')
 
     def forward(self, obs: jnp.array, action: jnp.array, next_obs: jnp.array):
         """ Computes the reward for the given transition """
@@ -45,10 +42,8 @@ class RCCarEnvReward:
         theta_diff = next_obs[..., 2] - self.goal[2]
         pos_dist = jnp.sqrt(jnp.sum(jnp.square(pos_diff), axis=-1))
         theta_dist = jnp.abs(((theta_diff + jnp.pi) % (2 * jnp.pi)) - jnp.pi)
-        # total_dist = jnp.sqrt(pos_dist**2 + theta_dist**2)
-        # reward = self.tolerance_pos(total_dist)
-        # reward = self.tolerance_pos(pos_dist) + 0.5 * self.tolerance_theta(theta_dist)
-        reward = self.tolerance_pos(pos_dist) + self.tolerance_theta(theta_dist) * (pos_dist < 0.01) * 10
+        total_dist = jnp.sqrt(pos_dist ** 2 + theta_dist ** 2)
+        reward = self.tolerance_reward(total_dist)
         return reward
 
     def __call__(self, *args, **kwargs):
@@ -259,7 +254,6 @@ if __name__ == '__main__':
                       use_obs_noise=True)
 
     t_start = time.time()
-
     s = env.reset()
     traj = [s]
     rewards = []

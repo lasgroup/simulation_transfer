@@ -27,8 +27,8 @@ class CarDynamics(Dynamics[CarDynamicsParams]):
     _dt: float = 1 / 30.
     dim_action: Tuple[int] = (2,)
     _goal: jnp.array = jnp.array([0.0, 0.0, - jnp.pi / 2.])
-    # _init_pose: jnp.array = jnp.array([-1.04, -1.42, jnp.pi / 2.])
-    _init_pose: jnp.array = jnp.array([-1.04 - 1, -1.42 + 1, jnp.pi / 2.])
+    _init_pose: jnp.array = jnp.array([-1.04, -1.42, jnp.pi / 2.])
+    # _init_pose: jnp.array = jnp.array([-1.04 - 1, -1.42 + 1, jnp.pi / 2.])
     _angle_idx: int = 2
     _obs_noise_stds: jnp.array = 0.05 * jnp.exp(jnp.array([-3.3170326, -3.7336411, -2.7081904,
                                                            -2.7841284, -2.7067015, -1.4446207]))
@@ -197,13 +197,17 @@ class CarRewardParams:
 class CarReward(Reward[CarRewardParams]):
     _goal: jnp.array = jnp.array([0.0, 0.0, - jnp.pi / 2.])
 
-    def __init__(self, ctrl_cost_weight: float = 0.005, encode_angle: bool = False):
+    def __init__(self,
+                 ctrl_cost_weight: float = 0.005,
+                 encode_angle: bool = False,
+                 bound: float = 0.1):
         Reward.__init__(self, x_dim=7 if encode_angle else 6, u_dim=2)
         self.ctrl_cost_weight = ctrl_cost_weight
         self.encode_angle: bool = encode_angle
         self._reward_model = RCCarEnvReward(goal=self._goal,
                                             ctrl_cost_weight=ctrl_cost_weight,
-                                            encode_angle=self.encode_angle)
+                                            encode_angle=self.encode_angle,
+                                            bound=bound)
 
     def init_params(self, key: chex.PRNGKey) -> CarRewardParams:
         return CarRewardParams(_goal=self._goal, key=key)
@@ -219,8 +223,14 @@ class CarReward(Reward[CarRewardParams]):
 
 
 class CarSystem(System[CarDynamicsParams, CarRewardParams]):
-    def __init__(self, encode_angle: bool = False, use_tire_model: bool = False, action_delay: float = 0.0,
-                 car_model_params: Dict = None, ctrl_cost_weight: float = 0.005, use_obs_noise: bool = True):
+    def __init__(self,
+                 encode_angle: bool = False,
+                 use_tire_model: bool = False,
+                 action_delay: float = 0.0,
+                 car_model_params: Dict = None,
+                 ctrl_cost_weight: float = 0.005,
+                 use_obs_noise: bool = True,
+                 bound: float = 0.1):
         System.__init__(self,
                         dynamics=CarDynamics(encode_angle=encode_angle,
                                              use_tire_model=use_tire_model,
@@ -228,7 +238,8 @@ class CarSystem(System[CarDynamicsParams, CarRewardParams]):
                                              car_model_params=car_model_params,
                                              use_obs_noise=use_obs_noise),
                         reward=CarReward(ctrl_cost_weight=ctrl_cost_weight,
-                                         encode_angle=encode_angle)
+                                         encode_angle=encode_angle,
+                                         bound=bound)
                         )
 
     @staticmethod
