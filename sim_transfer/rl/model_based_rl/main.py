@@ -4,6 +4,7 @@ import chex
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree_util as jtu
+import matplotlib.pyplot as plt
 from brax.training.replay_buffers import UniformSamplingQueue, ReplayBufferState
 from brax.training.types import Transition
 from mbpo.optimizers.policy_optimizers.sac.sac import SAC
@@ -15,6 +16,7 @@ from sim_transfer.models.bnn_svgd import BNN_SVGD
 from sim_transfer.rl.model_based_rl.learned_system import LearnedCarSystem
 from sim_transfer.rl.model_based_rl.utils import split_data
 from sim_transfer.sims.envs import RCCarSimEnv
+from sim_transfer.sims.util import plot_rc_trajectory
 
 NUM_ENV_STEPS_BETWEEN_UPDATES = 16
 NUM_ENVS = 32
@@ -118,6 +120,12 @@ class ModelBasedRL:
         reward_on_true_system = jnp.sum(concatenated_transitions.reward)
         print('Reward on true system:', reward_on_true_system)
         wandb.log({'reward_on_true_system': reward_on_true_system})
+
+        fig, axes = plot_rc_trajectory(concatenated_transitions.next_observation,
+                                       concatenated_transitions.action, encode_angle=gym_env.encode_angle,
+                                       show=False)
+        wandb.log({'True_trajectory_path': wandb.Image(fig)})
+        plt.close('all')
         return concatenated_transitions
 
     def train_transition_model(self,

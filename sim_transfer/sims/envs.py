@@ -9,6 +9,33 @@ from sim_transfer.sims.dynamics_models import RaceCar, CarParams
 from sim_transfer.sims.util import encode_angles, decode_angles, plot_rc_trajectory
 
 
+class ToleranceRewardNew:
+    def __init__(self, lower_bound: float, upper_bound: float, margin_coef: float, value_at_margin: float):
+        self.bounds = [lower_bound, upper_bound]
+        self.margin = margin_coef * (upper_bound - lower_bound)
+        self.value_at_margin = value_at_margin
+
+        if lower_bound > upper_bound:
+            raise ValueError('Lower bound must be <= upper bound.')
+        if margin_coef < 0:
+            raise ValueError('`margin` must be non-negative.')
+
+        lower, upper = bounds
+        if lower > upper:
+            raise ValueError('Lower bound must be <= upper bound.')
+        if margin < 0:
+            raise ValueError('`margin` must be non-negative.')
+
+        in_bounds = np.logical_and(lower <= x, x <= upper)
+        if margin == 0:
+            value = np.where(in_bounds, 1.0, 0.0)
+        else:
+            d = np.where(x < lower, lower - x, x - upper) / margin
+            value = np.where(in_bounds, 1.0, _sigmoids(d, value_at_margin, sigmoid))
+
+        return float(value) if np.isscalar(x) else value
+
+
 class ToleranceReward:
     def __init__(self, lower_bound: float, upper_bound: float, margin_coef: float, value_at_margin: float):
         self.bounds = [lower_bound, upper_bound]
@@ -71,10 +98,10 @@ class RCCarEnvReward:
         theta_diff = next_obs[..., 2] - self.goal[2]
         pos_dist = jnp.sqrt(jnp.sum(jnp.square(pos_diff), axis=-1))
         theta_dist = jnp.abs(((theta_diff + jnp.pi) % (2 * jnp.pi)) - jnp.pi)
-        total_dist = jnp.sqrt(pos_dist**2 + theta_dist**2)
-        reward = self.tolerance_pos(total_dist)
+        # total_dist = jnp.sqrt(pos_dist**2 + theta_dist**2)
+        # reward = self.tolerance_pos(total_dist)
         # reward = self.tolerance_pos(pos_dist) + 0.5 * self.tolerance_theta(theta_dist)
-        # reward = self.tolerance_pos(pos_dist) + self.tolerance_theta(theta_dist)
+        reward = self.tolerance_pos(pos_dist) + self.tolerance_theta(theta_dist) * (pos_dist < 0.01) * 10
         return reward
 
     def __call__(self, *args, **kwargs):
