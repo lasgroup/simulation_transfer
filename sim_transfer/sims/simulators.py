@@ -225,6 +225,39 @@ class GaussianProcessSim(FunctionSimulator):
         return norm_stats
 
 
+class EncodeAngleSimWrapper(FunctionSimulator):
+
+    def __init__(self, base_sim: FunctionSimulator, angle_idx: int = 0):
+        self.base_sim = base_sim
+        self.angle_idx = angle_idx
+        super().__init__(input_size=base_sim.input_size, output_size=base_sim.output_size + 1)
+
+    def sample_function_vals(self, *args, **kwargs) -> jnp.ndarray:
+        f_samples = self.base_sim.sample_function_vals(*args, **kwargs)
+        f_samples = encode_angles(f_samples, angle_idx=self.angle_idx)
+        assert f_samples.shape[-1] == self.output_size
+        return f_samples
+
+    def _typical_f(self, x: jnp.array) -> jnp.array:
+        f = self.base_sim._typical_f(x)
+        f = encode_angles(f, angle_idx=self.angle_idx)
+        return f
+
+    @cached_property
+    def normalization_stats(self) -> Dict[str, jnp.ndarray]:
+        norm_stats = self.base_sim.normalization_stats
+        norm_stats['y_mean'] = jnp.concatenate(
+            [norm_stats['y_mean'][:self.angle_idx],
+             jnp.array([0., 0.]),
+             norm_stats['y_mean'][self.angle_idx+1:]])
+        norm_stats['y_std'] = jnp.concatenate(
+            [norm_stats['y_std'][:self.angle_idx],
+             jnp.array([1., 1.]),
+             norm_stats['y_std'][self.angle_idx+1:]])
+        assert norm_stats['y_mean'].shape == norm_stats['y_std'].shape == (self.output_size,)
+        return norm_stats
+
+
 class SinusoidsSim(FunctionSimulator):
     amp_mean = 2.0
     amp_std = 0.4
