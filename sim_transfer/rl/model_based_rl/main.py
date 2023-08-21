@@ -198,9 +198,11 @@ if __name__ == '__main__':
                    rng_key=jr.PRNGKey(seed),
                    num_train_steps=20000,
                    bandwidth_svgd=10.,
-                   likelihood_std=2 * 0.05 * jnp.exp(jnp.array([-3.3170326, -3.7336411, -2.7081904, -2.7081904,
+                   likelihood_std=10 * 0.05 * jnp.exp(jnp.array([-3.3170326, -3.7336411, -2.7081904, -2.7081904,
                                                                 -2.7841284, -2.7067015, -1.4446207])),
                    normalize_likelihood_std=True,
+                   likelihood_exponent=0.5,
+                   learn_likelihood_std=False
                    )
     max_replay_size_true_data_buffer = 10000
     include_aleatoric_noise = True
