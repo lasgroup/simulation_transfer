@@ -1,9 +1,10 @@
 import unittest
 import jax
+import pytest
 import jax.numpy as jnp
 
 from sim_transfer.models.abstract_model import AbstractRegressionModel
-from sim_transfer.models.bnn_svgd import BNN_SVGD
+from sim_transfer.models import BNN_SVGD, BNN_VI
 
 class TestAbstractRegression(unittest.TestCase):
 
@@ -103,50 +104,74 @@ class TestAbstractRegression(unittest.TestCase):
         assert set(jnp.concatenate(x_batch_list).flatten().tolist()) == set(x_data.flatten().tolist())
 
 
-class TestReinitialization(unittest.TestCase):
+""" TEST RE-INITIALIZATION """
 
-    def test_reinit_bnn_svgd_1(self):
-        bnn_svgd = BNN_SVGD(input_size=1, output_size=1, rng_key=jax.random.PRNGKey(34534527))
+def _get_1d_data():
+    # generate train and test data
+    x_train = jnp.linspace(-1, 1, 10).reshape((-1, 1))
+    y_train = jnp.sin(x_train)
+    x_test = jnp.linspace(-1, 1, 100).reshape((-1, 1))
+    return x_train, y_train, x_test
 
-        # check that predictions are consistent when not reinitialized
-        x = jnp.linspace(-1, 1, 100).reshape((-1, 1))
-        y1_mean, y1_std = bnn_svgd.predict(x)
-        y2_mean, y2_std = bnn_svgd.predict(x)
-        assert jnp.allclose(y1_mean, y2_mean) and jnp.allclose(y1_std, y2_std)
 
-        # check that predictions are different when reinitialized
-        bnn_svgd.reinit()
-        y3_mean, y3_std = bnn_svgd.predict(x)
-        assert (not jnp.allclose(y1_mean, y3_mean)) and (not jnp.allclose(y1_std, y3_std))
+@pytest.mark.parametrize('model', ['BNN_SVGD', 'BNN_VI'])
+def test_reinit_bnn_svgd(model: str):
+    if model == 'BNN_SVGD':
+        bnn = BNN_SVGD(input_size=1, output_size=1, rng_key=jax.random.PRNGKey(34534527))
+    elif model == 'BNN_VI':
+        bnn = BNN_VI(input_size=1, output_size=1, rng_key=jax.random.PRNGKey(34534527))
+    else:
+        raise ValueError(f'Unknown model {model}')
 
-    def test_reinit_bnn_svgd_seed_consistency(self):
-        bnn_svgd = BNN_SVGD(input_size=1, output_size=1, rng_key=jax.random.PRNGKey(34534527))
+    extra_kwargs = {'key': jax.random.PRNGKey(34534)} if model == 'BNN_VI' else {}
 
-        # generate train and test data
-        x_train = jnp.linspace(-1, 1, 10).reshape((-1, 1))
-        y_train = jnp.sin(x_train)
-        x_test = jnp.linspace(-1, 1, 100).reshape((-1, 1))
+    x_train, y_train, x_test = _get_1d_data()
+    bnn.fit(x_train, y_train, num_steps=10)
 
-        # reinit model, train for 10 steps, then make predictions
-        key_reinit = jax.random.PRNGKey(904352)
-        bnn_svgd.reinit(rng_key=key_reinit)
-        bnn_svgd.fit(x_train, y_train, num_steps=10)
-        y1_mean, y1_std = bnn_svgd.predict(x_test)
+    # check that predictions are consistent when not reinitialized
+    y1_mean, y1_std = bnn.predict(x_test, **extra_kwargs)
+    y2_mean, y2_std = bnn.predict(x_test, **extra_kwargs)
+    assert jnp.allclose(y1_mean, y2_mean) and jnp.allclose(y1_std, y2_std)
 
-        # repeat
-        bnn_svgd.reinit(rng_key=key_reinit)
-        bnn_svgd.fit(x_train, y_train, num_steps=10)
-        y2_mean, y2_std = bnn_svgd.predict(x_test)
+    # check that predictions are different when reinitialized
+    bnn.reinit()
+    y3_mean, y3_std = bnn.predict(x_test, **extra_kwargs)
+    assert (not jnp.allclose(y1_mean, y3_mean)) and (not jnp.allclose(y1_std, y3_std))
 
-        # check that predictions are the same
-        assert jnp.allclose(y1_mean, y2_mean) and jnp.allclose(y1_std, y2_std)
 
-        # check that if we reinitialize with a differnt seed, we get different predictions
-        bnn_svgd.reinit(rng_key=jax.random.PRNGKey(456456))
-        bnn_svgd.fit(x_train, y_train, num_steps=10)
-        y3_mean, y3_std = bnn_svgd.predict(x_test)
-        assert (not jnp.allclose(y1_mean, y3_mean)) and (not jnp.allclose(y1_std, y3_std))
+@pytest.mark.parametrize('model', ['BNN_SVGD', 'BNN_VI'])
+def test_reinit_bnn_svgd_seed_consistency(model: str):
+    if model == 'BNN_SVGD':
+        bnn = BNN_SVGD(input_size=1, output_size=1, rng_key=jax.random.PRNGKey(34534527))
+    elif model == 'BNN_VI':
+        bnn = BNN_VI(input_size=1, output_size=1, rng_key=jax.random.PRNGKey(34534527))
+    else:
+        raise ValueError(f'Unknown model {model}')
+
+    extra_kwargs = {'key': jax.random.PRNGKey(34534)} if model == 'BNN_VI' else {}
+
+    x_train, y_train, x_test = _get_1d_data()
+
+    # reinit model, train for 10 steps, then make predictions
+    key_reinit = jax.random.PRNGKey(904352)
+    bnn.reinit(rng_key=key_reinit)
+    bnn.fit(x_train, y_train, num_steps=10)
+    y1_mean, y1_std = bnn.predict(x_test, **extra_kwargs)
+
+    # repeat
+    bnn.reinit(rng_key=key_reinit)
+    bnn.fit(x_train, y_train, num_steps=10)
+    y2_mean, y2_std = bnn.predict(x_test, **extra_kwargs)
+
+    # check that predictions are the same
+    assert jnp.allclose(y1_mean, y2_mean) and jnp.allclose(y1_std, y2_std)
+
+    # check that if we reinitialize with a differnt seed, we get different predictions
+    bnn.reinit(rng_key=jax.random.PRNGKey(456456))
+    bnn.fit(x_train, y_train, num_steps=10)
+    y3_mean, y3_std = bnn.predict(x_test, **extra_kwargs)
+    assert (not jnp.allclose(y1_mean, y3_mean)) and (not jnp.allclose(y1_std, y3_std))
 
 
 if __name__ == '__main__':
-    unittest.main()
+    pytest.main()

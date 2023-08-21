@@ -27,6 +27,7 @@ class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
                  num_measurement_points: int = 8,
                  likelihood_std: Union[float, jnp.array] = 0.2,
                  learn_likelihood_std: bool = False,
+                 likelihood_exponent: float = 1.0,
                  score_estimator: str = 'SSGE',
                  ssge_kernel_type: str = 'IMQ',
                  bandwidth_score_estim: Optional[float] = None,  # if None, a bandwidth heuristic is used
@@ -48,7 +49,7 @@ class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
                          hidden_activation=hidden_activation, last_activation=last_activation,
                          normalize_data=normalize_data, normalization_stats=normalization_stats,
                          normalize_likelihood_std=normalize_likelihood_std,
-                         lr=lr, weight_decay=weight_decay,
+                         lr=lr, weight_decay=weight_decay, likelihood_exponent=likelihood_exponent,
                          likelihood_std=likelihood_std, learn_likelihood_std=learn_likelihood_std,
                          domain=domain, bandwidth_svgd=bandwidth_svgd)
         self.num_measurement_points = num_measurement_points
@@ -89,9 +90,10 @@ class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
         return stats
 
     def _neg_log_posterior(self, pred_raw: jnp.ndarray, likelihood_std: jnp.array, x_stacked: jnp.ndarray,
-                            y_batch: jnp.ndarray, train_data_till_idx: int,
-                            num_train_points: Union[float, int], key: jax.random.PRNGKey):
-        nll = - num_train_points * self._ll(pred_raw, likelihood_std, y_batch, train_data_till_idx)
+                           y_batch: jnp.ndarray, train_data_till_idx: int,
+                           num_train_points: Union[float, int], key: jax.random.PRNGKey):
+        nll = - num_train_points**self.likelihood_exponent \
+              * self._ll(pred_raw, likelihood_std, y_batch, train_data_till_idx)
         if self.score_estimator in ['SSGE', 'ssge', 'nu_method', 'nu-method']:
             prior_score = self._estimate_prior_score(pred_raw, x_stacked, key)
             neg_log_post = nll - jnp.sum(jnp.mean(pred_raw * jax.lax.stop_gradient(prior_score), axis=-2))
@@ -120,7 +122,7 @@ class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
             # performs score estimation for all output dimensions jointly
             # before score estimation call, flatten the output dimensions
             score_estimate = self._score_estim.estimate_gradients_s_x(pred_raw.reshape((pred_raw.shape[0], -1)),
-                                                                     f_samples.reshape((f_samples.shape[0], -1)))
+                                                                      f_samples.reshape((f_samples.shape[0], -1)))
             # add back the output dimensions
             score_estimate = score_estimate.reshape(pred_raw.shape)
         assert score_estimate.shape == pred_raw.shape
@@ -202,7 +204,7 @@ class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
                 self._estimate_gradients_s_x_vectorized = jax.vmap(
                     lambda y, f: self._score_estim.estimate_gradients_s_x(y, f), in_axes=-1, out_axes=-1)
             elif self.score_estimator in ['KDE', 'kde']:
-                    self._estimate_log_probs_vectorized = jax.vmap(
+                self._estimate_log_probs_vectorized = jax.vmap(
                         lambda y, f: self.kde.density_estimates_log_prob(y, f), in_axes=-1, out_axes=-1)
 
     def _bandwidth_heuristic(self) -> Union[float, jnp.array]:

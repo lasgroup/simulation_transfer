@@ -18,6 +18,7 @@ class BNN_VI(AbstractVariationalBNN):
                  rng_key: jax.random.PRNGKey,
                  likelihood_std: Union[float, jnp.array] = 0.2,
                  learn_likelihood_std: bool = False,
+                 likelihood_exponent: float = 1.0,
                  num_post_samples: int = 10,
                  data_batch_size: int = 16,
                  num_train_steps: int = 10000,
@@ -37,8 +38,8 @@ class BNN_VI(AbstractVariationalBNN):
                          num_batched_nns=num_post_samples, hidden_layer_sizes=hidden_layer_sizes,
                          hidden_activation=hidden_activation, last_activation=last_activation,
                          normalize_data=normalize_data, normalization_stats=normalization_stats,
-                         normalize_likelihood_std=normalize_likelihood_std,
-                         likelihood_std=likelihood_std, learn_likelihood_std=learn_likelihood_std)
+                         normalize_likelihood_std=normalize_likelihood_std, likelihood_std=likelihood_std,
+                         learn_likelihood_std=learn_likelihood_std, likelihood_exponent=likelihood_exponent)
         self.use_prior = use_prior
         self.kl_prefactor = kl_prefactor
 
@@ -49,12 +50,30 @@ class BNN_VI(AbstractVariationalBNN):
 
         # init learnable variational posterior
         # heuristic for setting the initial of the prior on the weights
-        weight_std = 4.0 / jnp.sqrt(jnp.sum(jnp.array(hidden_layer_sizes)))
-        _prior = self.batched_model.params_prior(weight_prior_std=weight_std, bias_prior_std=0.5)
+        self._init_weight_std = 4.0 / jnp.sqrt(jnp.sum(jnp.array(hidden_layer_sizes)))
+        _prior = self.batched_model.params_prior(weight_prior_std=self._init_weight_std, bias_prior_std=0.5)
         self.params.update({'posterior_mean': _prior.mean(), 'posterior_std': _prior.stddev()})
 
-        # init optimizer for distillation prior
-        self.optim = optax.adam(learning_rate=lr)
+        # init optimizer
+        self.lr = lr
+        self._init_optim()
+
+    def reinit(self, rng_key: Optional[jax.random.PRNGKey] = None):
+        """ Reinitializes the model parameters and the optimizer state."""
+        if rng_key is None:
+            rng_key = self.rng_key
+        key_model, key_rng = jax.random.split(rng_key)
+        self._rng_key = key_rng  # reinitialize rng_key
+        self.batched_model.reinit_params(key_model)  # reinitialize model parameters
+        _prior = self.batched_model.params_prior(weight_prior_std=self._init_weight_std, bias_prior_std=0.5)
+        self.params.update({'posterior_mean': _prior.mean(), 'posterior_std': _prior.stddev()})
+        self._init_likelihood()  # reinitialize likelihood std
+        self._init_optim()  # reinitialize optimizer
+
+    def _init_optim(self):
+        """ Initializes the optimizer and the optimizer state.
+        Sets the attributes self.optim and self.opt_state. """
+        self.optim = optax.adam(learning_rate=self.lr)
         self.opt_state = self.optim.init(self.params)
 
     def _loss(self, params: Dict, x_batch: jnp.array, y_batch: jnp.array,
@@ -63,7 +82,7 @@ class BNN_VI(AbstractVariationalBNN):
         posterior_dist = tfd.MultivariateNormalDiag(params['posterior_mean'], params['posterior_std'])
         params_sample = posterior_dist.sample(seed=key, sample_shape=self.num_post_samples)
 
-        # compute data log-likelihood
+        # compute average log-likelihood of the batch
         likelihood_std = self._likelihood_std_transform(params['likelihood_std_raw']) if self.learn_likelihood_std \
             else self.likelihood_std
         pred_raw = self.batched_model.forward_vec(x_batch, self.batched_model.unravel_batch(params_sample))
@@ -74,7 +93,7 @@ class BNN_VI(AbstractVariationalBNN):
             log_posterior = jnp.mean(posterior_dist.log_prob(params_sample))
             log_prior = jnp.mean(self._prior_dist.log_prob(params_sample))
             kl = log_posterior - log_prior
-            loss = -ll + self.kl_prefactor * kl / num_train_points
+            loss = - num_train_points**self.likelihood_exponent * ll + self.kl_prefactor * kl
             stats = OrderedDict(loss=loss, train_nll_loss=-ll, log_posterior=log_posterior,
                                 log_prior=log_prior, kl=kl)
         else:
@@ -131,7 +150,7 @@ if __name__ == '__main__':
     domain = sim.domain
     x_measurement = jnp.linspace(domain.l[0], domain.u[0], 50).reshape(-1, 1)
 
-    num_train_points = 3
+    num_train_points = 10
 
     x_train = jax.random.uniform(key=next(key_iter), shape=(num_train_points,),
                                  minval=domain.l, maxval=domain.u).reshape(-1, 1)

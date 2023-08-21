@@ -20,6 +20,7 @@ class BNN_FSVGD(AbstractFSVGD_BNN):
                  rng_key: jax.random.PRNGKey,
                  likelihood_std: float = 0.2,
                  learn_likelihood_std: bool = False,
+                 likelihood_exponent: float = 1.0,
                  num_particles: int = 10,
                  bandwidth_svgd: float = 0.2,
                  bandwidth_gp_prior: float = 0.2,
@@ -41,7 +42,7 @@ class BNN_FSVGD(AbstractFSVGD_BNN):
                          normalize_data=normalize_data, normalization_stats=normalization_stats,
                          lr=lr, weight_decay=weight_decay, domain=domain, bandwidth_svgd=bandwidth_svgd,
                          likelihood_std=likelihood_std, learn_likelihood_std=learn_likelihood_std,
-                         normalize_likelihood_std=normalize_likelihood_std)
+                         likelihood_exponent=likelihood_exponent, normalize_likelihood_std=normalize_likelihood_std)
         self.bandwidth_gp_prior = bandwidth_gp_prior
         self.num_measurement_points = num_measurement_points
 
@@ -51,7 +52,8 @@ class BNN_FSVGD(AbstractFSVGD_BNN):
     def _neg_log_posterior(self, pred_raw: jnp.ndarray, likelihood_std: jnp.array, x_stacked: jnp.ndarray,
                            y_batch: jnp.ndarray, train_data_till_idx: int,
                            num_train_points: Union[float, int], key: jax.random.PRNGKey):
-        nll = - num_train_points * self._ll(pred_raw, likelihood_std, y_batch, train_data_till_idx)
+        nll = - num_train_points**self.likelihood_exponent\
+              * self._ll(pred_raw, likelihood_std, y_batch, train_data_till_idx)
         neg_log_prior = - self._gp_prior_log_prob(x_stacked, pred_raw, eps=1e-3)
         neg_log_post = nll + neg_log_prior
         stats = OrderedDict(train_nll_loss=nll, neg_log_prior=neg_log_prior)

@@ -70,14 +70,19 @@ class LikelihoodMixin:
     def _init_likelihood(self):
         self.likelihood_std = self._initial_likelihood_std
 
+
 class AbstractParticleBNN(BatchedNeuralNetworkModel, LikelihoodMixin):
 
     def __init__(self, likelihood_std: Union[float, jnp.array] = 0.2, learn_likelihood_std: bool = False,
-                 lr: float = 1e-3, weight_decay: float = 0.0, normalize_likelihood_std: bool = False, **kwargs):
+                 lr: float = 1e-3, weight_decay: float = 0.0, normalize_likelihood_std: bool = False,
+                 likelihood_exponent: float = 1.0, **kwargs):
         self.params = {}  # this must happen before super().__init__ is called
         BatchedNeuralNetworkModel.__init__(self, **kwargs)
         LikelihoodMixin.__init__(self, likelihood_std=likelihood_std, learn_likelihood_std=learn_likelihood_std,
                                  normalize_likelihood_std=normalize_likelihood_std)
+
+        assert likelihood_exponent >= 0.0, 'likelihood_exponent must be non-negative'
+        self.likelihood_exponent = likelihood_exponent
 
         # initialize batched NN
         self.params.update({'nn_params_stacked': self.batched_model.param_vectors_stacked})
@@ -148,11 +153,14 @@ class AbstractParticleBNN(BatchedNeuralNetworkModel, LikelihoodMixin):
 class AbstractVariationalBNN(BatchedNeuralNetworkModel, LikelihoodMixin):
 
     def __init__(self, likelihood_std: Union[float, jnp.array] = 0.2, learn_likelihood_std: bool = False,
-                 normalize_likelihood_std: bool = False, **kwargs):
+                 normalize_likelihood_std: bool = False, likelihood_exponent: float = 1.0, **kwargs):
         self.params = {} # this must happen before super().__init__ is called
         BatchedNeuralNetworkModel.__init__(self, **kwargs)
         LikelihoodMixin.__init__(self, likelihood_std=likelihood_std, learn_likelihood_std=learn_likelihood_std,
                                  normalize_likelihood_std=normalize_likelihood_std)
+
+        assert likelihood_exponent >= 0.0, 'likelihood_exponent must be non-negative'
+        self.likelihood_exponent = likelihood_exponent
 
         # need to be implemented by subclass
         self.optim = None
@@ -205,7 +213,7 @@ class AbstractVariationalBNN(BatchedNeuralNetworkModel, LikelihoodMixin):
         return pred_dist
 
     def predict_post_samples(self, x: jnp.ndarray, key: Optional[jax.random.PRNGKey] = None,
-                     num_post_samples: Optional[int] = None) -> jnp.ndarray:
+                             num_post_samples: Optional[int] = None) -> jnp.ndarray:
         # normalize input data
         x = self._normalize_data(x)
 
@@ -316,7 +324,6 @@ class AbstractFSVGD_BNN(AbstractParticleBNN, MeasurementSetMixin):
 
 class AbstractSVGD_BNN(AbstractParticleBNN):
 
-
     def __init__(self, bandwidth_svgd: float = 0.4, use_prior: bool = True, **kwargs):
         AbstractParticleBNN.__init__(self, **kwargs)
         self.use_prior = use_prior
@@ -364,6 +371,7 @@ class AbstractSVGD_BNN(AbstractParticleBNN):
         return opt_state, params, stats
 
     def _ll(self, params: Dict, x_batch: jnp.ndarray, y_batch: jnp.ndarray):
+        """ computes the avg log likelihood of the batch """
         pred_raw = self.batched_model.forward_vec(x_batch, params['nn_params_stacked'])
         if self.learn_likelihood_std:
             likelihood_std = self._likelihood_std_transform(params['likelihood_std_raw'])
@@ -374,16 +382,16 @@ class AbstractSVGD_BNN(AbstractParticleBNN):
 
     def _neg_log_posterior(self, params: Dict, x_batch: jnp.ndarray, y_batch: jnp.ndarray,
                            num_train_points: Union[float, int]):
-        ll = self._ll(params, x_batch=x_batch, y_batch=y_batch)
+        nll = - num_train_points**self.likelihood_exponent * self._ll(params, x_batch=x_batch, y_batch=y_batch)
         if self.use_prior:
             log_prior = jnp.mean(self.prior_dist.log_prob(
                 self.batched_model.flatten_batch(params['nn_params_stacked'])))
-            log_prior /= (num_train_points * self.prior_dist.event_shape[0])
-            stats = OrderedDict(train_nll_loss=-ll, neg_log_prior=-log_prior)
-            log_posterior = ll + log_prior
+            log_prior /= self.prior_dist.event_shape[0]
+            stats = OrderedDict(train_nll_loss=nll, neg_log_prior=-log_prior)
+            neg_log_post = nll - log_prior
         else:
-            log_posterior = ll
-            stats = OrderedDict(train_nll_loss=-ll)
+            neg_log_post = nll
+            stats = OrderedDict(train_nll_loss=nll)
         if self.learn_likelihood_std:
             stats['likelihood_std'] = jnp.mean(self._likelihood_std_transform(params['likelihood_std_raw']))
-        return - log_posterior, stats
+        return neg_log_post, stats

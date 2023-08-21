@@ -14,6 +14,7 @@ class BNN_SVGD(AbstractSVGD_BNN):
                  rng_key: jax.random.PRNGKey,
                  likelihood_std: Union[float, jnp.array] = 0.2,
                  learn_likelihood_std: bool = False,
+                 likelihood_exponent: float = 1.0,
                  num_particles: int = 10,
                  bandwidth_svgd: float = 10.0,
                  data_batch_size: int = 16,
@@ -37,6 +38,7 @@ class BNN_SVGD(AbstractSVGD_BNN):
                          normalize_likelihood_std=normalize_likelihood_std,
                          lr=lr, weight_decay=weight_decay, likelihood_std=likelihood_std,
                          learn_likelihood_std=learn_likelihood_std,
+                         likelihood_exponent=likelihood_exponent,
                          bandwidth_svgd=bandwidth_svgd, use_prior=use_prior)
 
         # construct the neural network prior distribution
@@ -95,7 +97,8 @@ if __name__ == '__main__':
     x_test = jnp.linspace(domain.l, domain.u, 100).reshape(-1, 1)
     y_test = fun(x_test)
 
-    bnn = BNN_SVGD(NUM_DIM_X, NUM_DIM_Y, next(key_iter), num_train_steps=20000, bandwidth_svgd=10., likelihood_std=0.05)
+    bnn = BNN_SVGD(NUM_DIM_X, NUM_DIM_Y, next(key_iter), num_train_steps=20000, bandwidth_svgd=10., likelihood_std=0.05,
+                   likelihood_exponent=1.0)
     # bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=20000)
     for i in range(10):
         bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=2000)
