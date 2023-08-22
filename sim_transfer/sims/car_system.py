@@ -28,6 +28,7 @@ class CarDynamics(Dynamics[CarDynamicsParams]):
     dim_action: Tuple[int] = (2,)
     _goal: jnp.array = jnp.array([0.0, 0.0, - jnp.pi / 2.])
     _init_pose: jnp.array = jnp.array([-1.04, -1.42, jnp.pi / 2.])
+    # _init_pose: jnp.array = jnp.array([-1.04 - 1, -1.42 + 1, jnp.pi / 2.])
     _angle_idx: int = 2
     _obs_noise_stds: jnp.array = 0.05 * jnp.exp(jnp.array([-3.3170326, -3.7336411, -2.7081904,
                                                            -2.7841284, -2.7067015, -1.4446207]))
@@ -92,7 +93,7 @@ class CarDynamics(Dynamics[CarDynamicsParams]):
         self.encode_angle: bool = encode_angle
 
         # initialize dynamics and observation noise models
-        self._dynamics_model = RaceCar(dt=self._dt, encode_angle=False)
+        self._dynamics_model = RaceCar(dt=self._dt, encode_angle=encode_angle)
         self.use_tire_model = use_tire_model
         if use_tire_model:
             self._default_car_model_params = self._default_car_model_params_blend
@@ -158,6 +159,8 @@ class CarDynamics(Dynamics[CarDynamicsParams]):
         # Move forward one step in the dynamics using the delayed action and the hidden state
         new_key, key_for_sampling_obs_noise = jr.split(dynamics_params.key)
         x_mean_next = self._dynamics_model.next_step(x, u, dynamics_params.car_params)
+        if self.encode_angle:
+            x_mean_next = self._dynamics_model.reduce_x(x_mean_next)
         x_next = self._state_to_obs(x_mean_next, key_for_sampling_obs_noise)
 
         new_params = dynamics_params.replace(action_buffer=action_buffer, key=new_key)
@@ -181,7 +184,8 @@ class CarDynamics(Dynamics[CarDynamicsParams]):
                      jr.uniform(key_pos, shape=(1,), minval=-0.10 * jnp.pi, maxval=0.10 * jnp.pi)
         init_vel = jnp.zeros((3,)) + jnp.array([0.005, 0.005, 0.02]) * jr.normal(key_vel, shape=(3,))
         init_state = jnp.concatenate([init_pos, init_theta, init_vel])
-        return init_state
+        return self._state_to_obs(init_state, rng_key=key_obs)
+        # return init_state
 
 
 @chex.dataclass
@@ -193,13 +197,17 @@ class CarRewardParams:
 class CarReward(Reward[CarRewardParams]):
     _goal: jnp.array = jnp.array([0.0, 0.0, - jnp.pi / 2.])
 
-    def __init__(self, ctrl_cost_weight: float = 0.005, encode_angle: bool = False):
+    def __init__(self,
+                 ctrl_cost_weight: float = 0.005,
+                 encode_angle: bool = False,
+                 bound: float = 0.1):
         Reward.__init__(self, x_dim=7 if encode_angle else 6, u_dim=2)
         self.ctrl_cost_weight = ctrl_cost_weight
         self.encode_angle: bool = encode_angle
         self._reward_model = RCCarEnvReward(goal=self._goal,
                                             ctrl_cost_weight=ctrl_cost_weight,
-                                            encode_angle=self.encode_angle)
+                                            encode_angle=self.encode_angle,
+                                            bound=bound)
 
     def init_params(self, key: chex.PRNGKey) -> CarRewardParams:
         return CarRewardParams(_goal=self._goal, key=key)
@@ -215,8 +223,14 @@ class CarReward(Reward[CarRewardParams]):
 
 
 class CarSystem(System[CarDynamicsParams, CarRewardParams]):
-    def __init__(self, encode_angle: bool = False, use_tire_model: bool = False, action_delay: float = 0.0,
-                 car_model_params: Dict = None, ctrl_cost_weight: float = 0.005, use_obs_noise: bool = True):
+    def __init__(self,
+                 encode_angle: bool = False,
+                 use_tire_model: bool = False,
+                 action_delay: float = 0.0,
+                 car_model_params: Dict = None,
+                 ctrl_cost_weight: float = 0.005,
+                 use_obs_noise: bool = True,
+                 bound: float = 0.1):
         System.__init__(self,
                         dynamics=CarDynamics(encode_angle=encode_angle,
                                              use_tire_model=use_tire_model,
@@ -224,7 +238,8 @@ class CarSystem(System[CarDynamicsParams, CarRewardParams]):
                                              car_model_params=car_model_params,
                                              use_obs_noise=use_obs_noise),
                         reward=CarReward(ctrl_cost_weight=ctrl_cost_weight,
-                                         encode_angle=encode_angle)
+                                         encode_angle=encode_angle,
+                                         bound=bound)
                         )
 
     @staticmethod

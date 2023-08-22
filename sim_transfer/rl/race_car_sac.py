@@ -14,12 +14,12 @@ from mbpo.systems.brax_wrapper import BraxWrapper
 from sim_transfer.sims.car_system import CarSystem
 from sim_transfer.sims.util import plot_rc_trajectory
 
-ENCODE_ANGLE = False
+ENCODE_ANGLE = True
 system = CarSystem(encode_angle=ENCODE_ANGLE,
-                   action_delay=0.00,
+                   action_delay=0.07,
                    use_tire_model=True,
                    use_obs_noise=True,
-                   ctrl_cost_weight=0.000,
+                   ctrl_cost_weight=0.005,
                    )
 
 # Create replay buffer
@@ -54,14 +54,17 @@ env = BraxWrapper(system=system,
 state = jit(env.reset)(rng=jr.PRNGKey(0))
 
 num_env_steps_between_updates = 32
-num_envs = 32
+num_envs = 16
+horizon = 300
+
 
 sac_trainer = SAC(
+    target_entropy=-10,
     environment=env,
-    num_timesteps=300_000,
+    num_timesteps=1_000_000,
     num_evals=20,
     reward_scaling=1,
-    episode_length=200,
+    episode_length=horizon,
     action_repeat=1,
     discounting=0.99,
     lr_policy=3e-4,
@@ -134,7 +137,6 @@ def step(system_state, _):
     return next_sys_state, (system_state.x_next, u, next_sys_state.reward)
 
 
-horizon = 200
 x_last, trajectory = scan(step, system_state_init, None, length=horizon)
 
 plt.plot(trajectory[0], label='Xs')

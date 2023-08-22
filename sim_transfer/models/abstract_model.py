@@ -287,7 +287,8 @@ class BatchedNeuralNetworkModel(AbstractRegressionModel):
                     eval_stats = self.eval(x_eval, y_eval, prefix='eval_')
                     stats_agg.update(eval_stats)
                 if log_to_wandb:
-                    wandb.log({f'{n}': float(v) for n, v in stats_agg.items()}, step=step)
+                    log_dict = {f'regression_model_training/{n}': float(v) for n, v in stats_agg.items()}
+                    wandb.log(log_dict | {'x_axis/bnn_step': step})
                 stats_msg = ' | '.join([f'{n}: {v:.4f}' for n, v in stats_agg.items()])
                 msg = (f'Step {step}/{num_steps} | {stats_msg} | Duration {duration_sec:.2f} sec | '
                        f'Time per sample {duration_per_sample_ms:.2f} ms')

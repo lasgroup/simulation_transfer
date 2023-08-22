@@ -6,50 +6,21 @@ import jax
 import jax.numpy as jnp
 
 from sim_transfer.sims.dynamics_models import RaceCar, CarParams
+from sim_transfer.sims.tolerance_reward import ToleranceReward
 from sim_transfer.sims.util import encode_angles, decode_angles, plot_rc_trajectory
-
-
-class ToleranceReward:
-    def __init__(self, lower_bound: float, upper_bound: float, margin_coef: float, value_at_margin: float):
-        self.bounds = [lower_bound, upper_bound]
-        self.margin = margin_coef * (upper_bound - lower_bound)
-        self.value_at_margin = value_at_margin
-
-        if lower_bound > upper_bound:
-            raise ValueError('Lower bound must be <= upper bound.')
-        if margin_coef < 0:
-            raise ValueError('`margin` must be non-negative.')
-
-    def forward(self, x: jnp.array) -> jnp.array:
-        lower, upper = self.bounds
-        in_bounds = (x >= lower) & (x <= upper)
-        if self.margin == 0:
-            return jnp.where(in_bounds, 1.0, 0.0)
-        else:
-            d = jnp.where(x < lower, lower - x, x - upper) / self.margin
-            return jnp.where(in_bounds, 1.0, self.value_at_margin * self._smooth_ramp(d))
-
-    def _smooth_ramp(self, x: jnp.array) -> jnp.array:
-        scale = jnp.sqrt(1 / self.value_at_margin - 1)
-        return 1 / ((x * scale) ** 2 + 1)
-
-    def __call__(self, *args, **kwargs):
-        return self.forward(*args, **kwargs)
 
 
 class RCCarEnvReward:
     _angle_idx: int = 2
     dim_action: Tuple[int] = (2,)
 
-    def __init__(self, goal: jnp.array, encode_angle: bool = False, ctrl_cost_weight: float = 0.005):
+    def __init__(self, goal: jnp.array, encode_angle: bool = False, ctrl_cost_weight: float = 0.005,
+                 bound: float = 0.1, ):
         self.goal = goal
         self.ctrl_cost_weight = ctrl_cost_weight
         self.encode_angle = encode_angle
-
-        self.tolerance_pos = ToleranceReward(lower_bound=0.0, upper_bound=0.1, margin_coef=5,
-                                             value_at_margin=0.2)
-        self.tolerance_theta = ToleranceReward(lower_bound=0.0, upper_bound=0.1, margin_coef=5,
-                                               value_at_margin=0.2)
+        self.tolerance_reward = ToleranceReward(bounds=(0.0, bound), margin=10 * bound, value_at_margin=0.1,
+                                                sigmoid='long_tail')
 
     def forward(self, obs: jnp.array, action: jnp.array, next_obs: jnp.array):
         """ Computes the reward for the given transition """
@@ -71,7 +42,8 @@ class RCCarEnvReward:
         theta_diff = next_obs[..., 2] - self.goal[2]
         pos_dist = jnp.sqrt(jnp.sum(jnp.square(pos_diff), axis=-1))
         theta_dist = jnp.abs(((theta_diff + jnp.pi) % (2 * jnp.pi)) - jnp.pi)
-        reward = self.tolerance_pos(pos_dist) + 0.5 * self.tolerance_theta(theta_dist)
+        total_dist = jnp.sqrt(pos_dist ** 2 + theta_dist ** 2)
+        reward = self.tolerance_reward(total_dist)
         return reward
 
     def __call__(self, *args, **kwargs):
@@ -275,14 +247,13 @@ class RCCarSimEnv:
 
 
 if __name__ == '__main__':
-    ENCODE_ANGLE = False
+    ENCODE_ANGLE = True
     env = RCCarSimEnv(encode_angle=ENCODE_ANGLE,
                       action_delay=0.07,
                       use_tire_model=True,
                       use_obs_noise=True)
 
     t_start = time.time()
-
     s = env.reset()
     traj = [s]
     rewards = []

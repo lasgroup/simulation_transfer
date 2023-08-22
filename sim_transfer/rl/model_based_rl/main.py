@@ -1,34 +1,37 @@
+import copy
 from typing import Callable
 
 import chex
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree_util as jtu
+import matplotlib.pyplot as plt
+import wandb
 from brax.training.replay_buffers import UniformSamplingQueue, ReplayBufferState
 from brax.training.types import Transition
 from mbpo.optimizers.policy_optimizers.sac.sac import SAC
 from mbpo.systems.brax_wrapper import BraxWrapper
 
-import wandb
 from sim_transfer.models.abstract_model import BatchedNeuralNetworkModel
 from sim_transfer.models.bnn_svgd import BNN_SVGD
 from sim_transfer.rl.model_based_rl.learned_system import LearnedCarSystem
 from sim_transfer.rl.model_based_rl.utils import split_data
 from sim_transfer.sims.envs import RCCarSimEnv
+from sim_transfer.sims.util import plot_rc_trajectory
 
 NUM_ENV_STEPS_BETWEEN_UPDATES = 16
-NUM_ENVS = 32
-SAC_KWARGS = dict(num_timesteps=300_000,
+NUM_ENVS = 64
+SAC_KWARGS = dict(num_timesteps=1_000_000,
                   num_evals=20,
                   reward_scaling=10,
-                  episode_length=30,
+                  episode_length=50,
                   action_repeat=1,
                   discounting=0.99,
                   lr_policy=3e-4,
                   lr_alpha=3e-4,
                   lr_q=3e-4,
                   num_envs=NUM_ENVS,
-                  batch_size=32,
+                  batch_size=64,
                   grad_updates_per_step=NUM_ENV_STEPS_BETWEEN_UPDATES * NUM_ENVS,
                   num_env_steps_between_updates=NUM_ENV_STEPS_BETWEEN_UPDATES,
                   tau=0.005,
@@ -76,10 +79,18 @@ class ModelBasedRL:
             dummy_data_sample=self.dummy_sample,
             sample_batch_size=1)
 
+    def define_wandb_metrics(self):
+        wandb.define_metric('x_axis/episode')
+
     def train_policy(self,
                      bnn_model: BatchedNeuralNetworkModel,
                      true_data_buffer_state: ReplayBufferState,
-                     key: chex.PRNGKey) -> Callable[[chex.Array], chex.Array]:
+                     key: chex.PRNGKey,
+                     episode_idx: int) -> Callable[[chex.Array], chex.Array]:
+        _sac_kwargs = self.sac_kwargs
+        if episode_idx == 0:
+            _sac_kwargs = copy.deepcopy(_sac_kwargs)
+            _sac_kwargs['num_timesteps'] = 10_000
         system = LearnedCarSystem(model=bnn_model,
                                   include_noise=self.include_aleatoric_noise,
                                   **self.car_reward_kwargs)
@@ -88,7 +99,7 @@ class ModelBasedRL:
                           sample_buffer=self.true_data_buffer,
                           system_params=system.init_params(jr.PRNGKey(0)), )
 
-        sac_trainer = SAC(environment=env, **self.sac_kwargs, )
+        sac_trainer = SAC(environment=env, **_sac_kwargs, )
 
         params, metrics = sac_trainer.run_training(key=key)
         make_inference_fn = sac_trainer.make_policy
@@ -99,6 +110,7 @@ class ModelBasedRL:
         return policy
 
     def simulate_on_true_envs(self,
+                              episode_idx: int,
                               policy: Callable[[chex.Array], chex.Array],
                               key: chex.PRNGKey) -> Transition:
         transitions = []
@@ -115,7 +127,15 @@ class ModelBasedRL:
             obs = next_obs
 
         concatenated_transitions = jtu.tree_map(lambda *xs: jnp.stack(xs, axis=0), *transitions)
-        print('Reward on true system:', jnp.sum(concatenated_transitions.reward))
+        reward_on_true_system = jnp.sum(concatenated_transitions.reward)
+        print('Reward on true system:', reward_on_true_system)
+        fig, axes = plot_rc_trajectory(concatenated_transitions.next_observation,
+                                       concatenated_transitions.action, encode_angle=self.gym_env.encode_angle,
+                                       show=False)
+        wandb.log({'True_trajectory_path': wandb.Image(fig),
+                   'reward_on_true_system': reward_on_true_system,
+                   'x_axis/episode': episode_idx})
+        plt.close('all')
         return concatenated_transitions
 
     def train_transition_model(self,
@@ -134,20 +154,25 @@ class ModelBasedRL:
         x_train, x_test, y_train, y_test = split_data(x_all, y_all, test_ratio=0.2, seed=42)
 
         # Train model
-        # TODO: Now we are just continuously training the model on the extended data. Should we do this?
-        self.bnn_model.fit(x_train=x_train, y_train=y_train, x_eval=x_test, y_eval=y_test, num_steps=20000)
+        # Todo: we should reinit the model only in the first few episodes and then continue training
+        self.bnn_model.reinit(rng_key=key)
+        self.bnn_model.fit(x_train=x_train, y_train=y_train, x_eval=x_test, y_eval=y_test, log_to_wandb=True)
         return self.bnn_model
 
     def do_episode(self,
+                   episode_idx: int,
                    bnn_model: BatchedNeuralNetworkModel,
                    true_buffer_state: ReplayBufferState,
                    key: chex.PRNGKey):
         # Train policy on current model
         print("Training policy")
-        policy = self.train_policy(bnn_model=bnn_model, true_data_buffer_state=true_buffer_state, key=key)
+        policy = self.train_policy(bnn_model=bnn_model,
+                                   true_data_buffer_state=true_buffer_state,
+                                   key=key,
+                                   episode_idx=episode_idx)
         # Simulate on true envs with policy and collect data
         print("Simulating on true envs")
-        transitions = self.simulate_on_true_envs(policy=policy, key=key)
+        transitions = self.simulate_on_true_envs(episode_idx=episode_idx, policy=policy, key=key)
         # Update true data buffer
         print("Updating true data buffer")
         new_true_buffer_state = self.true_data_buffer.insert(true_buffer_state, transitions)
@@ -165,16 +190,19 @@ class ModelBasedRL:
             key, key_do_episode = jr.split(key)
             bnn_model, true_buffer_state = self.do_episode(bnn_model=bnn_model,
                                                            true_buffer_state=true_buffer_state,
-                                                           key=key_do_episode)
+                                                           key=key_do_episode,
+                                                           episode_idx=episode)
 
 
 if __name__ == '__main__':
     ENCODE_ANGLE = True
+    ctrl_cost_weight = 0.005
     seed = 0
     gym_env = RCCarSimEnv(encode_angle=ENCODE_ANGLE,
                           action_delay=0.00,
                           use_tire_model=True,
                           use_obs_noise=True,
+                          ctrl_cost_weight=ctrl_cost_weight,
                           )
 
     x_dim = gym_env.dim_state[0]
@@ -184,13 +212,16 @@ if __name__ == '__main__':
                    rng_key=jr.PRNGKey(seed),
                    num_train_steps=20000,
                    bandwidth_svgd=10.,
-                   likelihood_std=2 * 0.05 * jnp.exp(jnp.array([-3.3170326, -3.7336411, -2.7081904, -2.7081904,
-                                                                -2.7841284, -2.7067015, -1.4446207])),
+                   likelihood_std=10 * 0.05 * jnp.exp(jnp.array([-3.3170326, -3.7336411, -2.7081904, -2.7081904,
+                                                                 -2.7841284, -2.7067015, -1.4446207])),
                    normalize_likelihood_std=True,
+                   likelihood_exponent=0.5,
+                   learn_likelihood_std=False
                    )
     max_replay_size_true_data_buffer = 10000
     include_aleatoric_noise = True
-    car_reward_kwargs = {}
+    car_reward_kwargs = dict(encode_angle=ENCODE_ANGLE,
+                             ctrl_cost_weight=ctrl_cost_weight)
 
     wandb.init(
         project="Race car test MBRL",
