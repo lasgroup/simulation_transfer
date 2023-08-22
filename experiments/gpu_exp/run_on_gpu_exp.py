@@ -1,6 +1,7 @@
 import argparse
 
 import jax
+import tensorflow as tf
 import wandb
 
 
@@ -20,8 +21,13 @@ def jax_has_gpu():
         wandb.log({'info': 'JAX does not have GPU'})
 
     print('End of experiment')
-    wandb.log({'end': 'End of experiment'})
-    wandb.finish()
+    print('Test tensorflow')
+
+    print(tf.config.list_physical_devices('GPU'))
+    print('End test tensorflow')
+
+    # wandb.log({'end': 'End of experiment'})
+    # wandb.finish()
 
 
 def main(args):
