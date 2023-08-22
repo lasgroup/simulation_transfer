@@ -1,7 +1,7 @@
 from experiments.util import (generate_run_commands, generate_base_command, RESULT_DIR, sample_param_flags, hash_dict)
 from experiments.data_provider import DATASET_CONFIGS
 
-import experiments.regression_exp.run_regression_exp
+import experiments.lf_hf_transfer_exp.run_regression_exp
 import numpy as np
 import datetime
 import itertools
@@ -16,18 +16,21 @@ MODEL_SPECIFIC_CONFIG = {
     'BNN_FSVGD': {
         'bandwidth_svgd': {'distribution': 'log_uniform_10', 'min': -1.0, 'max': 0.0},
         'bandwidth_gp_prior': {'distribution': 'log_uniform', 'min': -2., 'max': 0.},
-        'num_train_steps': {'values': [20000, 40000]},
+        'num_train_steps': {'values': [20000]},
         'num_measurement_points': {'values': [16, 32, 64, 128]},
     },
     'BNN_FSVGD_SimPrior_gp': {
         'bandwidth_svgd': {'distribution': 'log_uniform_10', 'min': -1.0, 'max': 0.0},
         'num_train_steps': {'values': [40000]},
         'num_measurement_points': {'values': [16, 32]},
-        'num_f_samples': {'values': [512, 1024]},
+        'num_f_samples': {'values': [1024]},
+        'added_gp_lengthscale': {'distribution': 'uniform', 'min': 1., 'max': 20.0},   # racecar: 4 - 8
+        #'added_gp_outputscale': {'distribution': 'uniform', 'min': 0.05, 'max': 0.5},  # racecar: 0.2 - 0.8
+        'added_gp_outputscale': {'distribution': 'uniform', 'min': 0.5, 'max': 2.0},   # racecar: 4 - 8
     },
     'BNN_FSVGD_SimPrior_ssge': {
         'bandwidth_svgd': {'distribution': 'log_uniform_10', 'min': -1.0, 'max': 0.0},
-        'num_train_steps': {'values': [20000]},
+        'num_train_steps': {'values': [40000]},
         'num_measurement_points': {'values': [8, 16, 32]},
         'num_f_samples': {'values': [512]},
         'bandwidth_score_estim': {'distribution': 'log_uniform_10', 'min': -0.5, 'max': 1.},
@@ -37,7 +40,9 @@ MODEL_SPECIFIC_CONFIG = {
         'num_train_steps': {'values': [40000]},
         'num_measurement_points': {'values': [16, 32]},
         'num_f_samples': {'values': [512]},
-        'bandwidth_score_estim': {'distribution': 'log_uniform_10', 'min': 0.0, 'max': 0.5},
+        'bandwidth_score_estim': {'distribution': 'log_uniform_10', 'min': 0.0, 'max': 0.0},
+        'added_gp_lengthscale': {'distribution': 'uniform', 'min': 5., 'max': 10.0},
+        'added_gp_outputscale': {'distribution': 'uniform', 'min': 0.5, 'max': 2.0},   # racecar: 4 - 8
     },
     'BNN_FSVGD_SimPrior_gp+nu-method': {
         'bandwidth_svgd': {'distribution': 'log_uniform_10', 'min': -1.0, 'max': 0.0},
@@ -49,7 +54,7 @@ MODEL_SPECIFIC_CONFIG = {
     },
     'BNN_FSVGD_SimPrior_kde': {
         'bandwidth_svgd': {'distribution': 'log_uniform', 'min': -2., 'max': 2.},
-        'num_train_steps': {'values': [20000]},
+        'num_train_steps': {'values': [40000]},
         'num_measurement_points': {'values': [16, 32]},
         'num_f_samples': {'values': [512, 1024, 2056]},
     },
@@ -84,8 +89,9 @@ def main(args):
         'data_batch_size': {'value': 8},
     }
     # update with model specific sweep ranges
-    assert args.model in MODEL_SPECIFIC_CONFIG
-    sweep_config.update(MODEL_SPECIFIC_CONFIG[args.model])
+    model_name = args.model.replace('_no_add_gp', '')
+    assert model_name in MODEL_SPECIFIC_CONFIG
+    sweep_config.update(MODEL_SPECIFIC_CONFIG[model_name])
 
     # determine name of experiment
     exp_base_path = os.path.join(RESULT_DIR, args.exp_name)
@@ -101,7 +107,7 @@ def main(args):
 
         for model_seed, data_seed in itertools.product(model_seeds[:args.num_model_seeds],
                                                        data_seeds[:args.num_data_seeds]):
-            cmd = generate_base_command(experiments.regression_exp.run_regression_exp,
+            cmd = generate_base_command(experiments.lf_hf_transfer_exp.run_regression_exp,
                                         flags=dict(**flags, **{'model_seed': model_seed, 'data_seed': data_seed}))
             command_list.append(cmd)
             output_file_list.append(os.path.join(exp_result_folder, f'{model_seed}_{data_seed}.out'))
@@ -128,11 +134,11 @@ if __name__ == '__main__':
     parser.add_argument('--yes', default=False, action='store_true')
 
     # data parameters
-    parser.add_argument('--data_source', type=str, default='racecar')
+    parser.add_argument('--data_source', type=str, default='pendulum')
 
     # # standard BNN parameters
     parser.add_argument('--model', type=str, default='BNN_SVGD')
-    parser.add_argument('--learn_likelihood_std', type=int, default=1)
+    parser.add_argument('--learn_likelihood_std', type=int, default=0)
 
     args = parser.parse_args()
     main(args)

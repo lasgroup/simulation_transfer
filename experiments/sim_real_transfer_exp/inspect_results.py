@@ -35,7 +35,7 @@ def different_method_plot(df_agg: pd.DataFrame, metric: str = 'nll', display: bo
     if display:
         plt.show()
         print(best_rows_df[[('model', ''), ('nll', 'mean'), ('nll', 'std'),
-                            ('rmse', 'mean'), ('rmse', 'std'), ('dirname', '')]].to_string())
+                            ('rmse', 'mean'), ('rmse', 'std')]].to_string())
 
     return best_rows_df, fig
 
@@ -63,14 +63,12 @@ def main(args, drop_nan=False):
             series[is_nan] = max_value + noise
             df_full[col] = series
 
-
     # group over everything except seeds and aggregate over the seeds
     groupby_names = list(set(param_names) - {'model_seed', 'data_seed'})
 
-    # rmove the likelihood_std column since it's a constant list which is not hashable
     groupby_names.remove('likelihood_std')
     # groupby_names.remove('added_gp_outputscale')
-    #df_full['added_gp_outputscale'] = df_full['added_gp_outputscale'].apply(lambda x: x[0])
+    df_full['added_gp_outputscale'] = df_full['added_gp_outputscale'].apply(lambda x: x[0])
 
     # replace all the nans in hyperparameter columns with 'N/A'
     for column in groupby_names:
@@ -98,15 +96,26 @@ def main(args, drop_nan=False):
 
     df_method = df_agg[(df_agg['model'] == 'BNN_FSVGD_SimPrior_gp')]
 
-    #df_method = df_method[df_method['bandwidth_score_estim'] > 1.0]
+    #df_method = df_method[df_method['bandwidth_score_estim'] > 0.1]
 
-    metric = 'nll'
-    for param in ['num_f_samples', 'bandwidth_score_estim', 'bandwidth_svgd', 'num_measurement_points']:
+    metric = 'rmse'
+    for param in ['num_measurement_points', 'added_gp_lengthscale', 'added_gp_outputscale']:# ['num_f_samples', 'bandwidth_score_estim', 'bandwidth_svgd', 'num_measurement_points']:
         plt.scatter(df_method[param], df_method[(metric, 'mean')])
         plt.xlabel(param)
         plt.xscale('log')
         plt.ylabel(metric)
+        #plt.scatter(5., -7, color='red')
+        #plt.ylim(-8, 0)
         plt.show()
+
+    plt.scatter(df_method['added_gp_lengthscale'], df_method['added_gp_outputscale'], c=df_method[(metric, 'mean')],
+                cmap='viridis')
+    plt.xlabel('added_gp_lengthscale')
+    plt.ylabel('added_gp_outputscale')
+    plt.colorbar(label=metric)
+    plt.show()
+
+    plt.scatter(df_method['added_gp_lengthscale'], df_method['added_gp_outputscale'], s=df_method[(metric, 'mean')])
 
     QUANTILE_BASED_CI = True
     METHODS = ['random_search', 'hill_search']
@@ -157,7 +166,7 @@ def main(args, drop_nan=False):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Inspect results of a regression experiment.')
-    parser.add_argument('--exp_name', type=str, default='aug22')
-    parser.add_argument('--data_source', type=str, default='racecar')
+    parser.add_argument('--exp_name', type=str, default='aug21_str')
+    parser.add_argument('--data_source', type=str, default='real_racecar')
     args = parser.parse_args()
     main(args)
