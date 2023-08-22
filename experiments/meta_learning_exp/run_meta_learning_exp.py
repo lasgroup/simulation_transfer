@@ -1,5 +1,6 @@
 from experiments.data_provider import provide_data_and_sim
 from experiments.util import hash_dict, NumpyArrayEncoder
+from experiments.data_provider import DATASET_CONFIGS
 
 import os
 import tensorflow as tf
@@ -106,6 +107,17 @@ def main(args):
     if exp_result_folder is not None:
         os.makedirs(exp_result_folder, exist_ok=True)
 
+    # set likelihood_std to default value if not specified
+    if exp_params['likelihood_std'] is None:
+        likelihood_std = DATASET_CONFIGS[args.data_source]['likelihood_std']['value']
+        if 'no_angvel' in exp_params['data_source']:
+            likelihood_std = likelihood_std[:-1]
+        elif 'only_pose' in exp_params['data_source']:
+            likelihood_std = likelihood_std[:-3]
+        exp_params['likelihood_std'] = likelihood_std
+        print(f"Setting likelihood_std to data_source default value from DATASET_CONFIGS "
+              f"which is {exp_params['likelihood_std']}")
+
     from pprint import pprint
     print('\nExperiment parameters:')
     pprint(exp_params)
@@ -154,7 +166,7 @@ if __name__ == '__main__':
     # -- general
     parser.add_argument('--model', type=str, default='NP')
     parser.add_argument('--model_seed', type=int, default=892616)
-    parser.add_argument('--likelihood_std', type=float, default=0.02)
+    parser.add_argument('--likelihood_std', type=float, default=None)
     parser.add_argument('--num_iter_meta_train', type=int, default=50000)
 
     # -- PACOH

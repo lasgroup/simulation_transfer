@@ -34,7 +34,6 @@ def main(args):
         'data_source': {'value': args.data_source},
         'num_samples_train': DATASET_CONFIGS[args.data_source]['num_samples_train'],
         'model': {'value': args.model},
-        'likelihood_std': DATASET_CONFIGS[args.data_source]['likelihood_std'],
     }
     # update with model specific sweep ranges
     assert args.model in MODEL_SPECIFIC_CONFIG
