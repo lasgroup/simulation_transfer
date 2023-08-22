@@ -16,7 +16,7 @@ from sim_transfer.sims.util import plot_rc_trajectory
 
 ENCODE_ANGLE = True
 system = CarSystem(encode_angle=ENCODE_ANGLE,
-                   action_delay=0.07,
+                   action_delay=0.00,
                    use_tire_model=True,
                    use_obs_noise=True,
                    ctrl_cost_weight=0.005,
@@ -41,8 +41,6 @@ sampling_buffer = UniformSamplingQueue(max_replay_size=num_init_states,
 
 sampling_buffer_state = sampling_buffer.init(jr.PRNGKey(0))
 
-
-
 sampling_buffer_state = sampling_buffer.insert(sampling_buffer_state, init_samples)
 
 # Create brax environment
@@ -56,7 +54,6 @@ state = jit(env.reset)(rng=jr.PRNGKey(0))
 num_env_steps_between_updates = 32
 num_envs = 16
 horizon = 300
-
 
 sac_trainer = SAC(
     target_entropy=-10,

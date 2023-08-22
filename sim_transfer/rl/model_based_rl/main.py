@@ -57,7 +57,9 @@ class ModelBasedRL:
                  car_reward_kwargs: dict = None,
                  sac_kwargs: dict = SAC_KWARGS,
                  discounting: chex.Array = jnp.array(0.99),
+                 reset_bnn: bool = True,
                  ):
+        self.reset_bnn = reset_bnn
         self.discounting = discounting
         self.car_reward_kwargs = car_reward_kwargs
         self.sac_kwargs = sac_kwargs
@@ -154,8 +156,8 @@ class ModelBasedRL:
         x_train, x_test, y_train, y_test = split_data(x_all, y_all, test_ratio=0.2, seed=42)
 
         # Train model
-        # Todo: we should reinit the model only in the first few episodes and then continue training
-        self.bnn_model.reinit(rng_key=key)
+        if self.reset_bnn:
+            self.bnn_model.reinit(rng_key=key)
         self.bnn_model.fit(x_train=x_train, y_train=y_train, x_eval=x_test, y_eval=y_test, log_to_wandb=True)
         return self.bnn_model
 

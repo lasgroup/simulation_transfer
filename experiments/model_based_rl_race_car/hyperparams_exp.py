@@ -16,9 +16,16 @@ def experiment(horizon_len: int,
                num_episodes: int,
                bnn_train_steps: int,
                sac_num_env_steps: int,
-               learnable_likelihood_std: str
+               learnable_likelihood_std: str,
+               reset_bnn: str
                ):
-    config_dict = dict(horizon_len=horizon_len)
+    config_dict = dict(horizon_len=horizon_len,
+                       seed=seed,
+                       num_episodes=num_episodes,
+                       bnn_train_steps=bnn_train_steps,
+                       sac_num_env_steps=sac_num_env_steps,
+                       learnable_likelihood_std=learnable_likelihood_std,
+                       reset_bnn=reset_bnn,)
     group_name = '_'.join(map(lambda x: str(x), list(value for key, value in config_dict.items() if key != 'seed')))
 
     NUM_ENV_STEPS_BETWEEN_UPDATES = 16
@@ -70,7 +77,8 @@ def experiment(horizon_len: int,
                                                                  -2.7841284, -2.7067015, -1.4446207])),
                    normalize_likelihood_std=True,
                    likelihood_exponent=0.5,
-                   learn_likelihood_std=learnable_likelihood_std
+                   learn_likelihood_std=learnable_likelihood_std,
+                   hidden_layer_sizes=[64, 64, 64],
                    )
     max_replay_size_true_data_buffer = 10000
     include_aleatoric_noise = True
@@ -90,6 +98,7 @@ def experiment(horizon_len: int,
                                   max_replay_size_true_data_buffer=max_replay_size_true_data_buffer,
                                   include_aleatoric_noise=include_aleatoric_noise,
                                   car_reward_kwargs=car_reward_kwargs,
+                                  reset_bnn=reset_bnn == 'yes',
                                   )
 
     model_based_rl.run_episodes(num_episodes, jr.PRNGKey(seed))
@@ -107,6 +116,7 @@ def main(args):
         bnn_train_steps=args.bnn_train_steps,
         sac_num_env_steps=args.sac_num_env_steps,
         learnable_likelihood_std=args.learnable_likelihood_std,
+        reset_bnn=args.reset_bnn,
     )
 
 
@@ -119,5 +129,6 @@ if __name__ == '__main__':
     parser.add_argument('--sac_num_env_steps', type=int, default=0)
     parser.add_argument('--project_name', type=str, default='RaceCarPPO')
     parser.add_argument('--learnable_likelihood_std', type=str, default='yes')
+    parser.add_argument('--reset_bnn', type=str, default='yes')
     args = parser.parse_args()
     main(args)
