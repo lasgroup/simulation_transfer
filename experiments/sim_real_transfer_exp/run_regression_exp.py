@@ -5,6 +5,7 @@ import argparse
 import jax
 import sys
 import copy
+import jax.numpy as jnp
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, BASE_DIR)
@@ -15,6 +16,7 @@ from typing import Dict, List, Tuple, Union
 from experiments.util import Logger, hash_dict, NumpyArrayEncoder
 from experiments.data_provider import provide_data_and_sim, DATASET_CONFIGS
 from sim_transfer.models import BNN_SVGD, BNN_FSVGD, BNN_FSVGD_SimPrior, BNN_MMD_SimPrior, BNN_SVGD_DistillPrior
+from sim_transfer.sims.simulators import AdditiveSim, GaussianProcessSim
 
 ACTIVATION_DICT = {
     'relu': jax.nn.relu,
@@ -25,6 +27,9 @@ ACTIVATION_DICT = {
     'softplus': jax.nn.softplus,
     'swish': jax.nn.swish,
 }
+
+OUTPUTSCALES_RCCAR = [0.003, 0.003, 0.004, 0.004, 0.021, 0.021, 0.11]
+
 
 def regression_experiment(
                           # data parameters
@@ -47,6 +52,7 @@ def regression_experiment(
                           layer_size: int = 64,
                           normalize_likelihood_std: bool = False,
                           learn_likelihood_std: bool = False,
+                          likelihood_exponent: float = 1.0,
 
                           # SVGD parameters
                           num_particles: int = 20,
@@ -62,16 +68,37 @@ def regression_experiment(
                           bandwidth_score_estim: float = None,
                           ssge_kernel_type: str = 'SE',
                           num_f_samples: int = 128,
+
                           switch_score_estimator_frac: float = 0.6667,
+                          added_gp_lengthscale: float = 5.,
+                          added_gp_outputscale: Union[List[float], float] = 0.05,
 
                           # BNN_SVGD_DistillPrior
                           num_distill_steps: int = 500000,
                           ):
     # provide data and sim
-    x_train, y_train, x_test, y_test, sim = provide_data_and_sim(
+    x_train, y_train, x_test, y_test, sim_lf = provide_data_and_sim(
         data_source=data_source,
         data_spec={'num_samples_train': num_samples_train},
         data_seed=data_seed)
+
+    if model.endswith('_no_add_gp'):
+        no_added_gp = True
+        model = model.replace('_no_add_gp', '')
+        added_gp_outputscale = 0.
+    else:
+        no_added_gp = False
+
+    # create additive sim with a GP on top of the sim prior to model the fidelity gap
+    if no_added_gp:
+        sim = sim_lf
+    else:
+        sim = AdditiveSim(base_sims=[sim_lf,
+                                     GaussianProcessSim(
+                                         sim_lf.input_size,
+                                         sim_lf.output_size,
+                                         output_scale=added_gp_outputscale,
+                                         length_scale=added_gp_lengthscale)])
 
     # setup standard model params
     standard_model_params = {
@@ -88,6 +115,7 @@ def regression_experiment(
         'hidden_layer_sizes': [layer_size]*num_layers,
         'normalize_likelihood_std': normalize_likelihood_std,
         'learn_likelihood_std': bool(learn_likelihood_std),
+        'likelihood_exponent': likelihood_exponent,
     }
 
     if model == 'BNN_SVGD':
@@ -158,10 +186,28 @@ def main(args):
     if exp_result_folder is not None:
         os.makedirs(exp_result_folder, exist_ok=True)
 
+    # set likelihood_std to default value if not specified
     if exp_params['likelihood_std'] is None:
-        exp_params['likelihood_std'] = DATASET_CONFIGS[args.data_source]['likelihood_std']['value']
+        likelihood_std = DATASET_CONFIGS[args.data_source]['likelihood_std']['value']
+        if 'no_angvel' in exp_params['data_source']:
+            likelihood_std = likelihood_std[:-1]
+        elif 'only_pose' in exp_params['data_source']:
+            likelihood_std = likelihood_std[:-3]
+        exp_params['likelihood_std'] = likelihood_std
         print(f"Setting likelihood_std to data_source default value from DATASET_CONFIGS "
               f"which is {exp_params['likelihood_std']}")
+
+    # custom gp outputscale for racecar_hf
+    if 'real_racecar' in exp_params['data_source']:
+        outputscales_racecar = exp_params['added_gp_outputscale'] * jnp.array(OUTPUTSCALES_RCCAR)
+        if 'no_angvel' in exp_params['data_source']:
+            outputscales_racecar = outputscales_racecar[:-1]
+        elif 'only_pose' in exp_params['data_source']:
+            outputscales_racecar = outputscales_racecar[:-3]
+        exp_params['added_gp_outputscale'] = outputscales_racecar.tolist()
+        print(f'For {exp_params["data_source"]}, multiplying likelihood_std by OUTPUTSCALES_RCCAR. '
+              f'Resulting added_gp_outputscale parameter: {exp_params["added_gp_outputscale"]}')
+
 
     from pprint import pprint
     print('\nExperiment parameters:')
@@ -221,22 +267,23 @@ if __name__ == '__main__':
     parser.add_argument('--use_wandb', type=bool, default=False)
 
     # data parameters
-    parser.add_argument('--data_source', type=str, default='racecar')
-    parser.add_argument('--num_samples_train', type=int, default=10)
+    parser.add_argument('--data_source', type=str, default='real_racecar')
+    parser.add_argument('--num_samples_train', type=int, default=200)
     parser.add_argument('--data_seed', type=int, default=77698)
 
     # standard BNN parameters
     parser.add_argument('--model', type=str, default='BNN_FSVGD_SimPrior_gp')
     parser.add_argument('--model_seed', type=int, default=892616)
     parser.add_argument('--likelihood_std', type=float, default=None)
-    parser.add_argument('--learn_likelihood_std', type=int, default=1)
+    parser.add_argument('--learn_likelihood_std', type=int, default=0)
     parser.add_argument('--data_batch_size', type=int, default=8)
-    parser.add_argument('--num_train_steps', type=int, default=40000)
+    parser.add_argument('--num_train_steps', type=int, default=20000)
     parser.add_argument('--lr', type=float, default=1e-3)
     parser.add_argument('--hidden_activation', type=str, default='leaky_relu')
     parser.add_argument('--num_layers', type=int, default=3)
     parser.add_argument('--layer_size', type=int, default=64)
     parser.add_argument('--normalize_likelihood_std', type=bool, default=True)
+    parser.add_argument('--likelihood_exponent', type=float, default=0.5)
 
     # SVGD parameters
     parser.add_argument('--num_particles', type=int, default=20)
@@ -253,6 +300,10 @@ if __name__ == '__main__':
     parser.add_argument('--ssge_kernel_type', type=str, default='IMQ')
     parser.add_argument('--num_f_samples', type=int, default=64)
     parser.add_argument('--switch_score_estimator_frac', type=float, default=0.6667)
+
+    # Additive SimPrior GP parameters
+    parser.add_argument('--added_gp_lengthscale', type=float, default=5.)
+    parser.add_argument('--added_gp_outputscale', type=float, default=1.0)
 
     # FSVGD_SimPrior parameters
     parser.add_argument('--num_distill_steps', type=int, default=50000)

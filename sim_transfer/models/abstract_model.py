@@ -172,7 +172,7 @@ class AbstractRegressionModel(RngKeyMixin):
     def plot_1d(self, x_train: jnp.ndarray, y_train: jnp.ndarray,
                 domain_l: Optional[float] = None, domain_u: Optional[float] = None,
                 true_fun: Optional[Callable] = None, title: Optional[str] = '', show: bool = True,
-                log_to_wandb: bool = False):
+                plot_posterior_samples: bool = False, log_to_wandb: bool = False):
         assert self.input_size == 1, 'Can only plot if input_size = 1'
 
         # determine plotting domain
@@ -199,7 +199,7 @@ class AbstractRegressionModel(RngKeyMixin):
             ax[i].fill_between(x_plot.flatten(), pred_mean[:, i] - pred_std[:, i],
                                pred_mean[:, i] + pred_std[:, i], alpha=0.3)
 
-            if hasattr(self, 'predict_post_samples'):
+            if hasattr(self, 'predict_post_samples') and plot_posterior_samples:
                 y_post_samples = self.predict_post_samples(x_plot)
                 for y in y_post_samples:
                     ax[i].plot(x_plot, y[:, i], linewidth=0.2, color='green')

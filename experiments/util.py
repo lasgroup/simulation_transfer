@@ -274,7 +274,8 @@ def sample_param_flags(hyperparam_spec: Dict[str, Dict], rds: Optional[np.random
 """ Collecting the exp result"""
 
 
-def collect_exp_results(exp_name: str, dir_tree_depth: int = 3, verbose: bool = True):
+def collect_exp_results(exp_name: str, dir_tree_depth: int = 3, verbose: bool = True,
+                        add_dirname: bool = True):
     exp_dir = os.path.join(RESULT_DIR, exp_name)
     no_results_counter = 0
     success_counter = 0
@@ -289,7 +290,10 @@ def collect_exp_results(exp_name: str, dir_tree_depth: int = 3, verbose: bool = 
                 with open(results_file, 'r') as f:
                     exp_dict = json.load(f)
                 if isinstance(exp_dict, dict):
-                    exp_dicts.append({**exp_dict['evals'], **exp_dict['params']})
+                    exp_dict_merged = {**exp_dict['evals'], **exp_dict['params']}  # put params and evals in one dict
+                    if add_dirname:
+                        exp_dict_merged['dirname'] = os.path.dirname(results_file)
+                    exp_dicts.append(exp_dict_merged)
                     param_names = param_names.union(set(exp_dict['params'].keys()))
                 elif isinstance(exp_dict, list):
                     exp_dicts.extend([{**d['evals'], **d['params']} for d in exp_dict])
@@ -307,6 +311,8 @@ def collect_exp_results(exp_name: str, dir_tree_depth: int = 3, verbose: bool = 
     if verbose:
         print(f'Parsed results in {search_path} - found {success_counter} folders with results'
               f' and {no_results_counter} folders without results')
+
+    param_names.add('dirname')
 
     return pd.DataFrame(data=exp_dicts), list(param_names)
 

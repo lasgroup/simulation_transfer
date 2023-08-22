@@ -34,10 +34,10 @@ DEFAULTS_RACECAR_REAL = {
     'num_samples_test': 4000
 }
 
-_RACECAR_NOISE_STD_ENCODED = jnp.concatenate([DEFAULTS_RACECAR['obs_noise_std'][:2],
-                                              DEFAULTS_RACECAR['obs_noise_std'][2:3],
-                                              DEFAULTS_RACECAR['obs_noise_std'][2:3],
-                                              DEFAULTS_RACECAR['obs_noise_std'][3:]])
+_RACECAR_NOISE_STD_ENCODED = 40 * jnp.concatenate([DEFAULTS_RACECAR['obs_noise_std'][:2],
+                                                  DEFAULTS_RACECAR['obs_noise_std'][2:3],
+                                                  DEFAULTS_RACECAR['obs_noise_std'][2:3],
+                                                  DEFAULTS_RACECAR['obs_noise_std'][3:]])
 
 DATASET_CONFIGS = {
     'sinusoids1d': {
@@ -61,13 +61,42 @@ DATASET_CONFIGS = {
         'num_samples_train': {'value': 20},
     },
     'racecar': {
-        'likelihood_std': {'value': 0.2},
+        'likelihood_std': {'value': _RACECAR_NOISE_STD_ENCODED.tolist()},
+        'num_samples_train': {'value': 100},
+    },
+    'racecar_only_pose': {
+        'likelihood_std': {'value': _RACECAR_NOISE_STD_ENCODED.tolist()},
+        'num_samples_train': {'value': 100},
+    },
+    'racecar_no_angvel': {
+        'likelihood_std': {'value': _RACECAR_NOISE_STD_ENCODED.tolist()},
         'num_samples_train': {'value': 100},
     },
     'racecar_hf': {
-        'likelihood_std': {'value': 0.2},
+        'likelihood_std': {'value': _RACECAR_NOISE_STD_ENCODED.tolist()},
         'num_samples_train': {'value': 100},
-    }
+    },
+    'racecar_hf_only_pose': {
+        'likelihood_std': {'value': _RACECAR_NOISE_STD_ENCODED.tolist()},
+        'num_samples_train': {'value': 100},
+    },
+    'racecar_hf_no_angvel': {
+        'likelihood_std': {'value': _RACECAR_NOISE_STD_ENCODED.tolist()},
+        'num_samples_train': {'value': 100},
+    },
+    'real_racecar': {
+        'likelihood_std': {'value': _RACECAR_NOISE_STD_ENCODED.tolist()},
+        'num_samples_train': {'value': 200},
+    },
+    'real_racecar_only_pose': {
+        'likelihood_std': {'value': _RACECAR_NOISE_STD_ENCODED.tolist()},
+        'num_samples_train': {'value': 200},
+    },
+    'real_racecar_no_angvel': {
+        'likelihood_std': {'value': _RACECAR_NOISE_STD_ENCODED.tolist()},
+        'num_samples_train': {'value': 200},
+    },
+
 }
 
 
@@ -137,16 +166,28 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
         elif data_source == 'racecar_hf_only_pose':
             sim_hf = RaceCarSim(encode_angle=True, use_blend=True, only_pose=True)
             sim_lf = RaceCarSim(encode_angle=True, use_blend=False, only_pose=True)
+        elif data_source == 'racecar_hf_no_angvel':
+            sim_hf = RaceCarSim(encode_angle=True, use_blend=True, no_angular_velocity=True)
+            sim_lf = RaceCarSim(encode_angle=True, use_blend=False, no_angular_velocity=True)
         elif data_source == 'racecar_only_pose':
             sim_hf = sim_lf = RaceCarSim(encode_angle=True, use_blend=True, only_pose=True)
+        elif data_source == 'racecar_no_angvel':
+            sim_hf = sim_lf = RaceCarSim(encode_angle=True, use_blend=True, no_angular_velocity=True)
         elif data_source == 'racecar':
-            sim_hf = sim_lf = RaceCarSim(encode_angle=True, use_blend=True)
+            sim_hf = sim_lf = RaceCarSim(encode_angle=True, use_blend=True, only_pose=False)
         else:
             raise ValueError(f'Unknown data source {data_source}')
         assert {'num_samples_train'} <= set(data_spec.keys()) <= {'num_samples_train'}.union(DEFAULTS_RACECAR.keys())
-    elif data_source == 'real_racecar':
+    elif data_source.startswith('real_racecar'):
         from sim_transfer.sims.simulators import RaceCarSim
-        sim_lf = RaceCarSim(encode_angle=True, use_blend=True)
+
+        if data_source.endswith('only_pose'):
+            sim_lf = RaceCarSim(encode_angle=True, use_blend=True, only_pose=True)
+        elif data_source.endswith('no_angvel'):
+            sim_lf = RaceCarSim(encode_angle=True, use_blend=True, no_angular_velocity=True)
+        else:
+            sim_lf = RaceCarSim(encode_angle=True, use_blend=True)
+
         x_train, y_train, x_test, y_test = get_rccar_recorded_data(encode_angle=True)
         num_train_available = x_train.shape[0]
         num_test_available = x_test.shape[0]
@@ -171,6 +212,12 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
             raise ValueError(f'Unknown sampling scheme {sampling_scheme}. Needs to be one of ["iid", "consecutive"].')
 
         x_train, y_train, x_test, y_test = x_train[idx_train], y_train[idx_train], x_test[idx_test], y_test[idx_test]
+        if data_source.endswith('only_pose'):
+            y_train = y_train[..., :-3]
+            y_test = y_test[..., :-3]
+        elif data_source.endswith('no_angvel'):
+            y_train = y_train[..., :-1]
+            y_test = y_test[..., :-1]
         return x_train, y_train, x_test, y_test, sim_lf
 
     else:
