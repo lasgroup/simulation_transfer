@@ -1,7 +1,7 @@
 import exp
 from experiments.util import generate_run_commands, generate_base_command
 
-PROJECT_NAME = 'CheckAdvantageSimPriorNextStep_N1'
+PROJECT_NAME = 'CheckAdvantageOfSimPriorNextStepDifference_N1'
 
 applicable_configs = {
     'num_train_traj': [1, 2, 4, 10],

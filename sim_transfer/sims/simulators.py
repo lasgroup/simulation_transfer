@@ -889,8 +889,8 @@ class PredictStateChangeWrapper(FunctionSimulator):
     def sample_function_vals(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
         assert x.shape[-1] == self._z_dim
         fun_vals = self._function_simulator.sample_function_vals(x=x, num_samples=num_samples, rng_key=rng_key)
-        x_delta = fun_vals - x[..., :self._x_dim]
-        assert x_delta.shape == x.shape
+        x_delta = fun_vals - x[..., :self._x_dim][None, ...]
+        assert x_delta.shape[1:] == x[..., :self._x_dim].shape
         return x_delta
 
     @property

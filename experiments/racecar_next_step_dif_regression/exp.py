@@ -8,7 +8,7 @@ import wandb
 from experiments.data_provider import _RACECAR_NOISE_STD_ENCODED
 from sim_transfer.models import BNN_SVGD, BNN_FSVGD_SimPrior
 from sim_transfer.sims.envs import RCCarSimEnv
-from sim_transfer.sims.simulators import RaceCarSim
+from sim_transfer.sims.simulators import RaceCarSim, PredictStateChangeWrapper
 
 
 def experiment(num_train_traj: int,
@@ -64,7 +64,7 @@ def experiment(num_train_traj: int,
     def convert_traj_to_data(state_traj, action_traj):
         x_data = jnp.concatenate([state_traj[:-1], action_traj], axis=-1)
         # Here target is difference and not absolute state
-        y_data = state_traj[1:]
+        y_data = state_traj[1:] - state_traj[:-1]
         return x_data, y_data
 
     data = list(map(lambda x: convert_traj_to_data(*x), rollouts))
@@ -78,9 +78,10 @@ def experiment(num_train_traj: int,
 
     """ Train a neural network """
 
-    sim = RaceCarSim(encode_angle=True, use_blend=True)
-
+    _sim = RaceCarSim(encode_angle=True, use_blend=True)
+    sim = PredictStateChangeWrapper(_sim)
     learn_std = bool(learn_std)
+
     standard_model_params = {
         'input_size': x_train.shape[-1],
         'output_size': y_train.shape[-1],
@@ -92,6 +93,7 @@ def experiment(num_train_traj: int,
         'likelihood_exponent': 0.5,
         'hidden_layer_sizes': [64, 64, 64],
         'data_batch_size': 32,
+
     }
 
     print('Using sim prior:', bool(use_sim_prior))
@@ -104,6 +106,7 @@ def experiment(num_train_traj: int,
                                  score_estimator='gp',
                                  **standard_model_params,
                                  num_train_steps=40_000
+
                                  )
     else:
         bnn = BNN_SVGD(**standard_model_params,
@@ -123,7 +126,7 @@ def main(args):
         num_train_traj=args.num_train_traj,
         use_sim_prior=args.use_sim_prior,
         project_name=args.project_name,
-        learn_std=args.learn_std,
+        learn_std=args.learn_std
     )
 
 
