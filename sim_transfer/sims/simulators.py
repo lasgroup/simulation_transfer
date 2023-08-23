@@ -254,11 +254,11 @@ class EncodeAngleSimWrapper(FunctionSimulator):
         norm_stats['y_mean'] = jnp.concatenate(
             [norm_stats['y_mean'][:self.angle_idx],
              jnp.array([0., 0.]),
-             norm_stats['y_mean'][self.angle_idx+1:]])
+             norm_stats['y_mean'][self.angle_idx + 1:]])
         norm_stats['y_std'] = jnp.concatenate(
             [norm_stats['y_std'][:self.angle_idx],
              jnp.array([1., 1.]),
-             norm_stats['y_std'][self.angle_idx+1:]])
+             norm_stats['y_std'][self.angle_idx + 1:]])
         assert norm_stats['y_mean'].shape == norm_stats['y_std'].shape == (self.output_size,)
         return norm_stats
 
@@ -632,7 +632,6 @@ class PendulumBiModalSim(PendulumSim):
 
 
 class RaceCarSim(FunctionSimulator):
-
     _default_car_model_params_bicycle: Dict = {
         'use_blend': 0.0,
         'm': 1.65,
@@ -717,7 +716,7 @@ class RaceCarSim(FunctionSimulator):
         'steering_limit': (0.5, 0.55),
     }
 
-    _dt: float = 1/30.
+    _dt: float = 1 / 30.
     _angle_idx: int = 2
 
     # domain for the simulator prior
@@ -792,6 +791,7 @@ class RaceCarSim(FunctionSimulator):
         params = self.model.sample_params_uniform(rng_key, sample_shape=(num_samples,),
                                                   lower_bound=self._lower_bound_params,
                                                   upper_bound=self._upper_bound_params)
+
         def stacked_fun(z):
             x, u = self._split_state_action(z)
             f = vmap(self.model.next_step, in_axes=(0, 0, 0))(x, u, params)
@@ -872,6 +872,45 @@ class RaceCarSim(FunctionSimulator):
             return HypercubeDomain(lower=lower, upper=upper)
 
 
+class PredictStateChangeWrapper(FunctionSimulator):
+    def __init__(self, function_simulator: FunctionSimulator):
+        """
+        Implicitly we assume that the input to the function simulator is of the form z = (x, u) and output is x_next.
+        TODO: This is not a good solution. We should prepare more explicit way of doing this.
+        """
+        self._function_simulator = function_simulator
+        input_size = function_simulator.input_size
+        output_size = function_simulator.output_size
+        self._x_dim = output_size
+        self._u_dim = input_size - output_size
+        self._z_dim = input_size
+        FunctionSimulator.__init__(self, input_size=input_size, output_size=output_size)
+
+    def sample_function_vals(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
+        assert x.shape[-1] == self._z_dim
+        fun_vals = self._function_simulator.sample_function_vals(x=x, num_samples=num_samples, rng_key=rng_key)
+        x_delta = fun_vals - x[..., :self._x_dim]
+        assert x_delta.shape == x.shape
+        return x_delta
+
+    @property
+    def domain(self) -> Domain:
+        return self._function_simulator.domain
+
+    def _typical_f(self, x: jnp.array) -> jnp.array:
+        x_next = self._function_simulator._typical_f(x)
+        return x_next - x[..., :self._x_dim]
+
+    @property
+    def normalization_stats(self) -> Dict[str, jnp.ndarray]:
+        old_stats = self._function_simulator.normalization_stats
+        new_stats = {'x_mean': old_stats['x_mean'],
+                     'x_std': old_stats['x_std'],
+                     'y_mean': old_stats['y_mean'] - old_stats['x_mean'][..., :self._x_dim],
+                     'y_std': old_stats['y_std']}
+        return new_stats
+
+
 if __name__ == '__main__':
     key = jax.random.PRNGKey(435345)
     function_sim = RaceCarSim(use_blend=False, no_angular_velocity=True)
@@ -880,19 +919,18 @@ if __name__ == '__main__':
     num_f_samples = 20
     f_vals = function_sim.sample_function_vals(xs, num_samples=num_f_samples, rng_key=key)
 
-
     NUM_PARALLEL = 20
     fun_stacked = function_sim.sample_functions(num_samples=NUM_PARALLEL, rng_key=key)
-    #fun_stacked = jax.vmap(function_sim._typical_f)
+    # fun_stacked = jax.vmap(function_sim._typical_f)
     fun_stacked = jax.jit(fun_stacked)
 
-    s = jnp.repeat(jnp.array([-9.5005625e-01, -1.4144412e+00,  9.9892426e-01,  4.6371352e-02,
-                              7.2260178e-04,  8.1058703e-03, -7.7542849e-03])[None, :], NUM_PARALLEL, axis=0)
+    s = jnp.repeat(jnp.array([-9.5005625e-01, -1.4144412e+00, 9.9892426e-01, 4.6371352e-02,
+                              7.2260178e-04, 8.1058703e-03, -7.7542849e-03])[None, :], NUM_PARALLEL, axis=0)
     traj = [s]
     actions = []
     for i in range(60):
         t = i / 30.
-        a = jnp.array([- 1 * jnp.cos(2 * t), 0.8 / (t+1)])
+        a = jnp.array([- 1 * jnp.cos(2 * t), 0.8 / (t + 1)])
         a = jnp.repeat(a[None, :], NUM_PARALLEL, axis=0)
         x = jnp.concatenate([s, a], axis=-1)
         s = fun_stacked(x)
