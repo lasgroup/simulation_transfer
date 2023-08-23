@@ -904,10 +904,14 @@ class PredictStateChangeWrapper(FunctionSimulator):
     @property
     def normalization_stats(self) -> Dict[str, jnp.ndarray]:
         old_stats = self._function_simulator.normalization_stats
+        x = self.domain.sample_uniformly(jax.random.PRNGKey(0), 1000)
+        fs = self.sample_function_vals(x, num_samples=10, rng_key=jax.random.PRNGKey(0))
+        fs = fs.reshape(-1, self.output_size)
+
         new_stats = {'x_mean': old_stats['x_mean'],
                      'x_std': old_stats['x_std'],
-                     'y_mean': old_stats['y_mean'] - old_stats['x_mean'][..., :self._x_dim],
-                     'y_std': old_stats['y_std']}
+                     'y_mean': jnp.mean(fs, axis=0),
+                     'y_std': 1.5 * jnp.std(fs, axis=0)}
         return new_stats
 
 
