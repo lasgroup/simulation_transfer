@@ -6,7 +6,7 @@ import wandb
 from collections import OrderedDict
 from functools import partial
 from matplotlib import pyplot as plt
-from typing import Optional, Dict, Union, Callable, Tuple
+from typing import Optional, Dict, Union, Callable, Tuple, List
 import tensorflow_probability.substrates.jax.distributions as tfd
 from jax import numpy as jnp
 
@@ -33,7 +33,7 @@ class NeuralProcess(RngKeyMixin):
                  num_transf_blocks: int = 2,
                  use_cross_attention: bool = True,
                  use_self_attention: bool = True,
-                 likelihood_std: Union[float, jnp.array] = 0.2,
+                 likelihood_std: Union[float, jnp.array, List[float]] = 0.2,
                  lr: float = 1e-3,
                  lr_end: Optional[float] = None,
                  num_train_steps: int = 50000):
@@ -51,6 +51,8 @@ class NeuralProcess(RngKeyMixin):
 
         if type(likelihood_std) == float:
             self.likelihood_std = jnp.ones(output_size) * likelihood_std
+        elif type(likelihood_std) == list:
+            self.likelihood_std = jnp.array(likelihood_std)
         else:
             self.likelihood_std = likelihood_std
 
