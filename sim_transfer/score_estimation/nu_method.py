@@ -26,9 +26,9 @@ class NuMethod(AbstractScoreEstimator):
             num_iter = jnp.array(1.0 / jnp.sqrt(lam)).astype(jnp.int32) + 1
 
         if kernel_type == 'curl_free_imq':
-            self._kernel = CurlFreeIMQKernel()
+            self._kernel = CurlFreeIMQKernel(kernel_hyperparams=bandwidth)
         elif kernel_type == 'curl_free_se':
-            self._kernel = CurlFreeSEKernel()
+            self._kernel = CurlFreeSEKernel(kernel_hyperparams=bandwidth)
         else:
             raise NotImplementedError(f'Kernel type {kernel_type} is not implemented.')
 
