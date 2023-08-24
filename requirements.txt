@@ -15,3 +15,6 @@ tensorflow-datasets
 tensorflow
 pytest
 brax >= 0.9.1
+gym==0.23.1
+XInput-Python
+distro
