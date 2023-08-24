@@ -1,3 +1,5 @@
+import time
+
 import gym
 import sys
 import numpy as np
@@ -88,6 +90,8 @@ class CarEnv(gym.Env):
         assert answer == 'Y', "environment execution aborted."
         if not self.controller_started:
             self.controller.start()
+            print("Starting controller in ~5 sec")
+            time.sleep(5)
             self.controller_started = True
         current_state = self.controller.get_state()
         current_state[0:3] = current_state[0:3] - self.goal

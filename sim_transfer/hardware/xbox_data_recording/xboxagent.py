@@ -1,6 +1,6 @@
 from typing import Optional, Tuple
 import numpy as np
-from joy_stick_api.xbox_joystick_factory import XboxJoystickFactory
+from .joy_stick_api.xbox_joystick_factory import XboxJoystickFactory
 
 
 class CarXbox2D(object):
