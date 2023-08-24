@@ -1,3 +1,4 @@
+import jax
 import jax.numpy as jnp
 from typing import Optional
 
@@ -52,6 +53,14 @@ def plot_rc_trajectory(traj: jnp.array, actions: Optional[jnp.array] = None, pos
     # axes[0][0].plot(traj[:, 0], traj[:, 1])
     axes[0][0].set_title('x-y')
     # Plot the velocity of the car as vectors
+    if isinstance(traj, jax.Array):
+        state_x = traj[:, [0, -3]]
+        traj = traj.at[:, [0, -3]].set(traj[:, [1, -2]])
+        traj = traj.at[:, [1, -2]].set(-state_x)
+    else:
+        state_x = traj[:, [0, -3]]
+        traj[:, [0, -3]] = traj[:, [1, -2]]
+        traj[:, [1, -2]] = -state_x
     total_vel = jnp.sqrt(traj[:, 3] ** 2 + traj[:, 4] ** 2)
     axes[0][0].quiver(traj[0:-1:3, 0], traj[0:-1:3, 1], traj[0:-1:3, 3], traj[0:-1:3, 4],
                       total_vel[0:-1:3], cmap='jet', scale=20,
