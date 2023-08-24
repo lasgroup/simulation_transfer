@@ -1,3 +1,4 @@
+import jax.tree_util
 import numpy as np
 
 from sim_transfer.hardware.car_env import CarEnv
@@ -5,13 +6,12 @@ from sim_transfer.hardware.xbox_data_recording.xboxagent import CarXbox2D
 from brax.training.types import Transition
 import pickle
 
-BASE_SPEED = 0.5
-RECORDING_NAME = 'test_recording.pickle'
+RECORDING_NAME = 'test_1.pickle'
 
 
 if __name__ == '__main__':
-    controller = CarXbox2D(base_speed=BASE_SPEED)
-    env = CarEnv()
+    controller = CarXbox2D(base_speed=1.0)
+    env = CarEnv(encode_angle=False)
     obs, _ = env.reset()
     stop = False
     observations = []

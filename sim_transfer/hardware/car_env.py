@@ -6,10 +6,10 @@ import numpy as np
 from gym.spaces import Box
 from typing import Optional
 
-X_MIN_LIMIT = -2.55
-X_MAX_LIMIT = 2.55
-Y_MAX_LIMIT = 3.2
-Y_MIN_LIMIT = -3.2
+X_MIN_LIMIT = -3.2
+X_MAX_LIMIT = 3.2
+Y_MAX_LIMIT = -2.55
+Y_MIN_LIMIT = 2.55
 
 
 class CarEnv(gym.Env):
