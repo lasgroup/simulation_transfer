@@ -22,7 +22,7 @@ class CarEnv(gym.Env):
                  goal: np.ndarray = np.asarray([0.0, 0.0, 0.0])
                  ):
         super().__init__()
-        sys.path.append("C:Users/Panda/rcCarInterface/rc-car-interface/build/src/libs/pyCarController")
+        sys.path.append("C:Users/Panda/Desktop/rcCarInterface/rc-car-interface/build/src/libs/pyCarController")
         import carl
         self.control_frequency = control_frequency
         self.max_wait_time = max_wait_time

@@ -1,6 +1,5 @@
 from typing import Optional, Tuple
 import numpy as np
-from sim_transfer.hardware.car_env import CarEnv
 from joy_stick_api.xbox_joystick_factory import XboxJoystickFactory
 
 
@@ -53,6 +52,7 @@ class CarXbox2D(object):
 
 
 if __name__ == '__main__':
+    from sim_transfer.hardware.car_env import CarEnv
     controller = CarXbox2D(base_speed=0.5)
     env = CarEnv()
     obs, _ = env.reset()
