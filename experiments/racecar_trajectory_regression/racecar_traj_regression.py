@@ -1,15 +1,14 @@
-from sim_transfer.sims.envs import RCCarSimEnv
-from sim_transfer.sims.util import encode_angles, decode_angles, plot_rc_trajectory
-from sim_transfer.models import BNN_SVGD, BNN_FSVGD_SimPrior
-from sim_transfer.sims.simulators import RaceCarSim
-from experiments.data_provider import _RACECAR_NOISE_STD_ENCODED
-
-from typing import Tuple
-
 import os
 import pickle
+from typing import Tuple
+
 import jax
 import jax.numpy as jnp
+
+from experiments.data_provider import _RACECAR_NOISE_STD_ENCODED
+from sim_transfer.models import BNN_SVGD, BNN_FSVGD_SimPrior
+from sim_transfer.sims.envs import RCCarSimEnv
+from sim_transfer.sims.simulators import RaceCarSim
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
 DUMP_DIR = os.path.join(DATA_DIR, 'racecar_traj_regression')
@@ -21,13 +20,14 @@ env = RCCarSimEnv(encode_angle=True, action_delay=0.00,
 NUM_TRAJECTORIES = 50
 
 import argparse
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--num_train_traj', type=int, default=2)
 parser.add_argument('--use_sim_prior', type=int, default=1)
 args = parser.parse_args()
 
-
 """ Collect or load trajectories/rollouts """
+
 
 def collect_traj(env, action_fn: callable, n_steps: int = 200) -> Tuple[jnp.ndarray, jnp.ndarray]:
     s = env.reset()
@@ -46,6 +46,7 @@ def collect_traj(env, action_fn: callable, n_steps: int = 200) -> Tuple[jnp.ndar
     actions = jnp.stack(actions)
     return traj, actions
 
+
 def collect_rollouts(num_rollouts: int):
     key = jax.random.PRNGKey(234234)
     rollouts = []
@@ -62,6 +63,7 @@ def collect_rollouts(num_rollouts: int):
         rollouts.append((traj, actions))
     return rollouts
 
+
 filename = os.path.join(DUMP_DIR, f'simulated_trajs_rccar_{NUM_TRAJECTORIES}')
 
 if os.path.exists(filename):
@@ -76,10 +78,13 @@ else:
         pickle.dump(rollouts, f)
 
 """ Convert trajectories to regresion data """
+
+
 def convert_traj_to_data(state_traj, action_traj):
     x_data = jnp.concatenate([state_traj[:-1], action_traj], axis=-1)
     y_data = state_traj[1:]
     return x_data, y_data
+
 
 data = list(map(lambda x: convert_traj_to_data(*x), rollouts))
 
@@ -89,7 +94,6 @@ x_test, y_test = list(map(lambda l: jnp.concatenate(l, axis=0), zip(*data[args.n
 print('Num trajectories for training:', args.num_train_traj)
 print('Train data shapes:', x_train.shape, y_train.shape)
 print('Test data shapes:', x_test.shape, y_test.shape)
-
 
 """ Train a neural network """
 
@@ -113,20 +117,16 @@ print('Using sim prior:', bool(args.use_sim_prior))
 
 if args.use_sim_prior:
     bnn = BNN_FSVGD_SimPrior(domain=sim.domain,
-                               function_sim=sim,
-                               num_measurement_points=16,
-                               num_f_samples=512,
-                               score_estimator='gp',
-                               **standard_model_params,
-                               num_train_steps=400000
-                               )
+                             function_sim=sim,
+                             num_measurement_points=16,
+                             num_f_samples=512,
+                             score_estimator='gp',
+                             **standard_model_params,
+                             num_train_steps=400000
+                             )
 else:
     bnn = BNN_SVGD(**standard_model_params,
                    bandwidth_svgd=1.0,
                    num_train_steps=20000)
 
-
 bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test)
-
-
-

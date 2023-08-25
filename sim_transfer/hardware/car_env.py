@@ -6,10 +6,10 @@ import numpy as np
 from gym.spaces import Box
 from typing import Optional
 
-X_MIN_LIMIT = -2.55
-X_MAX_LIMIT = 2.55
-Y_MAX_LIMIT = 3.2
-Y_MIN_LIMIT = -3.2
+X_MIN_LIMIT = -3.2
+X_MAX_LIMIT = 3.2
+Y_MAX_LIMIT = -2.55
+Y_MIN_LIMIT = 2.55
 
 
 class CarEnv(gym.Env):
@@ -21,6 +21,7 @@ class CarEnv(gym.Env):
                  num_frame_stacks: int = 3,
                  port_number: int = 8,  # leftmost usb port in the display has port number 8
                  encode_angle: bool = True,
+                 max_throttle: float = 0.5,
                  goal: np.ndarray = np.asarray([0.0, 0.0, 0.0])
                  ):
         super().__init__()
@@ -42,6 +43,7 @@ class CarEnv(gym.Env):
         self.max_steps = 200
         self.env_steps = 0
         high = np.ones(6 + self.encode_angle + 2 * num_frame_stacks) * np.inf
+        self.max_throttle = np.clip(max_throttle, 0.0, 1.0)
         if self.encode_angle:
             high[2:4] = 1
         high[6:] = 1
@@ -76,6 +78,16 @@ class CarEnv(gym.Env):
             writer.writeheader()
             writer.writerow(logs_dictionary)
 
+    def get_state_from_mocap(self):
+        current_state = self.controller.get_state()
+        mocap_x = current_state[[0, 3]]
+        current_state[[0, 3]] = current_state[[1, 4]]
+        current_state[[1, 4]] = mocap_x
+        current_state[2] += np.pi
+        current_state = self.normalize_theta(current_state)
+        return current_state
+
+
     def reset(
             self,
             *,
@@ -93,7 +105,7 @@ class CarEnv(gym.Env):
             print("Starting controller in ~5 sec")
             time.sleep(5)
             self.controller_started = True
-        current_state = self.controller.get_state()
+        current_state = self.get_state_from_mocap()
         current_state[0:3] = current_state[0:3] - self.goal
         if self.encode_angle:
             new_state = self.get_encoded_state(current_state)
@@ -120,8 +132,13 @@ class CarEnv(gym.Env):
     def step(self, action):
         assert np.shape(action) == (2,)
         self.controller.control_mode()  # sets the mode to control
-        self.controller.set_command(action)  # set action
-        next_state = self.controller.get_state()  # get state
+        action = np.clip(action, -1.0, 1.0)
+        action[0] *= self.max_throttle
+        command_set_in_time = self.controller.set_command(action)  # set action
+        assert command_set_in_time, "API blocked python thread for too long"
+        time_elapsed = self.controller.get_time_elapsed()
+        next_state = self.get_state_from_mocap()  # get state
+        # next_state[[1, 4]] *= -1
         next_state[0:3] = next_state[0:3] - self.goal
         new_state = np.zeros_like(self.state)
         # if desired, encode angle

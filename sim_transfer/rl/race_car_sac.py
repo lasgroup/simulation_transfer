@@ -51,14 +51,14 @@ env = BraxWrapper(system=system,
 
 state = jit(env.reset)(rng=jr.PRNGKey(0))
 
-num_env_steps_between_updates = 32
+num_env_steps_between_updates = 16
 num_envs = 16
-horizon = 300
+horizon = 200
 
 sac_trainer = SAC(
     target_entropy=-10,
     environment=env,
-    num_timesteps=700_000,
+    num_timesteps=2_000_000,
     num_evals=20,
     reward_scaling=1,
     episode_length=horizon,
