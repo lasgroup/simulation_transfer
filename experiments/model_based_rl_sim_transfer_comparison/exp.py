@@ -29,6 +29,7 @@ def experiment(horizon_len: int,
                        use_sim_prior=use_sim_prior,
                        bnn_s=bnn_train_steps,
                        sac_s=sac_num_env_steps,
+                       hf_mod=high_fidelity_model,
                        )
     group_name = '_'.join(list(str(key) + '=' + str(value) for key, value in config_dict.items() if key != 'seed'))
 
@@ -40,6 +41,7 @@ def experiment(horizon_len: int,
                        ll_std=learnable_likelihood_std,
                        reset_bnn=reset_bnn,
                        use_sim_prior=use_sim_prior,
+                       high_fidelity_model=high_fidelity_model,
                        )
 
     NUM_ENV_STEPS_BETWEEN_UPDATES = 16
@@ -48,12 +50,14 @@ def experiment(horizon_len: int,
                       num_evals=20,
                       reward_scaling=10,
                       episode_length=horizon_len,
+                      episode_length_eval=2 * horizon_len,
                       action_repeat=1,
                       discounting=0.99,
                       lr_policy=3e-4,
                       lr_alpha=3e-4,
                       lr_q=3e-4,
                       num_envs=NUM_ENVS,
+                      num_eval_envs=2 * NUM_ENVS,
                       batch_size=64,
                       grad_updates_per_step=NUM_ENV_STEPS_BETWEEN_UPDATES * NUM_ENVS,
                       num_env_steps_between_updates=NUM_ENV_STEPS_BETWEEN_UPDATES,
@@ -61,7 +65,6 @@ def experiment(horizon_len: int,
                       wd_policy=0,
                       wd_q=0,
                       wd_alpha=0,
-                      num_eval_envs=1,
                       max_replay_size=5 * 10 ** 4,
                       min_replay_size=2 ** 11,
                       policy_hidden_layer_sizes=(64, 64),
@@ -168,6 +171,7 @@ def main(args):
         reset_bnn=args.reset_bnn,
         use_sim_prior=args.use_sim_prior,
         include_aleatoric_noise=args.include_aleatoric_noise,
+        high_fidelity_model=args.high_fidelity_model,
     )
 
 
@@ -183,5 +187,6 @@ if __name__ == '__main__':
     parser.add_argument('--reset_bnn', type=str, default='yes')
     parser.add_argument('--use_sim_prior', type=int, default=1)
     parser.add_argument('--include_aleatoric_noise', type=int, default=1)
+    parser.add_argument('--high_fidelity_model', type=int, default=1)
     args = parser.parse_args()
     main(args)
