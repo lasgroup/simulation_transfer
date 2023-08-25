@@ -31,7 +31,7 @@ if __name__ == "__main__":
     x = jnp.array([[1, 2], [3, 4], [5, 6], [7, 8], [9, 10]])
     y = jnp.array([1, 0, 1, 0, 1])
 
-    x_train, x_test, y_train, y_test = split_data(x, y, test_ratio=0.4, seed=42)
+    x_train, x_test, y_train, y_test = split_data(x, y, test_ratio=0.4, key=random.PRNGKey(42))
 
     print("x_train:", x_train)
     print("x_test:", x_test)
