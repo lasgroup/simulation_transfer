@@ -3,21 +3,20 @@ import jax.numpy as jnp
 from jax import random
 
 
-def split_data(x: chex.Array, y: chex.Array, test_ratio=0.2, seed=0):
+def split_data(x: chex.Array, y: chex.Array, key: chex.PRNGKey, test_ratio=0.2):
     """
     Splits the data into training and test sets.
     Parameters:
         x (array): Input data.
         y (array): Output data.
+        key (PRNGKey): Random key.
         test_ratio (float): Fraction of the data to be used as test data.
-        seed (int): Seed for random number generator.
     Returns:
         x_train, x_test, y_train, y_test
     """
     n = x.shape[0]
     idx = jnp.arange(n)
-    rng = random.PRNGKey(seed)
-    permuted_idx = random.permutation(rng, idx)
+    permuted_idx = random.permutation(key, idx)
     test_size = int(n * test_ratio)
     train_idx = permuted_idx[:-test_size]
     test_idx = permuted_idx[-test_size:]
