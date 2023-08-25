@@ -952,6 +952,9 @@ class PredictStateChangeWrapper(FunctionSimulator):
                      'y_std': 1.5 * jnp.std(fs, axis=0)}
         return new_stats
 
+    def _add_observation_noise(self, *args, **kwargs) -> jnp.ndarray:
+        return self._function_simulator._add_observation_noise(*args, **kwargs)
+
 
 if __name__ == '__main__':
     key = jax.random.PRNGKey(435345)
