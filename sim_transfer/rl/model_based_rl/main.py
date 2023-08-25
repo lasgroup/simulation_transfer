@@ -26,7 +26,8 @@ NUM_ENVS = 64
 SAC_KWARGS = dict(num_timesteps=1_000_000,
                   num_evals=20,
                   reward_scaling=10,
-                  episode_length=50,
+                  episode_length=8,
+                  episode_length_eval=16,
                   action_repeat=1,
                   discounting=0.99,
                   lr_policy=3e-4,
@@ -40,7 +41,7 @@ SAC_KWARGS = dict(num_timesteps=1_000_000,
                   wd_policy=0,
                   wd_q=0,
                   wd_alpha=0,
-                  num_eval_envs=1,
+                  num_eval_envs=2 * NUM_ENVS,
                   max_replay_size=5 * 10 ** 4,
                   min_replay_size=2 ** 11,
                   policy_hidden_layer_sizes=(64, 64),
@@ -105,27 +106,22 @@ class ModelBasedRL:
                                   include_noise=self.include_aleatoric_noise,
                                   **self.car_reward_kwargs)
 
-        key_train, key_simulate, *keys_sys_params = jr.split(key, 5)
+        key_train, key_simulate, *keys_sys_params = jr.split(key, 4)
         env = BraxWrapper(system=system,
                           sample_buffer_state=true_data_buffer_state,
                           sample_buffer=self.true_data_buffer,
                           system_params=system.init_params(keys_sys_params[0]))
 
-        # Here we create eval envs and eval horizon
-        env_eval = BraxWrapper(system=system,
-                               sample_buffer_state=init_states_buffer_state,
-                               sample_buffer=self.init_states_buffer,
-                               system_params=system.init_params(keys_sys_params[1]))
-        eval_horizon = self.gym_env.max_steps
+        # Here we create eval envs
         sac_trainer = SAC(environment=env,
-                          eval_environment=env_eval,
-                          episode_length_eval=eval_horizon,
+                          eval_environment=env,
+                          eval_key_fixed=True,
                           **_sac_kwargs, )
 
         params, metrics = sac_trainer.run_training(key=key_train)
 
         best_reward = np.max([summary['eval/episode_reward'] for summary in metrics])
-        wandb.log({'reward_on_learned_model': best_reward,
+        wandb.log({'best_trained_reward': best_reward,
                    'x_axis/episode': episode_idx})
 
         make_inference_fn = sac_trainer.make_policy
@@ -135,11 +131,12 @@ class ModelBasedRL:
             return make_inference_fn(params, deterministic=True)(x, jr.PRNGKey(0))[0]
 
         if episode_idx > 0:
+            eval_horizon = self.gym_env.max_steps
             # Now we simulate the policy on the learned model
             new_init_state_bs, init_trans = self.init_states_buffer.sample(init_states_buffer_state)
             init_trans = jtu.tree_map(lambda x: x[0], init_trans)
             obs = init_trans.observation
-            sys_params = system.init_params(keys_sys_params[2])
+            sys_params = system.init_params(keys_sys_params[1])
 
             transitions = []
             for step in range(eval_horizon):
@@ -151,6 +148,7 @@ class ModelBasedRL:
                                               discount=self.discounting,
                                               next_observation=next_sys_state.x_next))
                 obs = next_sys_state.x_next
+                sys_params = next_sys_state.system_params
 
             concatenated_transitions = jtu.tree_map(lambda *xs: jnp.stack(xs, axis=0), *transitions)
             rewards = jnp.sum(concatenated_transitions.reward)
