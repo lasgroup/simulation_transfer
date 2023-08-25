@@ -267,7 +267,7 @@ class SinusoidsSim(FunctionSimulator):
     amp_mean = 2.0
     amp_std = 0.4
     slope_mean = 2.0
-    slope_std = 0.3
+    slope_std = 1.
     freq1_mid = 2.0
     freq1_spread = 0.3
     freq2_mid = 1.5
@@ -321,6 +321,44 @@ class SinusoidsSim(FunctionSimulator):
                 'x_std': (self.domain.u - self.domain.l) / 2,
                 'y_mean': jnp.zeros(self.output_size),
                 'y_std': 8 * jnp.ones(self.output_size)}
+
+
+class ShiftedSinusoidsSim(FunctionSimulator):
+
+    def __init__(self):
+        super().__init__(input_size=1, output_size=1)
+
+    def _f(self, phase: jnp.ndarray,  x: jnp.ndarray):
+        return jnp.sin(2 * jnp.pi * x**2 + phase[:, None, None])
+
+    def sample_function_vals(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
+        assert x.ndim == 2 and x.shape[-1] == self.input_size
+        phase = jax.random.uniform(rng_key, shape=(num_samples,), minval=-jnp.pi/2, maxval=jnp.pi/2)
+        f = self._f(phase, x)
+        assert f.shape == (num_samples, x.shape[0], self.output_size)
+        return f
+
+    def _typical_f(self, x: jnp.array) -> jnp.array:
+        assert x.ndim == 2 and x.shape[-1] == self.input_size
+        f = self._f(jnp.array([0.]), x).reshape(x.shape[0], self.output_size)
+        assert f.shape == (x.shape[0], self.output_size)
+        return f
+
+    @property
+    def domain(self) -> Domain:
+        lower = jnp.array([-1.] * self.input_size)
+        upper = jnp.array([1.] * self.input_size)
+        return HypercubeDomain(lower=lower, upper=upper)
+
+    @cached_property
+    def normalization_stats(self) -> Dict[str, jnp.ndarray]:
+        norm_stats = {
+            'x_mean': jnp.array([0.]),
+            'x_std': jnp.array([1.0]),
+            'y_mean': jnp.array([0.]),
+            'y_std': jnp.array([1.]),
+        }
+        return norm_stats
 
 
 class QuadraticSim(FunctionSimulator):
