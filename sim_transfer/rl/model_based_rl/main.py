@@ -6,11 +6,9 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree_util as jtu
 import matplotlib.pyplot as plt
-import numpy as np
 import wandb
 from brax.training.replay_buffers import UniformSamplingQueue, ReplayBufferState
 from brax.training.types import Transition
-from jax import jit
 from mbpo.optimizers.policy_optimizers.sac.sac import SAC
 from mbpo.systems.brax_wrapper import BraxWrapper
 
@@ -88,18 +86,12 @@ class ModelBasedRL:
             dummy_data_sample=self.dummy_sample,
             sample_batch_size=1)
 
-        self.init_states_buffer = UniformSamplingQueue(
-            max_replay_size=100,  # Should be larger than the number of episodes we run
-            dummy_data_sample=self.dummy_sample,
-            sample_batch_size=1)
-
     def define_wandb_metrics(self):
         wandb.define_metric('x_axis/episode')
 
     def train_policy(self,
                      bnn_model: BatchedNeuralNetworkModel,
                      true_data_buffer_state: ReplayBufferState,
-                     init_states_buffer_state: ReplayBufferState,
                      key: chex.PRNGKey,
                      episode_idx: int) -> Callable[[chex.Array], chex.Array]:
         _sac_kwargs = self.sac_kwargs
@@ -109,60 +101,20 @@ class ModelBasedRL:
         system = LearnedCarSystem(model=bnn_model,
                                   include_noise=self.include_aleatoric_noise,
                                   **self.car_reward_kwargs)
-
-        key_train, key_simulate, *keys_sys_params = jr.split(key, 4)
         env = BraxWrapper(system=system,
                           sample_buffer_state=true_data_buffer_state,
                           sample_buffer=self.true_data_buffer,
-                          system_params=system.init_params(keys_sys_params[0]))
+                          system_params=system.init_params(jr.PRNGKey(0)), )
 
-        # Here we create eval envs
         sac_trainer = SAC(environment=env,
-                          eval_environment=env,
-                          eval_key_fixed=True,
                           return_best_model=self.return_best_policy,
                           **_sac_kwargs, )
 
-        params, metrics = sac_trainer.run_training(key=key_train)
-
-        best_reward = np.max([summary['eval/episode_reward'] for summary in metrics])
-        wandb.log({'best_trained_reward': best_reward,
-                   'x_axis/episode': episode_idx})
-
+        params, metrics = sac_trainer.run_training(key=key)
         make_inference_fn = sac_trainer.make_policy
 
         def policy(x):
             return make_inference_fn(params, deterministic=True)(x, jr.PRNGKey(0))[0]
-
-        if episode_idx > 0:
-            eval_horizon = self.gym_env.max_steps
-            # Now we simulate the policy on the learned model
-            new_init_state_bs, init_trans = self.init_states_buffer.sample(init_states_buffer_state)
-            init_trans = jtu.tree_map(lambda x: x[0], init_trans)
-            obs = init_trans.observation
-            sys_params = system.init_params(keys_sys_params[1])
-
-            transitions = []
-            for step in range(eval_horizon):
-                action = policy(obs)
-                next_sys_state = system.step(x=obs, u=action, system_params=sys_params)
-                transitions.append(Transition(observation=obs,
-                                              action=action,
-                                              reward=next_sys_state.reward,
-                                              discount=self.discounting,
-                                              next_observation=next_sys_state.x_next))
-                obs = next_sys_state.x_next
-                sys_params = next_sys_state.system_params
-
-            concatenated_transitions = jtu.tree_map(lambda *xs: jnp.stack(xs, axis=0), *transitions)
-            rewards = jnp.sum(concatenated_transitions.reward)
-            fig, axes = plot_rc_trajectory(concatenated_transitions.next_observation,
-                                           concatenated_transitions.action, encode_angle=self.gym_env.encode_angle,
-                                           show=False)
-            wandb.log({'Trajectory_on_learned_model': wandb.Image(fig),
-                       'reward_on_learned_model': rewards,
-                       'x_axis/episode': episode_idx})
-            plt.close('all')
 
         return policy
 
@@ -222,13 +174,11 @@ class ModelBasedRL:
                    episode_idx: int,
                    bnn_model: BatchedNeuralNetworkModel,
                    true_buffer_state: ReplayBufferState,
-                   init_states_buffer_state: ReplayBufferState,
                    key: chex.PRNGKey):
         # Train policy on current model
         print("Training policy")
         policy = self.train_policy(bnn_model=bnn_model,
                                    true_data_buffer_state=true_buffer_state,
-                                   init_states_buffer_state=init_states_buffer_state,
                                    key=key,
                                    episode_idx=episode_idx)
         # Simulate on true envs with policy and collect data
@@ -237,28 +187,22 @@ class ModelBasedRL:
         # Update true data buffer
         print("Updating true data buffer")
         new_true_buffer_state = self.true_data_buffer.insert(true_buffer_state, transitions)
-        print("Updating init states buffer")
-        init_states_buffer_state = self.init_states_buffer.insert(init_states_buffer_state,
-                                                                  jtu.tree_map(lambda x: x[:1], transitions))
         # Update model
         print("Training bnn model")
         new_bnn_model = self.train_transition_model(true_buffer_state=new_true_buffer_state, key=key)
-        return new_bnn_model, new_true_buffer_state, init_states_buffer_state
+        return new_bnn_model, new_true_buffer_state
 
     def run_episodes(self, num_episodes: int, key: chex.PRNGKey):
-        key, key_init_buffer, key_init_buffer_init_states = jr.split(key, 3)
+        key, key_init_buffer = jr.split(key)
         true_buffer_state = self.true_data_buffer.init(key_init_buffer)
-        init_states_buffer_state = self.init_states_buffer.init(key_init_buffer_init_states)
         bnn_model = self.bnn_model
         for episode in range(0, num_episodes):
             print(f"Episode {episode}")
             key, key_do_episode = jr.split(key)
-            bnn_model, true_buffer_state, init_states_buffer_state = self.do_episode(
-                bnn_model=bnn_model,
-                true_buffer_state=true_buffer_state,
-                init_states_buffer_state=init_states_buffer_state,
-                key=key_do_episode,
-                episode_idx=episode)
+            bnn_model, true_buffer_state = self.do_episode(bnn_model=bnn_model,
+                                                           true_buffer_state=true_buffer_state,
+                                                           key=key_do_episode,
+                                                           episode_idx=episode)
 
 
 if __name__ == '__main__':
