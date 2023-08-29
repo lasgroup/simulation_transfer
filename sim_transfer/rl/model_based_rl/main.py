@@ -6,6 +6,7 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree_util as jtu
 import matplotlib.pyplot as plt
+import numpy as np
 import wandb
 from brax.training.replay_buffers import UniformSamplingQueue, ReplayBufferState
 from brax.training.types import Transition
@@ -58,7 +59,9 @@ class ModelBasedRL:
                  sac_kwargs: dict = SAC_KWARGS,
                  discounting: chex.Array = jnp.array(0.99),
                  reset_bnn: bool = True,
+                 return_best_bnn: bool = True,
                  ):
+        self.return_best_bnn = return_best_bnn
         self.reset_bnn = reset_bnn
         self.discounting = discounting
         self.car_reward_kwargs = car_reward_kwargs
@@ -158,7 +161,8 @@ class ModelBasedRL:
         # Train model
         if self.reset_bnn:
             self.bnn_model.reinit(rng_key=key)
-        self.bnn_model.fit(x_train=x_train, y_train=y_train, x_eval=x_test, y_eval=y_test, log_to_wandb=True)
+        self.bnn_model.fit(x_train=x_train, y_train=y_train, x_eval=x_test, y_eval=y_test, log_to_wandb=True,
+                           keep_the_best=self.return_best_bnn, metrics_objective='eval_nll')
         return self.bnn_model
 
     def do_episode(self,

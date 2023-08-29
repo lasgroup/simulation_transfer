@@ -1,7 +1,7 @@
 import exp
 from experiments.util import generate_run_commands, generate_base_command
 
-PROJECT_NAME = 'ModelBasedRLSimTransferComparisonReproducing'
+PROJECT_NAME = 'ModelBasedRLSimTransferComparisonReproducingN2'
 
 applicable_configs = {
     'horizon_len': [8, 16, 32],

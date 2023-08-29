@@ -250,7 +250,7 @@ class BatchedNeuralNetworkModel(AbstractRegressionModel):
 
     def fit(self, x_train: jnp.ndarray, y_train: jnp.ndarray, x_eval: Optional[jnp.ndarray] = None,
             y_eval: Optional[jnp.ndarray] = None, num_steps: Optional[int] = None, log_period: int = 1000,
-            log_to_wandb: bool = False, metrics_objective: str = 'eval_nll', keep_the_best: bool = False, ):
+            log_to_wandb: bool = False, metrics_objective: str = 'eval_nll', keep_the_best: bool = True, ):
         # check whether eval data has been passed
         evaluate = x_eval is not None or y_eval is not None
         assert not evaluate or x_eval.shape[0] == y_eval.shape[0]
