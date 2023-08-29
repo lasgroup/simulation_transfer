@@ -1,19 +1,22 @@
 import exp
 from experiments.util import generate_run_commands, generate_base_command
 
-PROJECT_NAME = 'ModelBasedRLSimTransferComparison'
+PROJECT_NAME = 'ModelBasedRLSimTransferComparisonN2'
 
 applicable_configs = {
     'horizon_len': [8, 16, 32],
     'seed': [0, 1],
     'project_name': [PROJECT_NAME],
     'num_episodes': [40],
-    'sac_num_env_steps': [1_000_000, 2_000_000],
-    'bnn_train_steps': [20_000, 40_000],
+    'sac_num_env_steps': [1_000_000],
+    'bnn_train_steps': [40_000],
     'learnable_likelihood_std': ['yes', 'no'],
-    'reset_bnn': ['no'],
+    'reset_bnn': ['yes', 'no'],
     'use_sim_prior': [0, 1],
     'include_aleatoric_noise': [1],
+    'high_fidelity_model': [1],
+    'return_best_bnn': [0, 1],
+    'return_best_policy': [0, 1],
 }
 
 
@@ -28,6 +31,9 @@ applicable_configs = {
 #     'reset_bnn': ['no'],
 #     'use_sim_prior': [0],
 #     'include_aleatoric_noise': [1],
+#     'high_fidelity_model': [1],
+#     'return_best_bnn': [0],
+#     'return_best_policy': [0],
 # }
 
 
@@ -43,21 +49,27 @@ def main():
                                 for reset_bnn in applicable_configs['reset_bnn']:
                                     for use_sim_prior in applicable_configs['use_sim_prior']:
                                         for include_aleatoric_noise in applicable_configs['include_aleatoric_noise']:
-                                            flags = {
-                                                'sac_num_env_steps': sac_num_env_steps,
-                                                'bnn_train_steps': bnn_train_steps,
-                                                'horizon_len': horizon_len,
-                                                'seed': seed,
-                                                'project_name': project_name,
-                                                'num_episodes': num_episodes,
-                                                'learnable_likelihood_std': learnable_likelihood_std,
-                                                'reset_bnn': reset_bnn,
-                                                'use_sim_prior': use_sim_prior,
-                                                'include_aleatoric_noise': include_aleatoric_noise,
-                                            }
+                                            for high_fidelity_model in applicable_configs['high_fidelity_model']:
+                                                for return_best_bnn in applicable_configs['return_best_bnn']:
+                                                    for return_best_policy in applicable_configs['return_best_policy']:
+                                                        flags = {
+                                                            'sac_num_env_steps': sac_num_env_steps,
+                                                            'bnn_train_steps': bnn_train_steps,
+                                                            'horizon_len': horizon_len,
+                                                            'seed': seed,
+                                                            'project_name': project_name,
+                                                            'num_episodes': num_episodes,
+                                                            'learnable_likelihood_std': learnable_likelihood_std,
+                                                            'reset_bnn': reset_bnn,
+                                                            'use_sim_prior': use_sim_prior,
+                                                            'include_aleatoric_noise': include_aleatoric_noise,
+                                                            'high_fidelity_model': high_fidelity_model,
+                                                            'return_best_bnn': return_best_bnn,
+                                                            'return_best_policy': return_best_policy
+                                                        }
 
-                                            cmd = generate_base_command(exp, flags=flags)
-                                            command_list.append(cmd)
+                                                        cmd = generate_base_command(exp, flags=flags)
+                                                        command_list.append(cmd)
 
     # submit jobs
     generate_run_commands(command_list, num_cpus=1, num_gpus=1, mode='euler', duration='3:59:00', prompt=True,

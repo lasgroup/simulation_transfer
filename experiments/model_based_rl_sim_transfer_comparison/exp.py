@@ -22,6 +22,8 @@ def experiment(horizon_len: int,
                use_sim_prior: int,
                include_aleatoric_noise: int,
                high_fidelity_model: int,
+               return_best_bnn: int = False,
+               return_best_policy: int = False,
                ):
     config_dict = dict(horizon_len=horizon_len,
                        seed=seed,
@@ -29,6 +31,9 @@ def experiment(horizon_len: int,
                        use_sim_prior=use_sim_prior,
                        bnn_s=bnn_train_steps,
                        sac_s=sac_num_env_steps,
+                       hf_mod=high_fidelity_model,
+                       best_bnn=return_best_bnn,
+                       best_policy=return_best_policy,
                        )
     group_name = '_'.join(list(str(key) + '=' + str(value) for key, value in config_dict.items() if key != 'seed'))
 
@@ -40,6 +45,9 @@ def experiment(horizon_len: int,
                        ll_std=learnable_likelihood_std,
                        reset_bnn=reset_bnn,
                        use_sim_prior=use_sim_prior,
+                       high_fidelity_model=high_fidelity_model,
+                       return_best_bnn=return_best_bnn,
+                       return_best_policy=return_best_policy,
                        )
 
     NUM_ENV_STEPS_BETWEEN_UPDATES = 16
@@ -48,12 +56,14 @@ def experiment(horizon_len: int,
                       num_evals=20,
                       reward_scaling=10,
                       episode_length=horizon_len,
+                      episode_length_eval=2 * horizon_len,
                       action_repeat=1,
                       discounting=0.99,
                       lr_policy=3e-4,
                       lr_alpha=3e-4,
                       lr_q=3e-4,
                       num_envs=NUM_ENVS,
+                      num_eval_envs=2 * NUM_ENVS,
                       batch_size=64,
                       grad_updates_per_step=NUM_ENV_STEPS_BETWEEN_UPDATES * NUM_ENVS,
                       num_env_steps_between_updates=NUM_ENV_STEPS_BETWEEN_UPDATES,
@@ -61,7 +71,6 @@ def experiment(horizon_len: int,
                       wd_policy=0,
                       wd_q=0,
                       wd_alpha=0,
-                      num_eval_envs=1,
                       max_replay_size=5 * 10 ** 4,
                       min_replay_size=2 ** 11,
                       policy_hidden_layer_sizes=(64, 64),
@@ -148,6 +157,8 @@ def experiment(horizon_len: int,
                                   include_aleatoric_noise=include_aleatoric_noise,
                                   car_reward_kwargs=car_reward_kwargs,
                                   reset_bnn=reset_bnn == 'yes',
+                                  return_best_bnn=bool(return_best_bnn),
+                                  return_best_policy=bool(return_best_policy),
                                   )
 
     model_based_rl.run_episodes(num_episodes, jr.PRNGKey(seed))
@@ -168,20 +179,26 @@ def main(args):
         reset_bnn=args.reset_bnn,
         use_sim_prior=args.use_sim_prior,
         include_aleatoric_noise=args.include_aleatoric_noise,
+        high_fidelity_model=args.high_fidelity_model,
+        return_best_bnn=args.return_best_bnn,
+        return_best_policy=args.return_best_policy,
     )
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--horizon_len', type=int, default=0)
-    parser.add_argument('--num_episodes', type=int, default=0)
-    parser.add_argument('--bnn_train_steps', type=int, default=0)
-    parser.add_argument('--sac_num_env_steps', type=int, default=0)
+    parser.add_argument('--horizon_len', type=int, default=8)
+    parser.add_argument('--num_episodes', type=int, default=20)
+    parser.add_argument('--bnn_train_steps', type=int, default=10_000)
+    parser.add_argument('--sac_num_env_steps', type=int, default=1_000_000)
     parser.add_argument('--project_name', type=str, default='RaceCarPPO')
     parser.add_argument('--learnable_likelihood_std', type=str, default='yes')
     parser.add_argument('--reset_bnn', type=str, default='yes')
     parser.add_argument('--use_sim_prior', type=int, default=1)
     parser.add_argument('--include_aleatoric_noise', type=int, default=1)
+    parser.add_argument('--high_fidelity_model', type=int, default=1)
+    parser.add_argument('--return_best_bnn', type=int, default=1)
+    parser.add_argument('--return_best_policy', type=int, default=1)
     args = parser.parse_args()
     main(args)
