@@ -119,7 +119,7 @@ class ModelBasedRL:
         # Here we create eval envs
         sac_trainer = SAC(environment=env,
                           eval_environment=env,
-                          eval_key_fixed=False,
+                          eval_key_fixed=True,
                           return_best_model=self.return_best_policy,
                           **_sac_kwargs, )
 
