@@ -3,32 +3,32 @@ from experiments.util import generate_run_commands, generate_base_command
 
 PROJECT_NAME = 'ModelBasedRLSimTransferComparisonReproducing'
 
-# applicable_configs = {
-#     'horizon_len': [8, 16, 32],
-#     'seed': [0, 1],
-#     'project_name': [PROJECT_NAME],
-#     'num_episodes': [40],
-#     'sac_num_env_steps': [1_000_000, 2_000_000],
-#     'bnn_train_steps': [20_000, 40_000],
-#     'learnable_likelihood_std': ['yes', 'no'],
-#     'reset_bnn': ['no'],
-#     'use_sim_prior': [0, 1],
-#     'include_aleatoric_noise': [1],
-# }
-
-
 applicable_configs = {
-    'horizon_len': [8],
-    'seed': [0],
-    'project_name': ['TestModelBasedRLSimTransfer'],
+    'horizon_len': [8, 16, 32],
+    'seed': [0, 1],
+    'project_name': [PROJECT_NAME],
     'num_episodes': [40],
-    'sac_num_env_steps': [2000],
-    'bnn_train_steps': [2000],
-    'learnable_likelihood_std': ['no'],
+    'sac_num_env_steps': [1_000_000, 2_000_000],
+    'bnn_train_steps': [20_000, 40_000],
+    'learnable_likelihood_std': ['yes', 'no'],
     'reset_bnn': ['no'],
-    'use_sim_prior': [0],
+    'use_sim_prior': [0, 1],
     'include_aleatoric_noise': [1],
 }
+
+
+# applicable_configs = {
+#     'horizon_len': [8],
+#     'seed': [0],
+#     'project_name': ['TestModelBasedRLSimTransfer'],
+#     'num_episodes': [40],
+#     'sac_num_env_steps': [2000],
+#     'bnn_train_steps': [2000],
+#     'learnable_likelihood_std': ['no'],
+#     'reset_bnn': ['no'],
+#     'use_sim_prior': [0],
+#     'include_aleatoric_noise': [1],
+# }
 
 
 def main():
