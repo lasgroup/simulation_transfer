@@ -22,6 +22,7 @@ def experiment(horizon_len: int,
                use_sim_prior: int,
                include_aleatoric_noise: int,
                best_bnn_model: int,
+               best_policy: int,
                ):
     config_dict = dict(horizon_len=horizon_len,
                        seed=seed,
@@ -30,6 +31,7 @@ def experiment(horizon_len: int,
                        bnn_s=bnn_train_steps,
                        sac_s=sac_num_env_steps,
                        bnn_best=best_bnn_model,
+                       policy_best=best_policy,
                        )
     group_name = '_'.join(list(str(key) + '=' + str(value) for key, value in config_dict.items() if key != 'seed'))
 
@@ -42,6 +44,7 @@ def experiment(horizon_len: int,
                        reset_bnn=reset_bnn,
                        use_sim_prior=use_sim_prior,
                        best_bnn_model=best_bnn_model,
+                       best_policy=best_policy,
                        )
 
     NUM_ENV_STEPS_BETWEEN_UPDATES = 16
@@ -138,7 +141,8 @@ def experiment(horizon_len: int,
                                   include_aleatoric_noise=include_aleatoric_noise,
                                   car_reward_kwargs=car_reward_kwargs,
                                   reset_bnn=reset_bnn == 'yes',
-                                  return_best_bnn=bool(best_bnn_model)
+                                  return_best_bnn=bool(best_bnn_model),
+                                  return_best_policy=bool(best_policy)
                                   )
 
     model_based_rl.run_episodes(num_episodes, jr.PRNGKey(seed))
@@ -160,6 +164,7 @@ def main(args):
         use_sim_prior=args.use_sim_prior,
         include_aleatoric_noise=args.include_aleatoric_noise,
         best_bnn_model=args.best_bnn_model,
+        best_policy=args.best_policy
     )
 
 
@@ -176,5 +181,6 @@ if __name__ == '__main__':
     parser.add_argument('--use_sim_prior', type=int, default=1)
     parser.add_argument('--include_aleatoric_noise', type=int, default=1)
     parser.add_argument('--best_bnn_model', type=int, default=1)
+    parser.add_argument('--best_policy', type=int, default=1)
     args = parser.parse_args()
     main(args)

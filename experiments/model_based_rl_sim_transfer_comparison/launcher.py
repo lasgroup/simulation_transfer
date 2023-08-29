@@ -1,7 +1,7 @@
 import exp
 from experiments.util import generate_run_commands, generate_base_command
 
-PROJECT_NAME = 'ModelBasedRLSimTransferComparisonReproducingN2'
+PROJECT_NAME = 'ModelBasedRLSimTransferComparisonReproducingN3'
 
 applicable_configs = {
     'horizon_len': [8, 16, 32],
@@ -14,7 +14,8 @@ applicable_configs = {
     'reset_bnn': ['no'],
     'use_sim_prior': [1],
     'include_aleatoric_noise': [1],
-    'best_bnn_model': [0, 1],
+    'best_bnn_model': [1],
+    'best_policy': [0, 1],
 }
 
 
@@ -45,22 +46,24 @@ def main():
                                     for use_sim_prior in applicable_configs['use_sim_prior']:
                                         for include_aleatoric_noise in applicable_configs['include_aleatoric_noise']:
                                             for best_bnn_model in applicable_configs['best_bnn_model']:
-                                                flags = {
-                                                    'sac_num_env_steps': sac_num_env_steps,
-                                                    'bnn_train_steps': bnn_train_steps,
-                                                    'horizon_len': horizon_len,
-                                                    'seed': seed,
-                                                    'project_name': project_name,
-                                                    'num_episodes': num_episodes,
-                                                    'learnable_likelihood_std': learnable_likelihood_std,
-                                                    'reset_bnn': reset_bnn,
-                                                    'use_sim_prior': use_sim_prior,
-                                                    'include_aleatoric_noise': include_aleatoric_noise,
-                                                    'best_bnn_model': best_bnn_model,
-                                                }
+                                                for best_policy in applicable_configs['best_policy']:
+                                                    flags = {
+                                                        'sac_num_env_steps': sac_num_env_steps,
+                                                        'bnn_train_steps': bnn_train_steps,
+                                                        'horizon_len': horizon_len,
+                                                        'seed': seed,
+                                                        'project_name': project_name,
+                                                        'num_episodes': num_episodes,
+                                                        'learnable_likelihood_std': learnable_likelihood_std,
+                                                        'reset_bnn': reset_bnn,
+                                                        'use_sim_prior': use_sim_prior,
+                                                        'include_aleatoric_noise': include_aleatoric_noise,
+                                                        'best_bnn_model': best_bnn_model,
+                                                        'best_policy': best_policy,
+                                                    }
 
-                                                cmd = generate_base_command(exp, flags=flags)
-                                                command_list.append(cmd)
+                                                    cmd = generate_base_command(exp, flags=flags)
+                                                    command_list.append(cmd)
 
     # submit jobs
     generate_run_commands(command_list, num_cpus=1, num_gpus=1, mode='euler', duration='3:59:00', prompt=True,
