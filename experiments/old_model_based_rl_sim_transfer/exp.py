@@ -83,7 +83,6 @@ def experiment(horizon_len: int,
     """ Setup a neural network """
 
     _sim = RaceCarSim(encode_angle=True, use_blend=True)
-
     sim = PredictStateChangeWrapper(_sim)
     learn_std = learnable_likelihood_std == 'yes'
 
