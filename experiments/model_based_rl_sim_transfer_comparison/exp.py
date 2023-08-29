@@ -21,6 +21,7 @@ def experiment(horizon_len: int,
                reset_bnn: str,
                use_sim_prior: int,
                include_aleatoric_noise: int,
+               best_bnn_model: int,
                ):
     config_dict = dict(horizon_len=horizon_len,
                        seed=seed,
@@ -28,6 +29,7 @@ def experiment(horizon_len: int,
                        use_sim_prior=use_sim_prior,
                        bnn_s=bnn_train_steps,
                        sac_s=sac_num_env_steps,
+                       bnn_best=best_bnn_model,
                        )
     group_name = '_'.join(list(str(key) + '=' + str(value) for key, value in config_dict.items() if key != 'seed'))
 
@@ -39,6 +41,7 @@ def experiment(horizon_len: int,
                        ll_std=learnable_likelihood_std,
                        reset_bnn=reset_bnn,
                        use_sim_prior=use_sim_prior,
+                       best_bnn_model=best_bnn_model,
                        )
 
     NUM_ENV_STEPS_BETWEEN_UPDATES = 16
@@ -135,6 +138,7 @@ def experiment(horizon_len: int,
                                   include_aleatoric_noise=include_aleatoric_noise,
                                   car_reward_kwargs=car_reward_kwargs,
                                   reset_bnn=reset_bnn == 'yes',
+                                  return_best_bnn=bool(best_bnn_model)
                                   )
 
     model_based_rl.run_episodes(num_episodes, jr.PRNGKey(seed))
@@ -155,6 +159,7 @@ def main(args):
         reset_bnn=args.reset_bnn,
         use_sim_prior=args.use_sim_prior,
         include_aleatoric_noise=args.include_aleatoric_noise,
+        best_bnn_model=args.best_bnn_model,
     )
 
 
@@ -170,5 +175,6 @@ if __name__ == '__main__':
     parser.add_argument('--reset_bnn', type=str, default='yes')
     parser.add_argument('--use_sim_prior', type=int, default=1)
     parser.add_argument('--include_aleatoric_noise', type=int, default=1)
+    parser.add_argument('--best_bnn_model', type=int, default=1)
     args = parser.parse_args()
     main(args)
