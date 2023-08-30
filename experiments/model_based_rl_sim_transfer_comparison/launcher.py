@@ -14,7 +14,7 @@ applicable_configs = {
     'reset_bnn': ['no'],
     'use_sim_prior': [1],
     'include_aleatoric_noise': [1],
-    'best_bnn_model': [0, 1],
+    'best_bnn_model': [1],
 }
 
 
