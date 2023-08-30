@@ -25,6 +25,7 @@ def experiment(horizon_len: int,
                best_bnn_model: int,
                best_policy: int,
                margin_factor: float,
+               predict_difference: int,
                ):
     config_dict = dict(horizon_len=horizon_len,
                        seed=seed,
@@ -34,6 +35,7 @@ def experiment(horizon_len: int,
                        sac_s=sac_num_env_steps,
                        bnn_best=best_bnn_model,
                        policy_best=best_policy,
+                       pred_dif=predict_difference,
                        )
     group_name = '_'.join(list(str(key) + '=' + str(value) for key, value in config_dict.items() if key != 'seed'))
 
@@ -48,6 +50,7 @@ def experiment(horizon_len: int,
                        best_bnn_model=best_bnn_model,
                        best_policy=best_policy,
                        margin_factor=margin_factor,
+                       predict_difference=predict_difference,
                        )
 
     NUM_ENV_STEPS_BETWEEN_UPDATES = 16
@@ -94,8 +97,10 @@ def experiment(horizon_len: int,
     """ Setup a neural network """
 
     _sim = RaceCarSim(encode_angle=True, use_blend=True)
-
-    sim = PredictStateChangeWrapper(_sim)
+    if predict_difference:
+        sim = PredictStateChangeWrapper(_sim)
+    else:
+        sim = _sim
     learn_std = learnable_likelihood_std == 'yes'
 
     standard_model_params = {
@@ -151,6 +156,7 @@ def experiment(horizon_len: int,
                                   return_best_policy=bool(best_policy),
                                   sac_kwargs=SAC_KWARGS,
                                   discounting=jnp.array(0.99),
+                                  predict_difference=bool(predict_difference),
                                   )
 
     model_based_rl.run_episodes(num_episodes, jr.PRNGKey(seed))
@@ -174,6 +180,7 @@ def main(args):
         best_bnn_model=args.best_bnn_model,
         best_policy=args.best_policy,
         margin_factor=args.margin_factor,
+        predict_difference=args.predict_difference,
     )
 
 
@@ -192,5 +199,6 @@ if __name__ == '__main__':
     parser.add_argument('--best_bnn_model', type=int, default=1)
     parser.add_argument('--best_policy', type=int, default=0)
     parser.add_argument('--margin_factor', type=float, default=20.0)
+    parser.add_argument('--predict_difference', type=int, default=1)
     args = parser.parse_args()
     main(args)

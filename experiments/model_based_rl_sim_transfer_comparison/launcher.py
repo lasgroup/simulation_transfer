@@ -1,7 +1,7 @@
 import exp
 from experiments.util import generate_run_commands, generate_base_command, dict_permutations
 
-PROJECT_NAME = 'ModelBasedRLSimTransferBestPolicy'
+PROJECT_NAME = 'PredictNextStateInsteadofDifference'
 
 applicable_configs = {
     'horizon_len': [50, 2 ** 6, 100],
@@ -17,6 +17,7 @@ applicable_configs = {
     'best_bnn_model': [1],
     'best_policy': [1],
     'margin_factor': [20.0],
+    'predict_difference': [0],
 }
 
 
