@@ -232,7 +232,8 @@ class CarSystem(System[CarDynamicsParams, CarRewardParams]):
                  car_model_params: Dict = None,
                  ctrl_cost_weight: float = 0.005,
                  use_obs_noise: bool = True,
-                 bound: float = 0.1):
+                 bound: float = 0.1,
+                 margin_factor: float = 10.0):
         System.__init__(self,
                         dynamics=CarDynamics(encode_angle=encode_angle,
                                              use_tire_model=use_tire_model,
@@ -241,7 +242,8 @@ class CarSystem(System[CarDynamicsParams, CarRewardParams]):
                                              use_obs_noise=use_obs_noise),
                         reward=CarReward(ctrl_cost_weight=ctrl_cost_weight,
                                          encode_angle=encode_angle,
-                                         bound=bound)
+                                         bound=bound,
+                                         margin_factor=margin_factor)
                         )
 
     @staticmethod

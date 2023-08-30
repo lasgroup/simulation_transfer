@@ -19,10 +19,11 @@ from sim_transfer.sims.util import plot_rc_trajectory
 
 ENCODE_ANGLE = True
 system = CarSystem(encode_angle=ENCODE_ANGLE,
-                   action_delay=0.00,
+                   action_delay=0.2,
                    use_tire_model=True,
                    use_obs_noise=True,
                    ctrl_cost_weight=0.005,
+                   margin_factor=20,
                    )
 
 # Create replay buffer
@@ -119,10 +120,11 @@ def policy(x):
 
 
 test_system = CarSystem(encode_angle=ENCODE_ANGLE,
-                        action_delay=0.00,
+                        action_delay=0.2,
                         use_tire_model=True,
                         use_obs_noise=True,
                         ctrl_cost_weight=0.005,
+                        margin_factor=20,
                         )
 
 system_state_init = system.reset(key=jr.PRNGKey(0))
