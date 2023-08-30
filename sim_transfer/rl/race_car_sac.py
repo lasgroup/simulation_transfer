@@ -14,6 +14,9 @@ from mbpo.systems.brax_wrapper import BraxWrapper
 from sim_transfer.sims.car_system import CarSystem
 from sim_transfer.sims.util import plot_rc_trajectory
 
+# import os
+# os.environ['JAX_LOG_COMPILES'] = '1'
+
 ENCODE_ANGLE = True
 system = CarSystem(encode_angle=ENCODE_ANGLE,
                    action_delay=0.00,
@@ -23,7 +26,7 @@ system = CarSystem(encode_angle=ENCODE_ANGLE,
                    )
 
 # Create replay buffer
-num_init_states = 500
+num_init_states = 10
 keys = jr.split(jr.PRNGKey(0), num_init_states)
 init_sys_state = vmap(system.reset)(key=keys)
 
@@ -51,14 +54,13 @@ env = BraxWrapper(system=system,
 
 state = jit(env.reset)(rng=jr.PRNGKey(0))
 
-num_env_steps_between_updates = 10
+num_env_steps_between_updates = 1
 num_envs = 32
 horizon = 200
 
 sac_trainer = SAC(
-    target_entropy=-2,
     environment=env,
-    num_timesteps=1_000_000,
+    num_timesteps=300_000,
     num_evals=20,
     reward_scaling=1,
     episode_length=horizon,
@@ -76,7 +78,7 @@ sac_trainer = SAC(
     wd_q=0,
     wd_alpha=0,
     num_eval_envs=1,
-    max_replay_size=5 * 10 ** 4,
+    max_replay_size=10 ** 5,
     min_replay_size=10 ** 3,
     policy_hidden_layer_sizes=(64, 64),
     critic_hidden_layer_sizes=(64, 64),

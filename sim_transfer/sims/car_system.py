@@ -200,14 +200,16 @@ class CarReward(Reward[CarRewardParams]):
     def __init__(self,
                  ctrl_cost_weight: float = 0.005,
                  encode_angle: bool = False,
-                 bound: float = 0.1):
+                 bound: float = 0.1,
+                 margin_factor: float = 10.0):
         Reward.__init__(self, x_dim=7 if encode_angle else 6, u_dim=2)
         self.ctrl_cost_weight = ctrl_cost_weight
         self.encode_angle: bool = encode_angle
         self._reward_model = RCCarEnvReward(goal=self._goal,
                                             ctrl_cost_weight=ctrl_cost_weight,
                                             encode_angle=self.encode_angle,
-                                            bound=bound)
+                                            bound=bound,
+                                            margin_factor=margin_factor)
 
     def init_params(self, key: chex.PRNGKey) -> CarRewardParams:
         return CarRewardParams(_goal=self._goal, key=key)

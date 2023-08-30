@@ -15,12 +15,13 @@ class RCCarEnvReward:
     dim_action: Tuple[int] = (2,)
 
     def __init__(self, goal: jnp.array, encode_angle: bool = False, ctrl_cost_weight: float = 0.005,
-                 bound: float = 0.1, ):
+                 bound: float = 0.1, margin_factor: float = 10.0):
         self.goal = goal
         self.ctrl_cost_weight = ctrl_cost_weight
         self.encode_angle = encode_angle
-        self.tolerance_reward = ToleranceReward(bounds=(0.0, bound), margin=10 * bound, value_at_margin=0.1,
-                                                sigmoid='long_tail')
+        # Margin 20 seems to work even better (maybe try at some point)
+        self.tolerance_reward = ToleranceReward(bounds=(0.0, bound), margin=margin_factor * bound,
+                                                value_at_margin=0.1, sigmoid='long_tail')
 
     def forward(self, obs: jnp.array, action: jnp.array, next_obs: jnp.array):
         """ Computes the reward for the given transition """
@@ -103,7 +104,7 @@ class RCCarSimEnv:
 
     def __init__(self, ctrl_cost_weight: float = 0.005, encode_angle: bool = False, use_obs_noise: bool = True,
                  use_tire_model: bool = False, action_delay: float = 0.0, car_model_params: Dict = None,
-                 seed: int = 230492394):
+                 margin_factor: float = 10.0, seed: int = 230492394):
         """
         Race car simulator environment
 
@@ -142,7 +143,8 @@ class RCCarSimEnv:
         # initialize reward model
         self._reward_model = RCCarEnvReward(goal=self._goal,
                                             ctrl_cost_weight=ctrl_cost_weight,
-                                            encode_angle=self.encode_angle)
+                                            encode_angle=self.encode_angle,
+                                            margin_factor=margin_factor)
 
         # set up action delay
         assert action_delay >= 0.0, "Action delay must be non-negative"
