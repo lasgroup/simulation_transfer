@@ -1,5 +1,5 @@
 import exp
-from experiments.util import generate_run_commands, generate_base_command
+from experiments.util import generate_run_commands, generate_base_command, dict_permutations
 
 PROJECT_NAME = 'ModelBasedRLSimTransferComparisonReproducingN5'
 
@@ -35,35 +35,11 @@ applicable_configs = {
 
 def main():
     command_list = []
-    for seed in applicable_configs['seed']:
-        for project_name in applicable_configs['project_name']:
-            for horizon_len in applicable_configs['horizon_len']:
-                for num_episodes in applicable_configs['num_episodes']:
-                    for sac_num_env_steps in applicable_configs['sac_num_env_steps']:
-                        for bnn_train_steps in applicable_configs['bnn_train_steps']:
-                            for learnable_likelihood_std in applicable_configs['learnable_likelihood_std']:
-                                for reset_bnn in applicable_configs['reset_bnn']:
-                                    for use_sim_prior in applicable_configs['use_sim_prior']:
-                                        for include_aleatoric_noise in applicable_configs['include_aleatoric_noise']:
-                                            for best_bnn_model in applicable_configs['best_bnn_model']:
-                                                for best_policy in applicable_configs['best_policy']:
-                                                    flags = {
-                                                        'sac_num_env_steps': sac_num_env_steps,
-                                                        'bnn_train_steps': bnn_train_steps,
-                                                        'horizon_len': horizon_len,
-                                                        'seed': seed,
-                                                        'project_name': project_name,
-                                                        'num_episodes': num_episodes,
-                                                        'learnable_likelihood_std': learnable_likelihood_std,
-                                                        'reset_bnn': reset_bnn,
-                                                        'use_sim_prior': use_sim_prior,
-                                                        'include_aleatoric_noise': include_aleatoric_noise,
-                                                        'best_bnn_model': best_bnn_model,
-                                                        'best_policy': best_policy,
-                                                    }
 
-                                                    cmd = generate_base_command(exp, flags=flags)
-                                                    command_list.append(cmd)
+    all_flags_combinations = dict_permutations(applicable_configs)
+    for flags in all_flags_combinations:
+        cmd = generate_base_command(exp, flags=flags)
+        command_list.append(cmd)
 
     # submit jobs
     generate_run_commands(command_list, num_cpus=1, num_gpus=1, mode='euler', duration='3:59:00', prompt=True,

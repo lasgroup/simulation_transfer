@@ -1,15 +1,15 @@
+import glob
+import hashlib
+import itertools
+import json
+import multiprocessing
+import os
+import sys
 from typing import Dict, Optional, Any, List
 
-import sys
-import os
-import json
-import glob
-import numpy as np
-import hashlib
-import pandas as pd
-import multiprocessing
 import jax.numpy as jnp
-
+import numpy as np
+import pandas as pd
 
 """ Relevant Directories """
 
@@ -79,7 +79,7 @@ class AsyncExecutor:
                     self._pool[i].terminate()
                     if len(tasks) > 0:
                         if verbose:
-                            print(n_tasks-len(tasks))
+                            print(n_tasks - len(tasks))
                         next_task = tasks.pop(0)
                         self._pool[i] = _start_process(target, next_task)
                     else:
@@ -140,7 +140,6 @@ def generate_run_commands(command_list: List[str], output_file_list: Optional[Li
                           num_cpus: int = 1, num_gpus: int = 0,
                           dry: bool = False, mem: int = 2 * 1028, duration: str = '3:59:00',
                           mode: str = 'local', prompt: bool = True) -> None:
-
     if mode == 'euler':
         cluster_cmds = []
         bsub_cmd = 'sbatch ' + \
@@ -237,7 +236,7 @@ def sample_flag(sample_spec, rds=None):
     sample_type, sample_range = sample_spec
     if sample_type == 'loguniform':
         assert len(sample_range) == 2
-        return 10**rds.uniform(*sample_range)
+        return 10 ** rds.uniform(*sample_range)
     elif sample_type == 'uniform':
         assert len(sample_range) == 2
         return rds.uniform(*sample_range)
@@ -260,7 +259,7 @@ def sample_param_flags(hyperparam_spec: Dict[str, Dict], rds: Optional[np.random
             if flag_spec['distribution'] == 'uniform':
                 flags_dict[flag] = rds.uniform(flag_spec['min'], flag_spec['max'])
             elif flag_spec['distribution'] == 'log_uniform_10':
-                flags_dict[flag] = 10**rds.uniform(flag_spec['min'], flag_spec['max'])
+                flags_dict[flag] = 10 ** rds.uniform(flag_spec['min'], flag_spec['max'])
             elif flag_spec['distribution'] == 'log_uniform':
                 flags_dict[flag] = np.exp(rds.uniform(flag_spec['min'], flag_spec['max']))
             else:
@@ -340,3 +339,28 @@ def median(row):
 
 def count(row):
     return row.shape[0]
+
+
+def dict_permutations(d):
+    keys = d.keys()
+    values = d.values()
+    perms = []
+
+    # Calculate the Cartesian product of all values in the dictionary
+    for value_combo in itertools.product(*values):
+        perms.append(dict(zip(keys, value_combo)))
+
+    return perms
+
+
+if __name__ == '__main__':
+    # Example for dict_permutations
+    d = {
+        "A": [1, 2],
+        "B": ["x", "y"],
+        "C": ["!", "@"]
+    }
+
+    result = dict_permutations(d)
+    for r in result:
+        print(r)
