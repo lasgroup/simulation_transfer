@@ -6,7 +6,6 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree_util as jtu
 import matplotlib.pyplot as plt
-import numpy as np
 import wandb
 from brax.training.replay_buffers import UniformSamplingQueue, ReplayBufferState
 from brax.training.types import Transition
@@ -158,11 +157,12 @@ class ModelBasedRL:
         all_next_obs = all_transitions.next_observation
         x_all = jnp.concatenate([all_obs, all_actions], axis=-1)
         y_all = all_next_obs - all_obs
-        x_train, x_test, y_train, y_test = split_data(x_all, y_all, test_ratio=0.2, key=jr.PRNGKey(42))
+        key_data_split, key_reinit_bnn = jr.split(key)
+        x_train, x_test, y_train, y_test = split_data(x_all, y_all, test_ratio=0.2, key=key_data_split)
 
         # Train model
         if self.reset_bnn:
-            self.bnn_model.reinit(rng_key=key)
+            self.bnn_model.reinit(rng_key=key_reinit_bnn)
         self.bnn_model.fit(x_train=x_train, y_train=y_train, x_eval=x_test, y_eval=y_test, log_to_wandb=True,
                            keep_the_best=self.return_best_bnn, metrics_objective='eval_nll')
         return self.bnn_model
