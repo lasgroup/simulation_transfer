@@ -105,7 +105,9 @@ class ModelBasedRL:
                           sample_buffer=self.true_data_buffer,
                           system_params=system.init_params(jr.PRNGKey(0)), )
 
-        sac_trainer = SAC(environment=env, **_sac_kwargs, )
+        sac_trainer = SAC(environment=env,
+                          return_best_model=self.return_best_policy,
+                          **_sac_kwargs, )
 
         params, metrics = sac_trainer.run_training(key=key)
         make_inference_fn = sac_trainer.make_policy
