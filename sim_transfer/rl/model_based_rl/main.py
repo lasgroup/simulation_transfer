@@ -10,7 +10,6 @@ import numpy as np
 import wandb
 from brax.training.replay_buffers import UniformSamplingQueue, ReplayBufferState
 from brax.training.types import Transition
-from jax import jit
 from mbpo.optimizers.policy_optimizers.sac.sac import SAC
 from mbpo.systems.brax_wrapper import BraxWrapper
 
