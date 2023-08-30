@@ -104,7 +104,7 @@ class RCCarSimEnv:
 
     def __init__(self, ctrl_cost_weight: float = 0.005, encode_angle: bool = False, use_obs_noise: bool = True,
                  use_tire_model: bool = False, action_delay: float = 0.0, car_model_params: Dict = None,
-                 margin_factor: float = 10.0, max_throttle: float = 0.5, seed: int = 230492394):
+                 margin_factor: float = 10.0, max_throttle: float = 1.0, seed: int = 230492394):
         """
         Race car simulator environment
 
