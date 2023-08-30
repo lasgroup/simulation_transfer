@@ -161,7 +161,7 @@ class ModelBasedRL:
         x_all = jnp.concatenate([all_obs, all_actions], axis=-1)
         y_all = all_next_obs - all_obs
         key_split_data, key_reinit_model = jr.split(key, 2)
-        x_train, x_test, y_train, y_test = split_data(x_all, y_all, test_ratio=0.2, key=key_split_data)
+        x_train, x_test, y_train, y_test = split_data(x_all, y_all, test_ratio=0.1, key=key_split_data)
 
         # Train model
         if self.reset_bnn:
