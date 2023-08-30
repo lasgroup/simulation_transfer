@@ -9,7 +9,7 @@ applicable_configs = {
     'seed': [0, 1],
     'project_name': [PROJECT_NAME],
     'batch_size': [64, 128, 256],
-    'num_env_steps_between_updates': [16, 32, 64],
+    'num_env_steps_between_updates': [1, 16, 64],
     'num_time_steps': [10 ** 6, 3 * 10 ** 6, 10 ** 7],
 }
 
