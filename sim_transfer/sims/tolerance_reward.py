@@ -105,8 +105,8 @@ if __name__ == '__main__':
     import matplotlib.pyplot as plt
 
     bound = 0.1
-    reward = ToleranceReward(bounds=(0.0, bound), margin=5 * bound, value_at_margin=0.1, sigmoid='long_tail')
-    x = jnp.linspace(0, 2, 1000)
+    reward = ToleranceReward(bounds=(0.0, bound), margin=15 * bound, value_at_margin=0.1, sigmoid='long_tail')
+    x = jnp.linspace(0, 4, 1000)
 
     y = reward(x)
     plt.plot(x, y)
