@@ -238,7 +238,7 @@ if __name__ == '__main__':
 
     wandb.init(
         project="Race car test MBRL",
-        group='test group',
+        group='test',
     )
 
     model_based_rl = ModelBasedRL(gym_env=gym_env,
