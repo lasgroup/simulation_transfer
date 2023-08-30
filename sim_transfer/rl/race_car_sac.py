@@ -86,6 +86,7 @@ sac_trainer = SAC(
     normalize_observations=True,
     deterministic_eval=True,
     wandb_logging=False,
+    return_best_model=True,
 )
 
 max_y = 0
