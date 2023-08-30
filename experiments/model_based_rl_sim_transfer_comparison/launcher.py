@@ -1,7 +1,7 @@
 import exp
 from experiments.util import generate_run_commands, generate_base_command, dict_permutations
 
-PROJECT_NAME = 'TestFinalVersionNX'
+PROJECT_NAME = 'TestFinalVersionNXwithLogging'
 
 applicable_configs = {
     'horizon_len': [50, 2 ** 6, 2 ** 7],
