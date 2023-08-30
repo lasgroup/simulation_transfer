@@ -1,10 +1,10 @@
 import exp
 from experiments.util import generate_run_commands, generate_base_command, dict_permutations
 
-PROJECT_NAME = 'TestFinalVersionNXwithLogging'
+PROJECT_NAME = 'ModelBasedRLSimTransferBestPolicy'
 
 applicable_configs = {
-    'horizon_len': [50, 2 ** 6, 2 ** 7],
+    'horizon_len': [50, 2 ** 6, 100],
     'seed': [0, 1],
     'project_name': [PROJECT_NAME],
     'num_episodes': [40],
@@ -15,7 +15,7 @@ applicable_configs = {
     'use_sim_prior': [1],
     'include_aleatoric_noise': [1],
     'best_bnn_model': [1],
-    'best_policy': [0],
+    'best_policy': [1],
     'margin_factor': [20.0],
 }
 
