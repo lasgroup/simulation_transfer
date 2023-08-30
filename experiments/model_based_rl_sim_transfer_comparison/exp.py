@@ -199,6 +199,6 @@ if __name__ == '__main__':
     parser.add_argument('--best_bnn_model', type=int, default=1)
     parser.add_argument('--best_policy', type=int, default=0)
     parser.add_argument('--margin_factor', type=float, default=20.0)
-    parser.add_argument('--predict_difference', type=int, default=1)
+    parser.add_argument('--predict_difference', type=int, default=0)
     args = parser.parse_args()
     main(args)

@@ -46,6 +46,7 @@ class LearnedDynamics(Dynamics[DynamicsParams]):
             x_next_dist = self.model.predict_dist(z, include_noise=self.include_noise)
             next_key, key_sample_x_next = jr.split(dynamics_params.key)
             x_next = x_next_dist.sample(seed=key_sample_x_next)
+            x_next = x_next.reshape((self.x_dim,))
         new_dynamics_params = dynamics_params.replace(key=next_key)
         return Normal(loc=x_next, scale=jnp.zeros_like(x_next)), new_dynamics_params
 

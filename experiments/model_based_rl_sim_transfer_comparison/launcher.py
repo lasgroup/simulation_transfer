@@ -1,7 +1,7 @@
 import exp
 from experiments.util import generate_run_commands, generate_base_command, dict_permutations
 
-PROJECT_NAME = 'PredictNextStateInsteadofDifference'
+PROJECT_NAME = 'PredictNextStateInsteadofDifferenceN2'
 
 applicable_configs = {
     'horizon_len': [50, 2 ** 6, 100],
@@ -10,7 +10,7 @@ applicable_configs = {
     'num_episodes': [40],
     'sac_num_env_steps': [1_000_000, 2_000_000],
     'bnn_train_steps': [20_000, 40_000],
-    'learnable_likelihood_std': ['yes', 'no'],
+    'learnable_likelihood_std': ['yes'],
     'reset_bnn': ['no'],
     'use_sim_prior': [1],
     'include_aleatoric_noise': [1],
