@@ -51,7 +51,7 @@ def experiment(horizon_len: int,
                        )
 
     NUM_ENV_STEPS_BETWEEN_UPDATES = 16
-    NUM_ENVS = 32
+    NUM_ENVS = 64
     SAC_KWARGS = dict(num_timesteps=sac_num_env_steps,
                       num_evals=20,
                       reward_scaling=10,
@@ -70,8 +70,8 @@ def experiment(horizon_len: int,
                       wd_q=0,
                       wd_alpha=0,
                       num_eval_envs=2 * NUM_ENVS,
-                      max_replay_size=10 ** 5,
-                      min_replay_size=2 * 10 ** 3,
+                      max_replay_size=5 * 10 ** 4,
+                      min_replay_size=2 ** 11,
                       policy_hidden_layer_sizes=(64, 64),
                       critic_hidden_layer_sizes=(64, 64),
                       normalize_observations=True,
