@@ -6,6 +6,7 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree_util as jtu
 import matplotlib.pyplot as plt
+import numpy as np
 import wandb
 from brax.training.replay_buffers import UniformSamplingQueue, ReplayBufferState
 from brax.training.types import Transition
@@ -24,8 +25,7 @@ NUM_ENVS = 64
 SAC_KWARGS = dict(num_timesteps=1_000_000,
                   num_evals=20,
                   reward_scaling=10,
-                  episode_length=8,
-                  episode_length_eval=16,
+                  episode_length=50,
                   action_repeat=1,
                   discounting=0.99,
                   lr_policy=3e-4,
@@ -39,7 +39,7 @@ SAC_KWARGS = dict(num_timesteps=1_000_000,
                   wd_policy=0,
                   wd_q=0,
                   wd_alpha=0,
-                  num_eval_envs=2 * NUM_ENVS,
+                  num_eval_envs=1,
                   max_replay_size=5 * 10 ** 4,
                   min_replay_size=2 ** 11,
                   policy_hidden_layer_sizes=(64, 64),
@@ -106,9 +106,7 @@ class ModelBasedRL:
                           sample_buffer=self.true_data_buffer,
                           system_params=system.init_params(jr.PRNGKey(0)), )
 
-        sac_trainer = SAC(environment=env,
-                          return_best_model=self.return_best_policy,
-                          **_sac_kwargs, )
+        sac_trainer = SAC(environment=env, **_sac_kwargs, )
 
         params, metrics = sac_trainer.run_training(key=key)
         make_inference_fn = sac_trainer.make_policy
