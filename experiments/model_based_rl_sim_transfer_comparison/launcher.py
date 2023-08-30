@@ -1,10 +1,10 @@
 import exp
 from experiments.util import generate_run_commands, generate_base_command, dict_permutations
 
-PROJECT_NAME = 'TestFinalVersionN2'
+PROJECT_NAME = 'TestFinalVersionNX'
 
 applicable_configs = {
-    'horizon_len': [8, 16, 32],
+    'horizon_len': [50, 2 ** 6, 2 ** 7],
     'seed': [0, 1],
     'project_name': [PROJECT_NAME],
     'num_episodes': [40],
@@ -16,7 +16,7 @@ applicable_configs = {
     'include_aleatoric_noise': [1],
     'best_bnn_model': [1],
     'best_policy': [0],
-    'margin_factor': [10.0],
+    'margin_factor': [20.0],
 }
 
 
