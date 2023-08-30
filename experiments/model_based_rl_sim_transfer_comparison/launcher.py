@@ -16,7 +16,7 @@ applicable_configs = {
     'include_aleatoric_noise': [1],
     'best_bnn_model': [1],
     'best_policy': [0],
-    'margin_factor': [20.0],
+    'margin_factor': [10.0],
 }
 
 
