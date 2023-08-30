@@ -33,7 +33,11 @@ class ModelBasedRL:
                  reset_bnn: bool = True,
                  return_best_bnn: bool = True,
                  return_best_policy: bool = True,
+                 predict_difference: bool = True,
+                 bnn_training_test_ratio: float = 0.2,
                  ):
+        self.bnn_training_test_ratio = bnn_training_test_ratio
+        self.predict_difference = predict_difference
         self.return_best_policy = return_best_policy
         self.return_best_bnn = return_best_bnn
         self.reset_bnn = reset_bnn
@@ -78,6 +82,7 @@ class ModelBasedRL:
             _sac_kwargs['num_timesteps'] = 10_000
         system = LearnedCarSystem(model=bnn_model,
                                   include_noise=self.include_aleatoric_noise,
+                                  predict_difference=self.predict_difference,
                                   **self.car_reward_kwargs)
 
         key_train, key_simulate, *keys_sys_params = jr.split(key, 4)
@@ -177,9 +182,14 @@ class ModelBasedRL:
 
         all_next_obs = all_transitions.next_observation
         x_all = jnp.concatenate([all_obs, all_actions], axis=-1)
-        y_all = all_next_obs - all_obs
+        if self.predict_difference:
+            y_all = all_next_obs - all_obs
+        else:
+            y_all = all_next_obs
         key_split_data, key_reinit_model = jr.split(key, 2)
-        x_train, x_test, y_train, y_test = split_data(x_all, y_all, test_ratio=0.2, key=key_split_data)
+        x_train, x_test, y_train, y_test = split_data(x_all, y_all,
+                                                      test_ratio=self.bnn_training_test_ratio,
+                                                      key=key_split_data)
 
         # Train model
         if self.reset_bnn:

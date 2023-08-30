@@ -21,11 +21,13 @@ class LearnedDynamics(Dynamics[DynamicsParams]):
                  x_dim: int,
                  u_dim: int,
                  model: BatchedNeuralNetworkModel,
-                 include_noise: bool = True
+                 include_noise: bool = True,
+                 predict_difference: bool = True
                  ):
         Dynamics.__init__(self, x_dim=x_dim, u_dim=u_dim)
         self.model = model
         self.include_noise = include_noise
+        self.predict_difference = predict_difference
 
     def next_state(self,
                    x: chex.Array,
@@ -35,10 +37,15 @@ class LearnedDynamics(Dynamics[DynamicsParams]):
         # Create state-action pair
         z = jnp.concatenate([x, u])
         z = z.reshape((1, -1))
-        delta_x_dist = self.model.predict_dist(z, include_noise=self.include_noise)
-        next_key, key_sample_x_next = jr.split(dynamics_params.key)
-        delta_x = delta_x_dist.sample(seed=key_sample_x_next)
-        x_next = x + delta_x.reshape((self.x_dim,))
+        if self.predict_difference:
+            delta_x_dist = self.model.predict_dist(z, include_noise=self.include_noise)
+            next_key, key_sample_x_next = jr.split(dynamics_params.key)
+            delta_x = delta_x_dist.sample(seed=key_sample_x_next)
+            x_next = x + delta_x.reshape((self.x_dim,))
+        else:
+            x_next_dist = self.model.predict_dist(z, include_noise=self.include_noise)
+            next_key, key_sample_x_next = jr.split(dynamics_params.key)
+            x_next = x_next_dist.sample(seed=key_sample_x_next)
         new_dynamics_params = dynamics_params.replace(key=next_key)
         return Normal(loc=x_next, scale=jnp.zeros_like(x_next)), new_dynamics_params
 
@@ -50,9 +57,11 @@ class LearnedCarSystem(System[DynamicsParams, CarRewardParams]):
     def __init__(self,
                  model: BatchedNeuralNetworkModel,
                  include_noise: bool,
+                 predict_difference: bool,
                  **car_reward_kwargs: dict):
         reward = CarReward(**car_reward_kwargs)
-        dynamics = LearnedDynamics(x_dim=reward.x_dim, u_dim=reward.u_dim, model=model, include_noise=include_noise)
+        dynamics = LearnedDynamics(x_dim=reward.x_dim, u_dim=reward.u_dim, model=model, include_noise=include_noise,
+                                   predict_difference=predict_difference)
         System.__init__(self, dynamics=dynamics, reward=CarReward(**car_reward_kwargs))
 
     @staticmethod
