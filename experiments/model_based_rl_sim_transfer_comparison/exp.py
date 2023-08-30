@@ -23,6 +23,7 @@ def experiment(horizon_len: int,
                include_aleatoric_noise: int,
                best_bnn_model: int,
                best_policy: int,
+               margin_factor: float,
                ):
     config_dict = dict(horizon_len=horizon_len,
                        seed=seed,
@@ -45,6 +46,7 @@ def experiment(horizon_len: int,
                        use_sim_prior=use_sim_prior,
                        best_bnn_model=best_bnn_model,
                        best_policy=best_policy,
+                       margin_factor=margin_factor,
                        )
 
     NUM_ENV_STEPS_BETWEEN_UPDATES = 16
@@ -81,6 +83,7 @@ def experiment(horizon_len: int,
                           use_tire_model=True,
                           use_obs_noise=True,
                           ctrl_cost_weight=ctrl_cost_weight,
+                          margin_factor=margin_factor,
                           )
 
     x_dim = gym_env.dim_state[0]
@@ -125,7 +128,8 @@ def experiment(horizon_len: int,
     max_replay_size_true_data_buffer = 10000
     include_aleatoric_noise = include_aleatoric_noise == 1
     car_reward_kwargs = dict(encode_angle=ENCODE_ANGLE,
-                             ctrl_cost_weight=ctrl_cost_weight)
+                             ctrl_cost_weight=ctrl_cost_weight,
+                             margin_factor=margin_factor)
 
     total_config = SAC_KWARGS | config_dict
     wandb.init(
@@ -164,7 +168,8 @@ def main(args):
         use_sim_prior=args.use_sim_prior,
         include_aleatoric_noise=args.include_aleatoric_noise,
         best_bnn_model=args.best_bnn_model,
-        best_policy=args.best_policy
+        best_policy=args.best_policy,
+        margin_factor=args.margin_factor,
     )
 
 
@@ -182,5 +187,6 @@ if __name__ == '__main__':
     parser.add_argument('--include_aleatoric_noise', type=int, default=1)
     parser.add_argument('--best_bnn_model', type=int, default=1)
     parser.add_argument('--best_policy', type=int, default=0)
+    parser.add_argument('--margin_factor', type=float, default=20.0)
     args = parser.parse_args()
     main(args)

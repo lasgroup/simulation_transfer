@@ -1,7 +1,7 @@
 import exp
 from experiments.util import generate_run_commands, generate_base_command, dict_permutations
 
-PROJECT_NAME = 'AddBestPolicySetTo0'
+PROJECT_NAME = 'TestLargerMarginFactor'
 
 applicable_configs = {
     'horizon_len': [8, 16, 32],
@@ -16,6 +16,7 @@ applicable_configs = {
     'include_aleatoric_noise': [1],
     'best_bnn_model': [1],
     'best_policy': [0],
+    'margin_factor': [20.0],
 }
 
 
