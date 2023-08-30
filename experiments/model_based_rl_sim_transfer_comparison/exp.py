@@ -1,5 +1,6 @@
 import argparse
 
+import jax.numpy as jnp
 import jax.random as jr
 import matplotlib.pyplot as plt
 import wandb
@@ -68,9 +69,9 @@ def experiment(horizon_len: int,
                       wd_policy=0,
                       wd_q=0,
                       wd_alpha=0,
-                      num_eval_envs=1,
-                      max_replay_size=5 * 10 ** 4,
-                      min_replay_size=2 ** 11,
+                      num_eval_envs=2 * NUM_ENVS,
+                      max_replay_size=10 ** 5,
+                      min_replay_size=2 * 10 ** 4,
                       policy_hidden_layer_sizes=(64, 64),
                       critic_hidden_layer_sizes=(64, 64),
                       normalize_observations=True,
@@ -146,7 +147,9 @@ def experiment(horizon_len: int,
                                   car_reward_kwargs=car_reward_kwargs,
                                   reset_bnn=reset_bnn == 'yes',
                                   return_best_bnn=bool(best_bnn_model),
-                                  return_best_policy=bool(best_policy)
+                                  return_best_policy=bool(best_policy),
+                                  sac_kwargs=SAC_KWARGS,
+                                  discounting=jnp.array(0.99),
                                   )
 
     model_based_rl.run_episodes(num_episodes, jr.PRNGKey(seed))

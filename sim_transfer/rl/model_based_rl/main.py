@@ -19,35 +19,6 @@ from sim_transfer.rl.model_based_rl.utils import split_data
 from sim_transfer.sims.envs import RCCarSimEnv
 from sim_transfer.sims.util import plot_rc_trajectory
 
-NUM_ENV_STEPS_BETWEEN_UPDATES = 16
-NUM_ENVS = 64
-SAC_KWARGS = dict(num_timesteps=1_000_000,
-                  num_evals=20,
-                  reward_scaling=10,
-                  episode_length=8,
-                  episode_length_eval=16,
-                  action_repeat=1,
-                  discounting=0.99,
-                  lr_policy=3e-4,
-                  lr_alpha=3e-4,
-                  lr_q=3e-4,
-                  num_envs=NUM_ENVS,
-                  batch_size=64,
-                  grad_updates_per_step=NUM_ENV_STEPS_BETWEEN_UPDATES * NUM_ENVS,
-                  num_env_steps_between_updates=NUM_ENV_STEPS_BETWEEN_UPDATES,
-                  tau=0.005,
-                  wd_policy=0,
-                  wd_q=0,
-                  wd_alpha=0,
-                  num_eval_envs=2 * NUM_ENVS,
-                  max_replay_size=5 * 10 ** 4,
-                  min_replay_size=2 ** 11,
-                  policy_hidden_layer_sizes=(64, 64),
-                  critic_hidden_layer_sizes=(64, 64),
-                  normalize_observations=True,
-                  deterministic_eval=True,
-                  wandb_logging=True)
-
 
 class ModelBasedRL:
     def __init__(self,
@@ -56,7 +27,7 @@ class ModelBasedRL:
                  max_replay_size_true_data_buffer: int = 10 ** 4,
                  include_aleatoric_noise: bool = True,
                  car_reward_kwargs: dict = None,
-                 sac_kwargs: dict = SAC_KWARGS,
+                 sac_kwargs: dict = None,
                  discounting: chex.Array = jnp.array(0.99),
                  reset_bnn: bool = True,
                  return_best_bnn: bool = True,
