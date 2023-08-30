@@ -104,7 +104,7 @@ class RCCarSimEnv:
 
     def __init__(self, ctrl_cost_weight: float = 0.005, encode_angle: bool = False, use_obs_noise: bool = True,
                  use_tire_model: bool = False, action_delay: float = 0.0, car_model_params: Dict = None,
-                 margin_factor: float = 10.0, seed: int = 230492394):
+                 margin_factor: float = 10.0, max_throttle: float = 0.5, seed: int = 230492394):
         """
         Race car simulator environment
 
@@ -120,6 +120,7 @@ class RCCarSimEnv:
         self.dim_state: Tuple[int] = (7,) if encode_angle else (6,)
         self.encode_angle: bool = encode_angle
         self._rds_key = jax.random.PRNGKey(seed)
+        self.max_throttle = jnp.clip(max_throttle, 0.0, 1.0)
 
         # initialize dynamics and observation noise models
         self._dynamics_model = RaceCar(dt=self._dt, encode_angle=False)
@@ -189,6 +190,8 @@ class RCCarSimEnv:
         """
 
         assert action.shape[-1:] == self.dim_action
+        action = jnp.clip(action, -1.0, 1.0)
+        action = action.at[0].set(self.max_throttle * action[0])
         # assert jnp.all(-1 <= action) and jnp.all(action <= 1), "action must be in [-1, 1]"
         rng_key = self.rds_key if rng_key is None else rng_key
 
