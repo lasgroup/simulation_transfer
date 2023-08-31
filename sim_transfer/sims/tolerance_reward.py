@@ -105,9 +105,13 @@ if __name__ == '__main__':
     import matplotlib.pyplot as plt
 
     bound = 0.1
-    reward = ToleranceReward(bounds=(0.0, bound), margin=5 * bound, value_at_margin=0.1, sigmoid='long_tail')
-    x = jnp.linspace(0, 2, 1000)
+    value_at_margin = 0.1
+    for margin_factor in [5, 10, 15, 20]:
+        reward = ToleranceReward(bounds=(0.0, bound), margin=margin_factor * bound, value_at_margin=value_at_margin,
+                                 sigmoid='long_tail')
+        x = jnp.linspace(0, 4, 1000)
 
-    y = reward(x)
-    plt.plot(x, y)
-    plt.show()
+        y = reward(x)
+        plt.plot(x, y)
+        plt.title(f'margin_factor={margin_factor}')
+        plt.show()

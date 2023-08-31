@@ -4,7 +4,6 @@ from typing import Dict, Any, Tuple, Optional
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 
 from sim_transfer.sims.dynamics_models import RaceCar, CarParams
 from sim_transfer.sims.tolerance_reward import ToleranceReward
@@ -16,12 +15,13 @@ class RCCarEnvReward:
     dim_action: Tuple[int] = (2,)
 
     def __init__(self, goal: jnp.array, encode_angle: bool = False, ctrl_cost_weight: float = 0.005,
-                 bound: float = 0.1, ):
+                 bound: float = 0.1, margin_factor: float = 10.0):
         self.goal = goal
         self.ctrl_cost_weight = ctrl_cost_weight
         self.encode_angle = encode_angle
-        self.tolerance_reward = ToleranceReward(bounds=(0.0, bound), margin=10 * bound, value_at_margin=0.1,
-                                                sigmoid='long_tail')
+        # Margin 20 seems to work even better (maybe try at some point)
+        self.tolerance_reward = ToleranceReward(bounds=(0.0, bound), margin=margin_factor * bound,
+                                                value_at_margin=0.1, sigmoid='long_tail')
 
     def forward(self, obs: jnp.array, action: jnp.array, next_obs: jnp.array):
         """ Computes the reward for the given transition """
@@ -56,7 +56,7 @@ class RCCarSimEnv:
     _dt: float = 1 / 30.
     dim_action: Tuple[int] = (2,)
     _goal: jnp.array = jnp.array([0.0, 0.0, - jnp.pi / 2.])
-    _init_pose: jnp.array = jnp.array([1.04, -1.42, jnp.pi])
+    _init_pose: jnp.array = jnp.array([-1.04, -1.42, jnp.pi / 2.])
     _angle_idx: int = 2
     _obs_noise_stds: jnp.array = 0.05 * jnp.exp(jnp.array([-3.3170326, -3.7336411, -2.7081904,
                                                            -2.7841284, -2.7067015, -1.4446207]))
@@ -104,7 +104,7 @@ class RCCarSimEnv:
 
     def __init__(self, ctrl_cost_weight: float = 0.005, encode_angle: bool = False, use_obs_noise: bool = True,
                  use_tire_model: bool = False, action_delay: float = 0.0, car_model_params: Dict = None,
-                 max_throttle: float = 0.5, seed: int = 230492394):
+                 margin_factor: float = 10.0, max_throttle: float = 1.0, seed: int = 230492394):
         """
         Race car simulator environment
 
@@ -144,7 +144,8 @@ class RCCarSimEnv:
         # initialize reward model
         self._reward_model = RCCarEnvReward(goal=self._goal,
                                             ctrl_cost_weight=ctrl_cost_weight,
-                                            encode_angle=self.encode_angle)
+                                            encode_angle=self.encode_angle,
+                                            margin_factor=margin_factor)
 
         # set up action delay
         assert action_delay >= 0.0, "Action delay must be non-negative"
@@ -189,7 +190,7 @@ class RCCarSimEnv:
         """
 
         assert action.shape[-1:] == self.dim_action
-        action = np.clip(action, -1.0, 1.0)
+        action = jnp.clip(action, -1.0, 1.0)
         action = action.at[0].set(self.max_throttle * action[0])
         # assert jnp.all(-1 <= action) and jnp.all(action <= 1), "action must be in [-1, 1]"
         rng_key = self.rds_key if rng_key is None else rng_key
@@ -251,9 +252,9 @@ class RCCarSimEnv:
 
 
 if __name__ == '__main__':
-    ENCODE_ANGLE = False
+    ENCODE_ANGLE = True
     env = RCCarSimEnv(encode_angle=ENCODE_ANGLE,
-                      action_delay=0.00,
+                      action_delay=0.07,
                       use_tire_model=True,
                       use_obs_noise=True)
 
@@ -262,7 +263,7 @@ if __name__ == '__main__':
     traj = [s]
     rewards = []
     actions = []
-    for i in range(50):
+    for i in range(120):
         t = i / 30.
         a = jnp.array([- 1 * jnp.cos(1.0 * t), 0.8 / (t + 1)])
         s, r, _, _ = env.step(a)
