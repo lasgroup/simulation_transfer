@@ -1,7 +1,7 @@
 import exp
 from experiments.util import generate_run_commands, generate_base_command, dict_permutations
 
-PROJECT_NAME = 'TestFrameStacking'
+PROJECT_NAME = 'FirstExperimentDelay'
 
 applicable_configs = {
     'horizon_len': [2 ** 6],
