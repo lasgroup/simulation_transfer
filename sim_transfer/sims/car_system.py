@@ -8,7 +8,7 @@ import jax.random as jr
 from distrax import Distribution
 from distrax import Normal
 from jax import jit
-from mbpo.systems.base_systems import Dynamics, Reward, System, SystemState, SystemParams
+from mbpo.systems.base_systems import Dynamics, Reward, System, SystemState, SystemParams, DynamicsParams, RewardParams
 
 from sim_transfer.sims.dynamics_models import RaceCar, CarParams
 from sim_transfer.sims.envs import RCCarEnvReward
@@ -222,6 +222,85 @@ class CarReward(Reward[CarRewardParams]):
         assert x.shape == (self.x_dim,) and u.shape == (self.u_dim,) and x_next.shape == (self.x_dim,)
         reward = self._reward_model.forward(obs=None, action=u, next_obs=x_next)
         return Normal(reward, jnp.zeros_like(reward)), reward_params
+
+
+class RewardFrameStackWrapper(Reward):
+    def __init__(self, reward: Reward, num_frame_stack: int = 1):
+        self._reward = reward
+        self._num_frame_stack = num_frame_stack
+        Reward.__init__(self, x_dim=reward.x_dim * num_frame_stack, u_dim=reward.u_dim)
+
+    def __call__(self,
+                 x: chex.Array,
+                 u: chex.Array,
+                 reward_params: RewardParams,
+                 x_next: chex.Array | None = None) -> Tuple[Distribution, RewardParams]:
+        _x = x[:self._reward.x_dim]
+        _x_next = x_next[:self._reward.x_dim]
+        return self._reward(_x, u, reward_params, _x_next)
+
+    def init_params(self, key: chex.PRNGKey) -> RewardParams:
+        return self._reward.init_params(key)
+
+
+class DynamicsFrameStackWrapper(Dynamics):
+    def __init__(self, dynamics: Dynamics, num_frame_stack: int = 1):
+        self._dynamics = dynamics
+        self._num_frame_stack = num_frame_stack
+        Dynamics.__init__(self, x_dim=dynamics.x_dim * num_frame_stack, u_dim=dynamics.u_dim)
+        """
+        We stack the the observations in the forms [x_t, x_{t-1}, ..., x_{t - num_frame_stack + 1}]
+        """
+
+    def next_state(self,
+                   x: chex.Array,
+                   u: chex.Array,
+                   dynamics_params: DynamicsParams) -> Tuple[Distribution, DynamicsParams]:
+        assert x.shape == (self.x_dim,) and u.shape == (self.u_dim,)
+        _x_cur = x[:self._dynamics.x_dim]
+        _x_next_dist, new_dynamics_params = self._dynamics.next_state(_x_cur, u, dynamics_params)
+        # Here we need to take care of the distribution
+        # TODO: for proper handling we need to write a new distribution class, for now we just sample from the
+        #  _x_next_dist and return normal distribution
+        x_new_tail = x[:-self._dynamics.x_dim]
+        new_key, sample_key = jr.split(new_dynamics_params.key)
+        _x_next = _x_next_dist.sample(seed=dynamics_params.key)
+        x_new = jnp.concatenate([_x_next, x_new_tail], axis=0)
+        new_dynamics_params = new_dynamics_params.replace(key=new_key)
+        return Normal(x_new, jnp.zeros_like(x_new)), new_dynamics_params
+
+    def init_params(self, key: chex.PRNGKey) -> DynamicsParams:
+        return self._dynamics.init_params(key=key)
+
+
+class FrameStackWrapper(System):
+    def __init__(self, system: System, num_frame_stack: int = 0):
+        self._system = system
+        self._num_frame_stack = num_frame_stack
+        System.__init__(self, dynamics=self._system.dynamics, reward=self._system.reward)
+        self.x_dim = self._system.x_dim + self._system.u_dim * num_frame_stack
+        self.u_dim = self._system.u_dim
+
+    def system_params_vmap_axes(self, axes: int = 0):
+        return self._system.system_params_vmap_axes(axes)
+
+    def step(self,
+             x: chex.Array,
+             u: chex.Array,
+             system_params: SystemParams[DynamicsParams, RewardParams],
+             ) -> SystemState:
+        # Decompose to x and last actions
+        _x = x[:self._system.x_dim]
+        _us = x[self._system.x_dim:]
+
+        next_sys_step = self._system.step(_x, u, system_params)
+        # We roll last actions and append the new action
+        _us = jnp.roll(_us, shift=self._system.u_dim)
+        _us = _us.at[:self._system.u_dim].set(u)
+        # We add last actions to the state
+        x_next = jnp.concatenate([next_sys_step.x_next, _us], axis=0)
+        next_sys_step = next_sys_step.replace(x_next=x_next)
+        return next_sys_step
 
 
 class CarSystem(System[CarDynamicsParams, CarRewardParams]):

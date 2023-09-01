@@ -26,6 +26,8 @@ def experiment(horizon_len: int,
                best_policy: int,
                margin_factor: float,
                predict_difference: int,
+               num_frame_stack: int,
+               delay: float = 0.00,
                ):
     config_dict = dict(horizon_len=horizon_len,
                        seed=seed,
@@ -36,6 +38,8 @@ def experiment(horizon_len: int,
                        bnn_best=best_bnn_model,
                        policy_best=best_policy,
                        pred_dif=predict_difference,
+                       fs=num_frame_stack,
+                       delay=delay,
                        )
     group_name = '_'.join(list(str(key) + '=' + str(value) for key, value in config_dict.items() if key != 'seed'))
 
@@ -51,6 +55,8 @@ def experiment(horizon_len: int,
                        best_policy=best_policy,
                        margin_factor=margin_factor,
                        predict_difference=predict_difference,
+                       num_frame_stack=num_frame_stack,
+                       delay=delay,
                        )
 
     NUM_ENV_STEPS_BETWEEN_UPDATES = 16
@@ -84,7 +90,7 @@ def experiment(horizon_len: int,
     ENCODE_ANGLE = True
     ctrl_cost_weight = 0.005
     gym_env = RCCarSimEnv(encode_angle=ENCODE_ANGLE,
-                          action_delay=0.00,
+                          action_delay=delay,
                           use_tire_model=True,
                           use_obs_noise=True,
                           ctrl_cost_weight=ctrl_cost_weight,
@@ -96,6 +102,7 @@ def experiment(horizon_len: int,
 
     """ Setup a neural network """
 
+    # TODO: Jonas make a wrapper for sim, so that it takes num_frame_stack into account
     _sim = RaceCarSim(encode_angle=True, use_blend=True)
     if predict_difference:
         sim = PredictStateChangeWrapper(_sim)
@@ -104,10 +111,10 @@ def experiment(horizon_len: int,
     learn_std = learnable_likelihood_std == 'yes'
 
     standard_model_params = {
-        'input_size': x_dim + u_dim,
+        'input_size': x_dim + u_dim * num_frame_stack+ u_dim,
         'output_size': x_dim,
         'rng_key': jr.PRNGKey(234234345),
-        'normalization_stats': sim.normalization_stats,
+        # 'normalization_stats': sim.normalization_stats, TODO: Jonas: adjust sim for normalization stats
         'likelihood_std': _RACECAR_NOISE_STD_ENCODED,
         'normalize_likelihood_std': True,
         'learn_likelihood_std': learn_std,
@@ -157,6 +164,7 @@ def experiment(horizon_len: int,
                                   sac_kwargs=SAC_KWARGS,
                                   discounting=jnp.array(0.99),
                                   predict_difference=bool(predict_difference),
+                                  num_frame_stack=num_frame_stack,
                                   )
 
     model_based_rl.run_episodes(num_episodes, jr.PRNGKey(seed))
@@ -181,6 +189,7 @@ def main(args):
         best_policy=args.best_policy,
         margin_factor=args.margin_factor,
         predict_difference=args.predict_difference,
+        num_frame_stack=args.num_frame_stack,
     )
 
 
@@ -194,11 +203,12 @@ if __name__ == '__main__':
     parser.add_argument('--project_name', type=str, default='RaceCarPPO')
     parser.add_argument('--learnable_likelihood_std', type=str, default='yes')
     parser.add_argument('--reset_bnn', type=str, default='yes')
-    parser.add_argument('--use_sim_prior', type=int, default=1)
+    parser.add_argument('--use_sim_prior', type=int, default=0)
     parser.add_argument('--include_aleatoric_noise', type=int, default=1)
     parser.add_argument('--best_bnn_model', type=int, default=1)
     parser.add_argument('--best_policy', type=int, default=0)
     parser.add_argument('--margin_factor', type=float, default=20.0)
     parser.add_argument('--predict_difference', type=int, default=0)
+    parser.add_argument('--num_frame_stack', type=int, default=2)
     args = parser.parse_args()
     main(args)
