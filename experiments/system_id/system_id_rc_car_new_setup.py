@@ -18,19 +18,18 @@ from brax.training.types import Transition
 import tensorflow_probability.substrates.jax.distributions as tfd
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-                        'data/recordings_rc_car_v0/new_rc_car_env')
+                        'data/recordings_rc_car_v1')
 
 arg_parser = argparse.ArgumentParser()
 arg_parser.add_argument('--batch_size', type=int, default=64)
 arg_parser.add_argument('--num_steps_ahead', type=int, default=3)
+arg_parser.add_argument('--action_delay', type=int, default=2)
 arg_parser.add_argument('--real_data', type=bool, default=True)
+arg_parser.add_argument('--encode_angle', type=bool, default=False)
 arg_parser.add_argument('--use_blend', type=float, default=1.0)
 arg_parser.add_argument('--seed', type=int, default=456456)
 args = arg_parser.parse_args()
 
-REAL_DATA = True
-CHANGE_SIGNS = True
-ENCODE_ANGLE = False
 
 
 def rotate_vector(v, theta):
@@ -40,14 +39,14 @@ def rotate_vector(v, theta):
     return jnp.concatenate([jnp.atleast_2d(rot_x), jnp.atleast_2d(rot_y)], axis=0).T
 
 
-def prepare_data(transitions: Transition, window_size=10, encode_angles: bool = False, action_frame: int = 0):
-    assert 0 <= action_frame <= 3, "Only recorded the last 3 actions and the current action"
-    if action_frame == 0:
+def prepare_data(transitions: Transition, window_size=10, encode_angles: bool = False, action_delay: int = 0):
+    assert 0 <= action_delay <= 3, "Only recorded the last 3 actions and the current action"
+    if action_delay == 0:
         u = transitions.action
-    elif action_frame == 1:
-        u = transitions.observation[:, :-2]
+    elif action_delay == 1:
+        u = transitions.observation[:, -2:]
     else:
-        u = transitions.observation[:, -2 * action_frame: -2 * (action_frame - 1)]
+        u = transitions.observation[:, -2 * action_delay: -2 * (action_delay - 1)]
 
     x = transitions.observation[:, :6]
     # project theta into [-\pi, \pi]
@@ -69,27 +68,24 @@ def load_transitions(file_dir):
     file_name = ['train_1.pickle', 'train_2.pickle', 'test_1.pickle']
     transitions = []
     for fn in file_name:
-        with open(DATA_DIR + '/' + fn, 'rb') as f:
+        with open(file_dir + '/' + fn, 'rb') as f:
             transitions.append(pickle.load(f))
-
-    # train_transitions = jax.tree_util.tree_map(lambda x, y: jnp.concatenate([x, y], axis=0), transitions[0],
-    #                                           transitions[1])
     return transitions
 
 
-num_train_traj = 2 if REAL_DATA else 7
+num_train_traj = 2 if args.real_data else 7
 transitions = load_transitions(DATA_DIR)
-datasets = list(map(partial(prepare_data, window_size=11, encode_angles=ENCODE_ANGLE),
+datasets = list(map(partial(prepare_data, window_size=11, encode_angles=args.encode_angle, action_delay=args.action_delay),
                           transitions))
 datasets_test = [datasets[-1]]
-datasets_train = datasets[:-1]
+
+# only take first 6000 transitions from the first dataset since the car hit an object later on
+datasets_train = [(datasets[0][0][:6000], datasets[0][1][:6000]), datasets[1]]
 
 x_train, u_train = map(lambda x: jnp.concatenate(x, axis=0), zip(*datasets_train))
 x_test, u_test = map(lambda x: jnp.concatenate(x, axis=0), zip(*datasets_test))
 
-plot_rc_trajectory(x_test[1000], show=True)
-
-dynamics = RaceCar(dt=1 / 30., encode_angle=ENCODE_ANGLE, rk_integrator=True)
+dynamics = RaceCar(dt=1 / 30., encode_angle=args.encode_angle, rk_integrator=True)
 step_vmap = jax.vmap(dynamics.next_step, in_axes=(0, 0, None), out_axes=0)
 
 params_car_model = {
@@ -111,7 +107,7 @@ params_car_model = {
 }
 
 params = {'car_model': params_car_model,
-          'noise_log_std': -1. * jnp.ones((args.num_steps_ahead, 7 if ENCODE_ANGLE else 6))}
+          'noise_log_std': -1. * jnp.ones((args.num_steps_ahead, 7 if args.encode_angle else 6))}
 
 optim = optax.adam(1e-3)
 opt_state = optim.init(params)
@@ -157,7 +153,7 @@ def loss_fn(params, x_strided, u_strided, num_steps_ahead: int = 3,
 
     pred_dist = tfd.Normal(jnp.zeros_like(params['noise_log_std']), jnp.exp(params['noise_log_std']))
     if exclude_ang_vel:
-        angular_velocity_idx = 6 if ENCODE_ANGLE else 5
+        angular_velocity_idx = 6 if args.encode_angle else 5
         loss = - jnp.mean(pred_dist.log_prob(diff)[..., :angular_velocity_idx])
     else:
         loss = - jnp.mean(pred_dist.log_prob(diff))
@@ -165,7 +161,7 @@ def loss_fn(params, x_strided, u_strided, num_steps_ahead: int = 3,
 
 
 def plot_trajectory_comparison(real_traj, sim_traj):
-    if ENCODE_ANGLE:
+    if args.encode_angle:
         def decode_angle(obs):
             sin_theta, cos_theta = obs[2], obs[3]
             theta = jnp.arctan2(sin_theta, cos_theta)
@@ -236,13 +232,20 @@ def eval(params, x_eval, u_eval, log_plots: bool = False):
 key = jax.random.PRNGKey(args.seed)
 
 import wandb
+from pprint import pprint
 
 run = wandb.init(
     project="system-id-rccar",
-    entity="sukhijab"
+    entity="jonasrothfuss",
+    config=args.__dict__,
 )
 
-for i in range(20000):
+print('---- Config ----')
+pprint(args.__dict__)
+print('----------------')
+
+
+for i in range(40000):
     key, subkey = jax.random.split(key)
     loss, params, opt_state = step(params, opt_state, subkey)
 
