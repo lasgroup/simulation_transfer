@@ -3,6 +3,7 @@ from functools import partial
 import jax.numpy as jnp
 import jax
 import os
+import pickle
 
 from sim_transfer.sims.util import encode_angles as encode_angles_fn
 from sim_transfer.sims.simulators import PredictStateChangeWrapper
@@ -34,7 +35,7 @@ DEFAULTS_RACECAR = {
 
 DEFAULTS_RACECAR_REAL = {
     'sampling': 'consecutive',
-    'num_samples_test': 4000
+    'num_samples_test': 3500
 }
 
 _RACECAR_NOISE_STD_ENCODED = 40 * jnp.concatenate([DEFAULTS_RACECAR['obs_noise_std'][:2],
@@ -126,11 +127,73 @@ def get_rccar_recorded_data(encode_angle: bool = True, skip_first_n_points: int 
         assert x_data.shape[1] - 2 == y_data.shape[1]
         return x_data, y_data
 
-    num_train_traj = 1
+    num_train_traj = 2
     prep_fn = partial(prepare_rccar_data, encode_angles=encode_angle, skip_first_n=skip_first_n_points)
     x_train, y_train = map(lambda x: jnp.concatenate(x, axis=0), zip(*map(prep_fn, recording_dfs[:num_train_traj])))
     x_test, y_test = map(lambda x: jnp.concatenate(x, axis=0), zip(*map(prep_fn, recording_dfs[num_train_traj:])))
 
+    return x_train, y_train, x_test, y_test
+
+
+def get_rccar_recorded_data_new(encode_angle: bool = True, skip_first_n_points: int = 30,
+                                action_delay: int = 3, action_stacking: bool = False):
+    from brax.training.types import Transition
+    recordings_dir = os.path.join(DATA_DIR, 'recordings_rc_car_v1')
+
+    file_name = ['recording_sep1_6.pickle',
+                 'recording_sep1_1.pickle',
+                 'recording_sep1_7.pickle',
+                 'recording_sep1_3.pickle',
+                 'recording_sep1_5.pickle',
+                 'recording_sep1_2.pickle',
+                 'recording_sep1_4.pickle',
+                 'recording_sep1_8.pickle']
+    transitions = []
+    for fn in file_name:
+        with open(recordings_dir + '/' + fn, 'rb') as f:
+            transitions.append(pickle.load(f))
+
+    def prepare_rccar_data(transitions: Transition, encode_angles: bool = False, skip_first_n: int = 30,
+                           action_delay: int = 3, action_stacking: bool = False):
+        assert 0 <= action_delay <= 3, "Only recorded the last 3 actions and the current action"
+        assert action_delay >= 0, "Action delay must be non-negative"
+
+        if action_stacking:
+            if action_delay == 0:
+                u = transitions.action
+            else:
+                u = jnp.concatenate([transitions.observation[:, -2 * action_delay:], transitions.action], axis=-1)
+            assert u.shape[-1] == 2 * (action_delay + 1)
+        else:
+            if action_delay == 0:
+                u = transitions.action
+            elif action_delay == 1:
+                u = transitions.observation[:, -2:]
+            else:
+                u = transitions.observation[:, -2 * action_delay: -2 * (action_delay - 1)]
+            assert u.shape[-1] == 2
+
+        x = transitions.observation[:, :6]
+
+        # project theta into [-\pi, \pi]
+        x[:, 2] = (x[:, 2] + jnp.pi) % (2 * jnp.pi) - jnp.pi
+        if encode_angles:
+            x = encode_angles_fn(x, angle_idx=2)
+
+        # remove first n steps (since often not much is happening)
+        x, u = x[skip_first_n:], u[skip_first_n:]
+
+        x_data = jnp.concatenate([x[:-1], u[:-1]], axis=-1)  # current state + action
+        y_data = x[1:]  # next state
+        assert x_data.shape[0] == y_data.shape[0]
+        assert x_data.shape[1] - (2 * (1 + int(action_stacking) * action_delay)) == y_data.shape[1]
+        return x_data, y_data
+
+    num_train_traj = 5
+    prep_fn = partial(prepare_rccar_data, encode_angles=encode_angle, skip_first_n=skip_first_n_points,
+                      action_delay=action_delay, action_stacking=action_stacking)
+    x_train, y_train = map(lambda x: jnp.concatenate(x, axis=0), zip(*map(prep_fn, transitions[:num_train_traj])))
+    x_test, y_test = map(lambda x: jnp.concatenate(x, axis=0), zip(*map(prep_fn, transitions[num_train_traj:])))
     return x_train, y_train, x_test, y_test
 
 
@@ -209,7 +272,14 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
         else:
             sim_lf = RaceCarSim(encode_angle=True, use_blend=True)
 
-        x_train, y_train, x_test, y_test = get_rccar_recorded_data(encode_angle=True)
+        if data_source.startswith('real_racecar_new_actionstack'):
+            x_train, y_train, x_test, y_test = get_rccar_recorded_data_new(encode_angle=True, action_stacking=True,
+                                                                           action_delay=3)
+        elif data_source.startswith('real_racecar_new'):
+            x_train, y_train, x_test, y_test = get_rccar_recorded_data_new(encode_angle=True, action_stacking=False,
+                                                                           action_delay=3)
+        else:
+            x_train, y_train, x_test, y_test = get_rccar_recorded_data(encode_angle=True)
         num_train_available = x_train.shape[0]
         num_test_available = x_test.shape[0]
 
@@ -253,3 +323,9 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
         param_mode=data_spec.get('param_mode', defaults['param_mode'])
     )
     return x_train, y_train, x_test, y_test, sim_lf
+
+
+if __name__ == '__main__':
+    x_train, y_train, x_test, y_test, sim = provide_data_and_sim(data_source='real_racecar_new_actionstack',
+                                                            data_spec={'num_samples_train': 10000})
+    print(x_train.shape, y_train.shape, x_test.shape, y_test.shape)
