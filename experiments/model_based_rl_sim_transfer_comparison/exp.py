@@ -111,7 +111,7 @@ def experiment(horizon_len: int,
     learn_std = learnable_likelihood_std == 'yes'
 
     standard_model_params = {
-        'input_size': x_dim + u_dim * num_frame_stack+ u_dim,
+        'input_size': x_dim + u_dim * num_frame_stack + u_dim,
         'output_size': x_dim,
         'rng_key': jr.PRNGKey(234234345),
         # 'normalization_stats': sim.normalization_stats, TODO: Jonas: adjust sim for normalization stats
@@ -190,6 +190,7 @@ def main(args):
         margin_factor=args.margin_factor,
         predict_difference=args.predict_difference,
         num_frame_stack=args.num_frame_stack,
+        delay=args.delay,
     )
 
 
@@ -210,5 +211,6 @@ if __name__ == '__main__':
     parser.add_argument('--margin_factor', type=float, default=20.0)
     parser.add_argument('--predict_difference', type=int, default=0)
     parser.add_argument('--num_frame_stack', type=int, default=2)
+    parser.add_argument('--delay', type=float, default=0.07)
     args = parser.parse_args()
     main(args)

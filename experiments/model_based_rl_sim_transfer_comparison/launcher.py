@@ -17,8 +17,9 @@ applicable_configs = {
     'best_bnn_model': [1],
     'best_policy': [1],
     'margin_factor': [20.0],
-    'predict_difference': [0, 1],
-    'num_frame_stack': [1, 2],
+    'predict_difference': [1],
+    'num_frame_stack': [2, 3],
+    'delay': [0.09],
 }
 
 
