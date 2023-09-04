@@ -1,9 +1,16 @@
+import os
+import pickle
+from typing import Callable, Any
+
 import chex
 import jax.numpy as jnp
 import jax.random as jr
+import jax.tree_util as jtu
+import matplotlib.pyplot as plt
 import wandb
 from brax.training.replay_buffers import UniformSamplingQueue, ReplayBufferState
 from brax.training.types import Transition
+from jax import jit
 from mbpo.optimizers.policy_optimizers.sac.sac import SAC
 from mbpo.systems.brax_wrapper import BraxWrapper
 
@@ -11,6 +18,8 @@ from experiments.data_provider import provide_data_and_sim, _RACECAR_NOISE_STD_E
 from sim_transfer.models.abstract_model import BatchedNeuralNetworkModel
 from sim_transfer.models.bnn_svgd import BNN_SVGD
 from sim_transfer.rl.model_based_rl.learned_system import LearnedCarSystem
+from sim_transfer.sims.envs import RCCarSimEnv
+from sim_transfer.sims.util import plot_rc_trajectory
 
 
 class RLFromOfflineData:
@@ -174,10 +183,58 @@ class RLFromOfflineData:
 
         make_inference_fn = sac_trainer.make_policy
 
+        @jit
         def policy(x):
             return make_inference_fn(params, deterministic=True)(x, jr.PRNGKey(0))[0]
 
         return policy, params, metrics
+
+    def prepare_policy(self, params: Any | None = None, filename: str = None):
+        if params is None:
+            with open(filename, 'rb') as handle:
+                params = pickle.load(handle)
+
+        x_train, y_train, x_test, y_test, sim = self.x_train, self.y_train, self.x_test, self.y_test, None
+        # Create a bnn model
+        standard_model_params = {
+            'input_size': x_train.shape[-1],
+            'output_size': y_train.shape[-1],
+            'rng_key': jr.PRNGKey(234234345),
+            # 'normalization_stats': sim.normalization_stats, TODO: Jonas: adjust sim for normalization stats
+            'likelihood_std': _RACECAR_NOISE_STD_ENCODED,
+            'normalize_likelihood_std': True,
+            'learn_likelihood_std': True,
+            'likelihood_exponent': 0.5,
+            'hidden_layer_sizes': [64, 64, 64],
+            'data_batch_size': 32,
+        }
+        bnn = BNN_SVGD(**standard_model_params,
+                       bandwidth_svgd=1.0)
+        system = LearnedCarSystem(model=bnn,
+                                  include_noise=self.include_aleatoric_noise,
+                                  predict_difference=self.predict_difference,
+                                  num_frame_stack=self.num_frame_stack,
+                                  **self.car_reward_kwargs)
+
+        key_train, key_simulate, *keys_sys_params = jr.split(self.key, 4)
+        env = BraxWrapper(system=system,
+                          sample_buffer_state=self.true_buffer_state,
+                          sample_buffer=self.true_data_buffer,
+                          system_params=system.init_params(keys_sys_params[0]))
+
+        _sac_kwargs = self.sac_kwargs
+        sac_trainer = SAC(environment=env,
+                          eval_environment=env,
+                          eval_key_fixed=True,
+                          return_best_model=self.return_best_policy,
+                          **_sac_kwargs, )
+        make_inference_fn = sac_trainer.make_policy
+
+        @jit
+        def policy(x):
+            return make_inference_fn(params, deterministic=True)(x, jr.PRNGKey(0))[0]
+
+        return policy
 
     def prepare_policy_from_offline_data(self,
                                          learn_std: bool = True,
@@ -186,7 +243,60 @@ class RLFromOfflineData:
         bnn_model = self.train_model(learn_std=learn_std, bnn_train_steps=bnn_train_steps,
                                      return_best_bnn=return_best_bnn)
         policy, params, metrics = self.train_policy(bnn_model, self.true_buffer_state, self.key)
-        return policy, params, metrics
+
+        # Save policy parameters
+        directory = os.path.join(wandb.run.dir, 'models')
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+        model_path = os.path.join('models', 'parameters.pkl')
+        with open(os.path.join(wandb.run.dir, model_path), 'wb') as handle:
+            pickle.dump(params, handle)
+        wandb.save(os.path.join(wandb.run.dir, model_path), wandb.run.dir)
+
+        return policy, params, metrics, bnn_model
+
+    def evaluate_policy(self,
+                        policy: Callable,
+                        bnn_model: BatchedNeuralNetworkModel,
+                        key=jr.PRNGKey(0)):
+        sim = RCCarSimEnv(encode_angle=True, use_tire_model=True)
+        eval_horizon = 200
+        # Now we simulate the policy on the learned model
+
+        obs = sim.reset()
+        # Obs represents samples from the init_states_buffer which is of dim x_dim + u_dim * num_frame_stack
+        stacked_actions = jnp.zeros(shape=(self.num_frame_stack * self.action_dim,))
+
+        transitions = []
+        for step in range(eval_horizon):
+            key, subkey = jr.split(key)
+            action = policy(jnp.concatenate([obs, stacked_actions], axis=-1))
+            z = jnp.concatenate([obs, stacked_actions, action], axis=-1)
+            z = z.reshape((1, -1))
+            delta_x_dist = bnn_model.predict_dist(z, include_noise=True)
+            delta_x = delta_x_dist.sample(seed=subkey)
+            delta_x = delta_x.reshape(-1)
+            next_obs = obs + delta_x
+
+            transitions.append(Transition(observation=obs,
+                                          action=action,
+                                          reward=jnp.array(0.0),
+                                          discount=jnp.array(0.99),
+                                          next_observation=next_obs))
+            # We prepare set of new inputs
+            obs = next_obs
+            # Now we shift the actions
+            stacked_actions = jnp.roll(stacked_actions, shift=self.action_dim)
+            stacked_actions = stacked_actions.at[:self.action_dim].set(action)
+
+        concatenated_transitions = jtu.tree_map(lambda *xs: jnp.stack(xs, axis=0), *transitions)
+        rewards = jnp.sum(concatenated_transitions.reward)
+        fig, axes = plot_rc_trajectory(concatenated_transitions.next_observation,
+                                       concatenated_transitions.action, encode_angle=True,
+                                       show=False)
+        wandb.log({'Trajectory_on_learned_model': wandb.Image(fig),
+                   'reward_on_learned_model': rewards})
+        plt.close('all')
 
 
 if __name__ == '__main__':
@@ -201,7 +311,7 @@ if __name__ == '__main__':
 
     NUM_ENV_STEPS_BETWEEN_UPDATES = 16
     NUM_ENVS = 64
-    sac_num_env_steps = 100_000
+    sac_num_env_steps = 1_000_000
     horizon_len = 50
 
     SAC_KWARGS = dict(num_timesteps=sac_num_env_steps,
@@ -234,5 +344,6 @@ if __name__ == '__main__':
     rl_from_offline_data = RLFromOfflineData(
         sac_kwargs=SAC_KWARGS,
         car_reward_kwargs=car_reward_kwargs)
-    rl_from_offline_data.prepare_policy_from_offline_data(learn_std=True, bnn_train_steps=40_000)
-    x = 10
+    policy, params, metrics, bnn_model = rl_from_offline_data.prepare_policy_from_offline_data(learn_std=True,
+                                                                                               bnn_train_steps=40_000)
+    rl_from_offline_data.evaluate_policy(policy, bnn_model, key=jr.PRNGKey(0))

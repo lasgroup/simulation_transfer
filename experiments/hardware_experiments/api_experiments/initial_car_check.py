@@ -1,6 +1,8 @@
 import pickle
 import numpy as np
+import time
 from sim_transfer.hardware.car_env import CarEnv
+from sim_transfer.sims.util import decode_angles
 from matplotlib import pyplot as plt
 
 """ 
@@ -21,19 +23,37 @@ def main():
     rec_actions = rec_traj.action[:200]
 
     # replay action sequence on car
-    env = CarEnv(encode_angle=False)
+    env = CarEnv(encode_angle=True)
     obs, _ = env.reset()
-    stop = False
+    env.step(np.zeros(2))
+    t_prev = time.time()
     observations = [obs]
-    actions = []
+    rewards = []
+    time_diffs = []
     for i in range(rec_actions.shape[0]):
         action = rec_actions[i]
-        print(action)
         obs, reward, terminate, info = env.step(action)
+        t = time.time()
+        time_diff = t - t_prev
+        t_prev = t
+        print(i, action, reward, time_diff)
+        time_diffs.append(time_diff)
+        rewards.append(reward)
         observations.append(obs)
     env.close()
     observations = np.array(observations)
+    rewards = np.array(rewards)
+    time_diffs = np.array(time_diffs)
 
+    plt.plot(time_diffs)
+    plt.title('time diffs')
+    plt.show()
+
+    plt.plot(rewards)
+    plt.title('reward')
+    plt.show()
+
+    observations = decode_angles(observations, angle_idx=2)
     # comparison plot recorded and new traj
     fig, axes = plt.subplots(ncols=3, figsize=(12, 4))
     axes[0].plot(rec_observations[:, 0], color='blue', label='rec')
@@ -48,7 +68,7 @@ def main():
     axes[1].set_title("y pos")
     axes[2].set_title("theta")
     fig.legend()
-
+    print('finished plotting')
     fig.show()
 
 if __name__ == '__main__':
