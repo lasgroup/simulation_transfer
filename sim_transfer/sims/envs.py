@@ -55,8 +55,8 @@ class RCCarSimEnv:
     max_steps: int = 200
     _dt: float = 1 / 30.
     dim_action: Tuple[int] = (2,)
-    _goal: jnp.array = jnp.array([0.0, 0.0, - jnp.pi / 2.])
-    _init_pose: jnp.array = jnp.array([-1.04, -1.42, jnp.pi / 2.])
+    _goal: jnp.array = jnp.array([0.0, 0.0, 0.0])
+    _init_pose: jnp.array = jnp.array([1.42, -1.04, jnp.pi])
     _angle_idx: int = 2
     _obs_noise_stds: jnp.array = 0.05 * jnp.exp(jnp.array([-3.3170326, -3.7336411, -2.7081904,
                                                            -2.7841284, -2.7067015, -1.4446207]))
