@@ -1,40 +1,21 @@
 import exp
 from experiments.util import generate_run_commands, generate_base_command, dict_permutations
 
-PROJECT_NAME = 'FirstExperimentDelay'
+PROJECT_NAME = 'ModelTrainingOnOfflineData'
 
 applicable_configs = {
-    'horizon_len': [2 ** 6],
+    'horizon_len': [50, 2 ** 6, 100],
     'seed': [0, 1],
     'project_name': [PROJECT_NAME],
-    'num_episodes': [40],
     'sac_num_env_steps': [1_000_000],
-    'bnn_train_steps': [20_000, 40_000],
-    'learnable_likelihood_std': ['yes', 'no'],
-    'reset_bnn': ['no', 'yes'],
-    'use_sim_prior': [0],
+    'bnn_train_steps': [20_000, 40_000, 60_000],
+    'learnable_likelihood_std': ['yes'],
     'include_aleatoric_noise': [1],
     'best_bnn_model': [1],
     'best_policy': [1],
     'margin_factor': [20.0],
     'predict_difference': [1],
-    'num_frame_stack': [2, 3],
-    'delay': [0.09],
 }
-
-
-# applicable_configs = {
-#     'horizon_len': [8],
-#     'seed': [0],
-#     'project_name': ['TestModelBasedRLSimTransfer'],
-#     'num_episodes': [40],
-#     'sac_num_env_steps': [2000],
-#     'bnn_train_steps': [2000],
-#     'learnable_likelihood_std': ['no'],
-#     'reset_bnn': ['no'],
-#     'use_sim_prior': [0],
-#     'include_aleatoric_noise': [1],
-# }
 
 
 def main():
