@@ -11,31 +11,38 @@ from jax.lax import scan
 from mbpo.optimizers.policy_optimizers.sac.sac import SAC
 from mbpo.systems.brax_wrapper import BraxWrapper
 
-from sim_transfer.sims.car_system import CarSystem
+from sim_transfer.sims.car_system import CarSystem, FrameStackWrapper
 from sim_transfer.sims.util import plot_rc_trajectory
 
 # import os
 # os.environ['JAX_LOG_COMPILES'] = '1'
 
 ENCODE_ANGLE = True
-system = CarSystem(encode_angle=ENCODE_ANGLE,
-                   action_delay=0.2,
-                   use_tire_model=True,
-                   use_obs_noise=True,
-                   ctrl_cost_weight=0.005,
-                   margin_factor=20,
-                   )
+_system = CarSystem(encode_angle=ENCODE_ANGLE,
+                    action_delay=0.09,
+                    use_tire_model=True,
+                    use_obs_noise=True,
+                    ctrl_cost_weight=0.005,
+                    margin_factor=20,
+                    )
+
+# Here we create framestacking wrapper
+num_frame_stack = 3
+system = FrameStackWrapper(_system, num_frame_stack)
 
 # Create replay buffer
 num_init_states = 10
 keys = jr.split(jr.PRNGKey(0), num_init_states)
-init_sys_state = vmap(system.reset)(key=keys)
+init_sys_state = vmap(system._system.reset)(key=keys)
 
-init_samples = Transition(observation=init_sys_state.x_next,
+init_us = jnp.zeros(shape=(num_init_states, _system.u_dim * num_frame_stack))
+
+# Here we need to repeat observations
+init_samples = Transition(observation=jnp.concatenate([init_sys_state.x_next, init_us], axis=-1),
                           action=jnp.zeros(shape=(num_init_states, system.u_dim,)),
                           reward=init_sys_state.reward,
                           discount=0.99 * jnp.ones(shape=(num_init_states,)),
-                          next_observation=init_sys_state.x_next)
+                          next_observation=jnp.concatenate([init_sys_state.x_next, init_us], axis=-1))
 
 dummy_sample = jtu.tree_map(lambda x: x[0], init_samples)
 
@@ -44,7 +51,6 @@ sampling_buffer = UniformSamplingQueue(max_replay_size=num_init_states,
                                        sample_batch_size=1)
 
 sampling_buffer_state = sampling_buffer.init(jr.PRNGKey(0))
-
 sampling_buffer_state = sampling_buffer.insert(sampling_buffer_state, init_samples)
 
 # Create brax environment
@@ -61,7 +67,7 @@ horizon = 200
 
 sac_trainer = SAC(
     environment=env,
-    num_timesteps=300_000,
+    num_timesteps=1_000_000,
     num_evals=20,
     reward_scaling=1,
     episode_length=horizon,
@@ -120,23 +126,21 @@ def policy(x):
     return make_inference_fn(params, deterministic=True)(x, jr.PRNGKey(0))[0]
 
 
-test_system = CarSystem(encode_angle=ENCODE_ANGLE,
-                        action_delay=0.2,
-                        use_tire_model=True,
-                        use_obs_noise=True,
-                        ctrl_cost_weight=0.005,
-                        margin_factor=20,
-                        )
+test_system = FrameStackWrapper(_system, num_frame_stack)
 
-system_state_init = system.reset(key=jr.PRNGKey(0))
-x_init = system_state_init.x_next
+system_state_init = system._system.reset(key=jr.PRNGKey(0))
+
+init_u = jnp.zeros(shape=(_system.u_dim * num_frame_stack,))
+x_init = jnp.concatenate([system_state_init.x_next, init_u], axis=-1)
+
+system_state_init = system_state_init.replace(x_next=x_init)
 system_params = system_state_init.system_params
 
 
 def step(system_state, _):
     u = policy(system_state.x_next)
     next_sys_state = test_system.step(system_state.x_next, u, system_state.system_params)
-    return next_sys_state, (system_state.x_next, u, next_sys_state.reward)
+    return next_sys_state, (system_state.x_next[:system._system.x_dim], u, next_sys_state.reward)
 
 
 x_last, trajectory = scan(step, system_state_init, None, length=horizon)

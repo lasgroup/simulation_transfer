@@ -135,7 +135,8 @@ class GaussianProcessSim(FunctionSimulator):
     def __init__(self, input_size: int = 1, output_size: int = 1,
                  output_scale: Union[float, List[float], jnp.array] = 1.0,
                  length_scale: Union[float, List[float], jnp.array] = 1.0,
-                 mean_fn: Optional[Callable] = None):
+                 mean_fn: Optional[Callable] = None,
+                 consider_only_first_k_dims: Optional[int] = None):
         """ Samples functions from a Gaussian Process (GP) with SE kernel
         Args:
             input_size: dimensionality of the inputs
@@ -172,9 +173,14 @@ class GaussianProcessSim(FunctionSimulator):
         # self.kernels is a list of kernels, one per output dimension
         self.kernels = [tfp.math.psd_kernels.ExponentiatedQuadratic(length_scale=l) for l in self.length_scales]
 
+        assert consider_only_first_k_dims is None or consider_only_first_k_dims <= input_size
+        self.consider_only_first_k_dims = consider_only_first_k_dims
+
     def _sample_f_val_per_dim(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey,
                               lengthscale: Union[float, jnp.array],
                               output_scale: Union[float, jnp.array]) -> jnp.ndarray:
+        if self.consider_only_first_k_dims is not None:
+            x = x[..., :self.consider_only_first_k_dims]
         gp_dist = self._gp_marginal_dist(x, lengthscale, output_scale)
         f_samples = gp_dist.sample(sample_shape=(num_samples,), seed=rng_key)
         return f_samples
@@ -182,7 +188,7 @@ class GaussianProcessSim(FunctionSimulator):
     def _gp_marginal_dist(self, x: jnp.ndarray, lengthscale: float, output_scale: float, jitter: float = 1e-5) \
             -> tfd.MultivariateNormalFullCovariance:
         """ Returns the marginal distribution of a GP with SE kernel """
-        assert x.ndim == 2 and x.shape[-1] == self.input_size
+        assert x.ndim == 2
         kernel = tfp.math.psd_kernels.ExponentiatedQuadratic(length_scale=lengthscale)
         K = kernel.matrix(x, x) + jitter * jnp.eye(x.shape[0])
         m = self.mean_fn(x)
@@ -267,7 +273,7 @@ class SinusoidsSim(FunctionSimulator):
     amp_mean = 2.0
     amp_std = 0.4
     slope_mean = 2.0
-    slope_std = 0.3
+    slope_std = 1.
     freq1_mid = 2.0
     freq1_spread = 0.3
     freq2_mid = 1.5
@@ -321,6 +327,44 @@ class SinusoidsSim(FunctionSimulator):
                 'x_std': (self.domain.u - self.domain.l) / 2,
                 'y_mean': jnp.zeros(self.output_size),
                 'y_std': 8 * jnp.ones(self.output_size)}
+
+
+class ShiftedSinusoidsSim(FunctionSimulator):
+
+    def __init__(self):
+        super().__init__(input_size=1, output_size=1)
+
+    def _f(self, phase: jnp.ndarray,  x: jnp.ndarray):
+        return jnp.sin(2 * jnp.pi * x**2 + phase[:, None, None])
+
+    def sample_function_vals(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
+        assert x.ndim == 2 and x.shape[-1] == self.input_size
+        phase = jax.random.uniform(rng_key, shape=(num_samples,), minval=-jnp.pi/2, maxval=jnp.pi/2)
+        f = self._f(phase, x)
+        assert f.shape == (num_samples, x.shape[0], self.output_size)
+        return f
+
+    def _typical_f(self, x: jnp.array) -> jnp.array:
+        assert x.ndim == 2 and x.shape[-1] == self.input_size
+        f = self._f(jnp.array([0.]), x).reshape(x.shape[0], self.output_size)
+        assert f.shape == (x.shape[0], self.output_size)
+        return f
+
+    @property
+    def domain(self) -> Domain:
+        lower = jnp.array([-1.] * self.input_size)
+        upper = jnp.array([1.] * self.input_size)
+        return HypercubeDomain(lower=lower, upper=upper)
+
+    @cached_property
+    def normalization_stats(self) -> Dict[str, jnp.ndarray]:
+        norm_stats = {
+            'x_mean': jnp.array([0.]),
+            'x_std': jnp.array([1.0]),
+            'y_mean': jnp.array([0.]),
+            'y_std': jnp.array([1.]),
+        }
+        return norm_stats
 
 
 class QuadraticSim(FunctionSimulator):
@@ -914,6 +958,67 @@ class PredictStateChangeWrapper(FunctionSimulator):
                      'y_std': 1.5 * jnp.std(fs, axis=0)}
         return new_stats
 
+    def _add_observation_noise(self, *args, **kwargs) -> jnp.ndarray:
+        return self._function_simulator._add_observation_noise(*args, **kwargs)
+
+
+class StackedActionSimWrapper(FunctionSimulator):
+
+    def __init__(self, function_simulator: FunctionSimulator, num_stacked_actions: int = 3, action_size: int = 2):
+        self._function_simulator = function_simulator
+        input_size_base = function_simulator.input_size
+        output_size_base = function_simulator.output_size
+        new_input_size = input_size_base + action_size*num_stacked_actions
+        self.action_size = action_size
+        self.num_stacked_actions = num_stacked_actions
+        self.obs_size = input_size_base - action_size
+
+        FunctionSimulator.__init__(self, input_size=new_input_size, output_size=output_size_base)
+
+    def _expand_vector(self, vector):
+        # Expand the vector by repeating the last action_size elements num_stacked_actions times
+        return jnp.concatenate([vector[:-self.action_size]] +
+                               [vector[-self.action_size:]] * (self.num_stacked_actions + 1))
+
+    @property
+    def domain(self) -> Domain:
+        base_domain = self._function_simulator.domain
+        if isinstance(base_domain, HypercubeDomainWithAngles):
+            num_dim_raw = base_domain._lower.shape[0]
+            assert all([ind < num_dim_raw - self.action_size for ind in base_domain.angle_indices])
+            new_domain = HypercubeDomainWithAngles(
+                angle_indices=base_domain.angle_indices,
+                lower=self._expand_vector(base_domain._lower),
+                upper=self._expand_vector(base_domain._upper)
+            )
+            assert new_domain.num_dims == self.input_size
+            return new_domain
+        elif isinstance(base_domain, HypercubeDomain):
+            new_domain = HypercubeDomain(
+                lower=self._expand_vector(base_domain._lower),
+                upper=self._expand_vector(base_domain._upper)
+            )
+            assert new_domain.num_dims == self.input_size
+            return new_domain
+        else:
+            raise NotImplementedError('StackedActionSimWrapper can currently only handle '
+                                      'HypercubeDomain and HypercubeDomainWithAngles domains')
+
+    @property
+    def normalization_stats(self) -> Dict[str, jnp.ndarray]:
+        base_stats = self._function_simulator.normalization_stats
+        base_stats['x_mean'] = self._expand_vector(base_stats['x_mean'])
+        base_stats['x_std'] = self._expand_vector(base_stats['x_std'])
+        assert base_stats['x_mean'].shape == base_stats['x_std'].shape == (self.input_size,)
+        return base_stats
+
+    def sample_function_vals(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
+        x = x[..., :(self.obs_size + self.action_size)]  # take only the "oldest" action
+        fun_vals = self._function_simulator.sample_function_vals(x=x, num_samples=num_samples, rng_key=rng_key)
+        return fun_vals
+
+    def _add_observation_noise(self, *args, **kwargs) -> jnp.ndarray:
+        raise NotImplementedError
 
 if __name__ == '__main__':
     key = jax.random.PRNGKey(435345)

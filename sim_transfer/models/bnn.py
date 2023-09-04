@@ -61,6 +61,15 @@ class LikelihoodMixin:
         else:
             self._likelihood_std = _likelihood_std
 
+    @property
+    def likelihood_std_unnormalized(self) -> jnp.ndarray:
+        likelihood_std = self.likelihood_std
+        assert hasattr(self, '_y_std') and self._y_std is not None and self.normalize_data, \
+            'normalize_likelihood_std requires normalization'
+        assert self._y_std.shape == (self.output_size,)
+        likelihood_std = likelihood_std * self._y_std
+        return likelihood_std
+
     def _likelihood_std_transform(self, std_value: jnp.ndarray) -> jnp.ndarray:
         return jax.nn.softplus(std_value)
 

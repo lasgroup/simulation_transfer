@@ -22,11 +22,10 @@ def experiment(num_envs: int,
                seed: int,
                project_name: str,
                batch_size: int,
-               max_replay_size: int,
                num_env_steps_between_updates: int,
-               target_entropy: float,
+               num_time_steps: int,
                ):
-    ENCODE_ANGLE = False
+    ENCODE_ANGLE = True
     system = CarSystem(encode_angle=ENCODE_ANGLE,
                        action_delay=0.00,
                        use_tire_model=True,
@@ -66,9 +65,8 @@ def experiment(num_envs: int,
     sac_config = dict(
         num_envs=num_envs,
         batch_size=batch_size,
-        max_replay_size=max_replay_size,
         num_env_steps_between_updates=num_env_steps_between_updates,
-        target_entropy=target_entropy,
+        num_timesteps=num_time_steps,
         **net_arch,
     )
 
@@ -77,17 +75,17 @@ def experiment(num_envs: int,
     discounting = 0.99
     sac_trainer = SAC(
         environment=env,
-        num_timesteps=2_000_000,
         num_evals=20,
         reward_scaling=10,
-        episode_length=300,
+        episode_length=200,
         action_repeat=1,
         discounting=discounting,
         lr_policy=3e-4,
         lr_alpha=3e-4,
         lr_q=3e-4,
         grad_updates_per_step=num_env_steps_between_updates * num_envs,
-        min_replay_size=2 ** 11,
+        max_replay_size=5 * 10 ** 5,
+        min_replay_size=2 * 10 ** 3,
         num_eval_envs=1,
         tau=0.005,
         wd_policy=0,
@@ -155,9 +153,8 @@ def main(args):
                seed=args.seed,
                project_name=args.project_name,
                batch_size=args.batch_size,
-               max_replay_size=args.max_replay_size,
                num_env_steps_between_updates=args.num_env_steps_between_updates,
-               target_entropy=args.target_entropy,
+               num_time_steps=args.num_time_steps,
                )
 
 
@@ -168,8 +165,7 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--project_name', type=str, default='RaceCarPPO')
     parser.add_argument('--batch_size', type=int, default=32)
-    parser.add_argument('--max_replay_size', type=int, default=10 ** 6)
     parser.add_argument('--num_env_steps_between_updates', type=int, default=32)
-    parser.add_argument('--target_entropy', type=float, default=-10.0)
+    parser.add_argument('--num_time_steps', type=int, default=32)
     args = parser.parse_args()
     main(args)

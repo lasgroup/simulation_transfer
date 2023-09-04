@@ -8,7 +8,7 @@ import jax.random as jr
 from distrax import Distribution
 from distrax import Normal
 from jax import jit
-from mbpo.systems.base_systems import Dynamics, Reward, System, SystemState, SystemParams
+from mbpo.systems.base_systems import Dynamics, Reward, System, SystemState, SystemParams, DynamicsParams, RewardParams
 
 from sim_transfer.sims.dynamics_models import RaceCar, CarParams
 from sim_transfer.sims.envs import RCCarEnvReward
@@ -200,14 +200,16 @@ class CarReward(Reward[CarRewardParams]):
     def __init__(self,
                  ctrl_cost_weight: float = 0.005,
                  encode_angle: bool = False,
-                 bound: float = 0.1):
+                 bound: float = 0.1,
+                 margin_factor: float = 10.0):
         Reward.__init__(self, x_dim=7 if encode_angle else 6, u_dim=2)
         self.ctrl_cost_weight = ctrl_cost_weight
         self.encode_angle: bool = encode_angle
         self._reward_model = RCCarEnvReward(goal=self._goal,
                                             ctrl_cost_weight=ctrl_cost_weight,
                                             encode_angle=self.encode_angle,
-                                            bound=bound)
+                                            bound=bound,
+                                            margin_factor=margin_factor)
 
     def init_params(self, key: chex.PRNGKey) -> CarRewardParams:
         return CarRewardParams(_goal=self._goal, key=key)
@@ -222,6 +224,85 @@ class CarReward(Reward[CarRewardParams]):
         return Normal(reward, jnp.zeros_like(reward)), reward_params
 
 
+class RewardFrameStackWrapper(Reward):
+    def __init__(self, reward: Reward, num_frame_stack: int = 1):
+        self._reward = reward
+        self._num_frame_stack = num_frame_stack
+        Reward.__init__(self, x_dim=reward.x_dim * num_frame_stack, u_dim=reward.u_dim)
+
+    def __call__(self,
+                 x: chex.Array,
+                 u: chex.Array,
+                 reward_params: RewardParams,
+                 x_next: chex.Array | None = None) -> Tuple[Distribution, RewardParams]:
+        _x = x[:self._reward.x_dim]
+        _x_next = x_next[:self._reward.x_dim]
+        return self._reward(_x, u, reward_params, _x_next)
+
+    def init_params(self, key: chex.PRNGKey) -> RewardParams:
+        return self._reward.init_params(key)
+
+
+class DynamicsFrameStackWrapper(Dynamics):
+    def __init__(self, dynamics: Dynamics, num_frame_stack: int = 1):
+        self._dynamics = dynamics
+        self._num_frame_stack = num_frame_stack
+        Dynamics.__init__(self, x_dim=dynamics.x_dim * num_frame_stack, u_dim=dynamics.u_dim)
+        """
+        We stack the the observations in the forms [x_t, x_{t-1}, ..., x_{t - num_frame_stack + 1}]
+        """
+
+    def next_state(self,
+                   x: chex.Array,
+                   u: chex.Array,
+                   dynamics_params: DynamicsParams) -> Tuple[Distribution, DynamicsParams]:
+        assert x.shape == (self.x_dim,) and u.shape == (self.u_dim,)
+        _x_cur = x[:self._dynamics.x_dim]
+        _x_next_dist, new_dynamics_params = self._dynamics.next_state(_x_cur, u, dynamics_params)
+        # Here we need to take care of the distribution
+        # TODO: for proper handling we need to write a new distribution class, for now we just sample from the
+        #  _x_next_dist and return normal distribution
+        x_new_tail = x[:-self._dynamics.x_dim]
+        new_key, sample_key = jr.split(new_dynamics_params.key)
+        _x_next = _x_next_dist.sample(seed=dynamics_params.key)
+        x_new = jnp.concatenate([_x_next, x_new_tail], axis=0)
+        new_dynamics_params = new_dynamics_params.replace(key=new_key)
+        return Normal(x_new, jnp.zeros_like(x_new)), new_dynamics_params
+
+    def init_params(self, key: chex.PRNGKey) -> DynamicsParams:
+        return self._dynamics.init_params(key=key)
+
+
+class FrameStackWrapper(System):
+    def __init__(self, system: System, num_frame_stack: int = 0):
+        self._system = system
+        self._num_frame_stack = num_frame_stack
+        System.__init__(self, dynamics=self._system.dynamics, reward=self._system.reward)
+        self.x_dim = self._system.x_dim + self._system.u_dim * num_frame_stack
+        self.u_dim = self._system.u_dim
+
+    def system_params_vmap_axes(self, axes: int = 0):
+        return self._system.system_params_vmap_axes(axes)
+
+    def step(self,
+             x: chex.Array,
+             u: chex.Array,
+             system_params: SystemParams[DynamicsParams, RewardParams],
+             ) -> SystemState:
+        # Decompose to x and last actions
+        _x = x[:self._system.x_dim]
+        _us = x[self._system.x_dim:]
+
+        next_sys_step = self._system.step(_x, u, system_params)
+        # We roll last actions and append the new action
+        _us = jnp.roll(_us, shift=self._system.u_dim)
+        _us = _us.at[:self._system.u_dim].set(u)
+        # We add last actions to the state
+        x_next = jnp.concatenate([next_sys_step.x_next, _us], axis=0)
+        next_sys_step = next_sys_step.replace(x_next=x_next)
+        return next_sys_step
+
+
 class CarSystem(System[CarDynamicsParams, CarRewardParams]):
     def __init__(self,
                  encode_angle: bool = False,
@@ -230,7 +311,8 @@ class CarSystem(System[CarDynamicsParams, CarRewardParams]):
                  car_model_params: Dict = None,
                  ctrl_cost_weight: float = 0.005,
                  use_obs_noise: bool = True,
-                 bound: float = 0.1):
+                 bound: float = 0.1,
+                 margin_factor: float = 10.0):
         System.__init__(self,
                         dynamics=CarDynamics(encode_angle=encode_angle,
                                              use_tire_model=use_tire_model,
@@ -239,7 +321,8 @@ class CarSystem(System[CarDynamicsParams, CarRewardParams]):
                                              use_obs_noise=use_obs_noise),
                         reward=CarReward(ctrl_cost_weight=ctrl_cost_weight,
                                          encode_angle=encode_angle,
-                                         bound=bound)
+                                         bound=bound,
+                                         margin_factor=margin_factor)
                         )
 
     @staticmethod

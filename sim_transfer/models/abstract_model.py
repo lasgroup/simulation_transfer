@@ -1,3 +1,4 @@
+import copy
 import logging
 import time
 from typing import Optional, Tuple, Callable, Dict, List
@@ -249,7 +250,7 @@ class BatchedNeuralNetworkModel(AbstractRegressionModel):
 
     def fit(self, x_train: jnp.ndarray, y_train: jnp.ndarray, x_eval: Optional[jnp.ndarray] = None,
             y_eval: Optional[jnp.ndarray] = None, num_steps: Optional[int] = None, log_period: int = 1000,
-            log_to_wandb: bool = False):
+            log_to_wandb: bool = False, metrics_objective: str = 'train_nll', keep_the_best: bool = False):
         # check whether eval data has been passed
         evaluate = x_eval is not None or y_eval is not None
         assert not evaluate or x_eval.shape[0] == y_eval.shape[0]
@@ -270,6 +271,9 @@ class BatchedNeuralNetworkModel(AbstractRegressionModel):
         # which it needs the normalization stats of the data
         self._before_training_loop_callback()
 
+        best_objective = jnp.array(jnp.inf)
+        best_params = None
+
         # training loop
         for step, (x_batch, y_batch) in enumerate(train_loader, 1):
             samples_cum_period += x_batch.shape[0]
@@ -285,6 +289,10 @@ class BatchedNeuralNetworkModel(AbstractRegressionModel):
 
                 if evaluate:
                     eval_stats = self.eval(x_eval, y_eval, prefix='eval_')
+                    if keep_the_best:
+                        if eval_stats[metrics_objective] < best_objective:
+                            best_objective = eval_stats[metrics_objective]
+                            best_params = copy.deepcopy(self.params)
                     stats_agg.update(eval_stats)
                 if log_to_wandb:
                     log_dict = {f'regression_model_training/{n}': float(v) for n, v in stats_agg.items()}
@@ -301,6 +309,12 @@ class BatchedNeuralNetworkModel(AbstractRegressionModel):
 
             if step >= num_steps:
                 break
+
+        if keep_the_best and best_params is not None:
+            self.params = best_params
+            print(f'Keeping the best model with {metrics_objective}={best_objective:.4f}')
+            if log_to_wandb:
+                wandb.log({metrics_objective: best_objective})
 
     def predict(self, x: jnp.ndarray, include_noise: bool = False, **kwargs) -> Tuple[jnp.ndarray, jnp.ndarray]:
         """ Returns the mean and std of the predictive distribution.
