@@ -6,7 +6,7 @@ import os
 import pickle
 
 from sim_transfer.sims.util import encode_angles as encode_angles_fn
-from sim_transfer.sims.simulators import PredictStateChangeWrapper
+from sim_transfer.sims.simulators import PredictStateChangeWrapper, StackedActionSimWrapper
 from experiments.util import load_csv_recordings
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
@@ -35,7 +35,7 @@ DEFAULTS_RACECAR = {
 
 DEFAULTS_RACECAR_REAL = {
     'sampling': 'consecutive',
-    'num_samples_test': 3500
+    'num_samples_test': 6000
 }
 
 _RACECAR_NOISE_STD_ENCODED = 40 * jnp.concatenate([DEFAULTS_RACECAR['obs_noise_std'][:2],
@@ -275,6 +275,7 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
         if data_source.startswith('real_racecar_new_actionstack'):
             x_train, y_train, x_test, y_test = get_rccar_recorded_data_new(encode_angle=True, action_stacking=True,
                                                                            action_delay=3)
+            sim_lf = StackedActionSimWrapper(sim_lf, num_stacked_actions=3, action_size=2)
         elif data_source.startswith('real_racecar_new'):
             x_train, y_train, x_test, y_test = get_rccar_recorded_data_new(encode_angle=True, action_stacking=False,
                                                                            action_delay=3)
