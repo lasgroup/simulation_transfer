@@ -1,6 +1,10 @@
+from typing import Callable
+
 import chex
 import jax.numpy as jnp
 import jax.random as jr
+import jax.tree_util as jtu
+import matplotlib.pyplot as plt
 import wandb
 from brax.training.replay_buffers import UniformSamplingQueue, ReplayBufferState
 from brax.training.types import Transition
@@ -11,6 +15,8 @@ from experiments.data_provider import provide_data_and_sim, _RACECAR_NOISE_STD_E
 from sim_transfer.models.abstract_model import BatchedNeuralNetworkModel
 from sim_transfer.models.bnn_svgd import BNN_SVGD
 from sim_transfer.rl.model_based_rl.learned_system import LearnedCarSystem
+from sim_transfer.sims.envs import RCCarSimEnv
+from sim_transfer.sims.util import plot_rc_trajectory
 
 
 class RLFromOfflineData:
@@ -186,7 +192,50 @@ class RLFromOfflineData:
         bnn_model = self.train_model(learn_std=learn_std, bnn_train_steps=bnn_train_steps,
                                      return_best_bnn=return_best_bnn)
         policy, params, metrics = self.train_policy(bnn_model, self.true_buffer_state, self.key)
-        return policy, params, metrics
+        return policy, params, metrics, bnn_model
+
+    def evaluate_policy(self,
+                        policy: Callable,
+                        bnn_model: BatchedNeuralNetworkModel,
+                        key=jr.PRNGKey(0)):
+        sim = RCCarSimEnv(encode_angle=True, use_tire_model=True)
+        eval_horizon = 200
+        # Now we simulate the policy on the learned model
+
+        obs = sim.reset()
+        # Obs represents samples from the init_states_buffer which is of dim x_dim + u_dim * num_frame_stack
+        stacked_actions = jnp.zeros(shape=(self.num_frame_stack * self.action_dim,))
+
+        transitions = []
+        for step in range(eval_horizon):
+            key, subkey = jr.split(key)
+            action = policy(jnp.concatenate([obs, stacked_actions], axis=-1))
+            z = jnp.concatenate([obs, stacked_actions, action], axis=-1)
+            z = z.reshape((1, -1))
+            delta_x_dist = bnn_model.predict_dist(z, include_noise=True)
+            delta_x = delta_x_dist.sample(seed=subkey)
+            delta_x = delta_x.reshape(-1)
+            next_obs = obs + delta_x
+
+            transitions.append(Transition(observation=obs,
+                                          action=action,
+                                          reward=jnp.array(0.0),
+                                          discount=jnp.array(0.99),
+                                          next_observation=next_obs))
+            # We prepare set of new inputs
+            obs = next_obs
+            # Now we shift the actions
+            stacked_actions = jnp.roll(stacked_actions, shift=self.action_dim)
+            stacked_actions = stacked_actions.at[:self.action_dim].set(action)
+
+        concatenated_transitions = jtu.tree_map(lambda *xs: jnp.stack(xs, axis=0), *transitions)
+        rewards = jnp.sum(concatenated_transitions.reward)
+        fig, axes = plot_rc_trajectory(concatenated_transitions.next_observation,
+                                       concatenated_transitions.action, encode_angle=True,
+                                       show=False)
+        wandb.log({'Trajectory_on_learned_model': wandb.Image(fig),
+                   'reward_on_learned_model': rewards})
+        plt.close('all')
 
 
 if __name__ == '__main__':
@@ -201,7 +250,7 @@ if __name__ == '__main__':
 
     NUM_ENV_STEPS_BETWEEN_UPDATES = 16
     NUM_ENVS = 64
-    sac_num_env_steps = 100_000
+    sac_num_env_steps = 1_000_000
     horizon_len = 50
 
     SAC_KWARGS = dict(num_timesteps=sac_num_env_steps,
@@ -234,5 +283,6 @@ if __name__ == '__main__':
     rl_from_offline_data = RLFromOfflineData(
         sac_kwargs=SAC_KWARGS,
         car_reward_kwargs=car_reward_kwargs)
-    rl_from_offline_data.prepare_policy_from_offline_data(learn_std=True, bnn_train_steps=40_000)
-    x = 10
+    policy, params, metrics, bnn_model = rl_from_offline_data.prepare_policy_from_offline_data(learn_std=True,
+                                                                                               bnn_train_steps=40_000)
+    rl_from_offline_data.evaluate_policy(policy, bnn_model, key=jr.PRNGKey(0))
