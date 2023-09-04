@@ -43,6 +43,7 @@ class BNN_FSVGD(AbstractFSVGD_BNN):
                          lr=lr, weight_decay=weight_decay, domain=domain, bandwidth_svgd=bandwidth_svgd,
                          likelihood_std=likelihood_std, learn_likelihood_std=learn_likelihood_std,
                          likelihood_exponent=likelihood_exponent, normalize_likelihood_std=normalize_likelihood_std)
+        self._save_init_args(locals())
         self.bandwidth_gp_prior = bandwidth_gp_prior
         self.num_measurement_points = num_measurement_points
 
@@ -65,6 +66,20 @@ class BNN_FSVGD(AbstractFSVGD_BNN):
         k = self.kernel_gp_prior.matrix(x, x) + eps * jnp.eye(x.shape[0])
         dist = tfd.MultivariateNormalFullCovariance(jnp.zeros(x.shape[0]), k)
         return jnp.mean(jnp.sum(dist.log_prob(jnp.swapaxes(y, -1, -2)), axis=-1)) / x.shape[0]
+
+    def _get_state(self):
+        state_dict = {
+            'opt_state': self.opt_state,
+            'params': self.params,
+            '_rng_key': self._rng_key,
+            '_x_mean': self._x_mean,
+            '_x_std': self._x_std,
+            '_y_mean': self._y_mean,
+            '_y_std': self._y_std,
+            'affine_transform_y': self.affine_transform_y
+        }
+        return state_dict
+
 
 
 if __name__ == '__main__':

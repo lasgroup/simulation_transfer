@@ -40,6 +40,7 @@ class BNN_SVGD(AbstractSVGD_BNN):
                          learn_likelihood_std=learn_likelihood_std,
                          likelihood_exponent=likelihood_exponent,
                          bandwidth_svgd=bandwidth_svgd, use_prior=use_prior)
+        self._save_init_args(locals())
 
         # construct the neural network prior distribution
         if use_prior:
@@ -48,6 +49,19 @@ class BNN_SVGD(AbstractSVGD_BNN):
     @property
     def prior_dist(self):
         return self._prior_dist
+
+    def _get_state(self):
+        state_dict = {
+            'opt_state': self.opt_state,
+            'params': self.params,
+            '_rng_key': self._rng_key,
+            '_x_mean': self._x_mean,
+            '_x_std': self._x_std,
+            '_y_mean': self._y_mean,
+            '_y_std': self._y_std,
+            'affine_transform_y': self.affine_transform_y
+        }
+        return state_dict
 
 
 if __name__ == '__main__':

@@ -1,10 +1,13 @@
 import unittest
 import jax
+import numpy as np
 import pytest
+import pickle
 import jax.numpy as jnp
 
 from sim_transfer.models.abstract_model import AbstractRegressionModel
-from sim_transfer.models import BNN_SVGD, BNN_VI
+from sim_transfer.models import BNN_SVGD, BNN_VI, BNN_FSVGD
+from sim_transfer.sims import HypercubeDomain
 
 class TestAbstractRegression(unittest.TestCase):
 
@@ -173,5 +176,45 @@ def test_reinit_bnn_svgd_seed_consistency(model: str):
     assert (not jnp.allclose(y1_mean, y3_mean)) and (not jnp.allclose(y1_std, y3_std))
 
 
+@pytest.mark.parametrize('model', ['BNN_SVGD', 'BNN_FSVGD'])
+def test_serialization(model: str):
+    normalization_stats = {'x_mean': jnp.array([1.]), 'x_std': jnp.array([0.5]), 'y_mean': jnp.array([-4.]),
+                           'y_std': jnp.array([4.])}
+    if model == 'BNN_SVGD':
+        model = BNN_SVGD(input_size=1, output_size=1, rng_key=jax.random.PRNGKey(34534527),
+                         learn_likelihood_std=True, hidden_layer_sizes=[10, 10], num_particles=8,
+                         normalization_stats=normalization_stats, bandwidth_svgd=10.)
+    elif model == 'BNN_FSVGD':
+        model = BNN_FSVGD(input_size=1, output_size=1, domain=HypercubeDomain(-2 * jnp.ones(1), jnp.ones(1)),
+                          rng_key=jax.random.PRNGKey(34534527),
+                          learn_likelihood_std=True, num_particles=8,
+                          bandwidth_svgd=4.,
+                          bandwidth_gp_prior=4.)
+    else:
+        raise ValueError(f'Unknown model {model}')
+
+
+    x_train, y_train, x_test = _get_1d_data()
+    model.fit(x_train, y_train, num_steps=10)
+
+    # pickle and unpickle
+    model2 = pickle.loads(pickle.dumps(model))
+
+    # check that predictions are the same
+    y1_mean, y1_std = model.predict(x_test)
+    y2_mean, y2_std = model2.predict(x_test)
+    assert jnp.allclose(y1_mean, y2_mean) and jnp.allclose(y1_std, y2_std)
+
+    # check that training works
+    model.fit(x_train, y_train, num_steps=10)
+    model2.fit(x_train, y_train, num_steps=10)
+
+    # check that predictions are the same after some more training
+    y1_mean, y1_std = model.predict(x_test)
+    y2_mean, y2_std = model2.predict(x_test)
+    assert jnp.allclose(y1_mean, y2_mean) and jnp.allclose(y1_std, y2_std)
+
+
+""" TEST BNN_SVGD """
 if __name__ == '__main__':
     pytest.main()

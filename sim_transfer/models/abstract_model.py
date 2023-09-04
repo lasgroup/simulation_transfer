@@ -236,6 +236,7 @@ class BatchedNeuralNetworkModel(AbstractRegressionModel):
                  num_batched_nns: int = 10,
                  **kwargs):
         super().__init__(*args, **kwargs)
+        self._save_init_args(locals())
         self.data_batch_size = data_batch_size
         self.num_train_steps = num_train_steps
         self.num_batched_nns = num_batched_nns
@@ -337,3 +338,64 @@ class BatchedNeuralNetworkModel(AbstractRegressionModel):
 
     def _construct_nn_param_prior(self, weight_prior_std: float, bias_prior_std: float) -> tfd.MultivariateNormalDiag:
         return self.batched_model.params_prior(weight_prior_std=weight_prior_std, bias_prior_std=bias_prior_std)
+
+    @staticmethod
+    def _activation_fn_to_str(activation_fn: Callable) -> str:
+        if activation_fn is None:
+            return 'None'
+        elif 'leaky_relu' in activation_fn.__str__():
+            return 'leaky_relu'
+        elif 'relu' in activation_fn.__str__():
+            return 'relu'
+        elif 'tanh' in activation_fn.__str__():
+            return 'tanh'
+        elif 'sigmoid' in activation_fn.__str__():
+            return 'sigmoid'
+        elif 'softplus' in activation_fn.__str__():
+            return 'softplus'
+        elif 'elu' in activation_fn.__str__():
+            return 'elu'
+        elif 'selu' in activation_fn.__str__():
+            return 'selu'
+
+    @staticmethod
+    def _str_to_activation_fn(activation_fn_str: str) -> Callable:
+        if activation_fn_str == 'None':
+            return None
+        elif activation_fn_str == 'leaky_relu':
+            return jax.nn.leaky_relu
+        elif activation_fn_str == 'relu':
+            return jax.nn.relu
+        elif activation_fn_str == 'tanh':
+            return jnp.tanh
+        elif activation_fn_str == 'sigmoid':
+            return jax.nn.sigmoid
+        elif activation_fn_str == 'softplus':
+            return jax.nn.softplus
+        elif activation_fn_str == 'elu':
+            return jax.nn.elu
+        elif activation_fn_str == 'selu':
+            return jax.nn.selu
+
+    def _save_init_args(self, local_var_dict: Dict) -> None:
+        self._init_arguments = {k: v for k, v in local_var_dict.items() if not (k.startswith('__') or k == 'self')}
+
+    def _set_state(self, state_dict: Dict) -> None:
+        for var_name, val in state_dict.items():
+            setattr(self, var_name, val)
+
+    def _get_state(self) -> Dict:
+        raise NotImplementedError
+
+    def __getstate__(self):
+        init_args = self._init_arguments.copy()
+        init_args['hidden_activation'] = self._activation_fn_to_str(init_args['hidden_activation'])
+        init_args['last_activation'] = self._activation_fn_to_str(init_args['last_activation'])
+        return {'init_args': init_args, 'state': self._get_state()}
+
+    def __setstate__(self, state):
+        init_args = state['init_args']
+        init_args['hidden_activation'] = self._str_to_activation_fn(init_args['hidden_activation'])
+        init_args['last_activation'] = self._str_to_activation_fn(init_args['last_activation'])
+        self.__init__(**init_args)
+        self._set_state(state['state'])
