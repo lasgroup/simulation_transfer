@@ -3,13 +3,15 @@ import pickle
 import jax.numpy as jnp
 import numpy as np
 from matplotlib import pyplot as plt
+import time
 
 from sim_transfer.hardware.car_env import CarEnv
 from sim_transfer.rl.rl_on_offline_data import RLFromOfflineData
+from sim_transfer.sims.util import decode_angles
 
 
-def run_with_learned_policy(filename: str,
-                            recording_name: str, ):
+
+def run_with_learned_policy(filename: str):
     """
     Num stacked frames: 3
     """
@@ -55,28 +57,31 @@ def run_with_learned_policy(filename: str,
 
     policy = rl_from_offline_data.prepare_policy(params=None, filename=filename)
 
-    # load recorded trajectory
-    RECORDING_NAME = f'{recording_name}.pickle'
-    with open(RECORDING_NAME, 'rb') as f:
-        rec_traj = pickle.load(f)
-    rec_observations = rec_traj.observation[:200]
-    rec_actions = rec_traj.action[:200]
-
     # replay action sequence on car
-    env = CarEnv(encode_angle=True)
+    env = CarEnv(encode_angle=True, num_frame_stacks=0)
     obs, _ = env.reset()
+    initial_obs = obs
     stop = False
     observations = [obs]
+    env.step(np.zeros(2))
+    t_prev = time.time()
     actions = []
 
     num_frame_stack = 3
     action_dim = 2
     stacked_actions = jnp.zeros(shape=(num_frame_stack * action_dim,))
+    time_diffs = []
 
-    for i in range(rec_actions.shape[0]):
+
+    for i in range(200):
         action = policy(jnp.concatenate([obs, stacked_actions], axis=-1))
-        print(action)
+        action = np.array(action)
         obs, reward, terminate, info = env.step(action)
+        t = time.time()
+        time_diff = t - t_prev
+        t_prev = t
+        print(i, action, reward, time_diff)
+        time_diffs.append(time_diff)
         observations.append(obs)
 
         # Now we shift the actions
@@ -85,12 +90,16 @@ def run_with_learned_policy(filename: str,
 
     env.close()
     observations = np.array(observations)
+    time_diffs = np.array(time_diffs)
+    plt.plot(time_diffs)
+    plt.title('time diffs')
+    plt.show()
 
+    # Now we run the simulation on the learned model
+
+    observations = decode_angles(observations, angle_idx=2)
     # comparison plot recorded and new traj
     fig, axes = plt.subplots(ncols=3, figsize=(12, 4))
-    axes[0].plot(rec_observations[:, 0], color='blue', label='rec')
-    axes[1].plot(rec_observations[:, 1], color='blue')
-    axes[2].plot(rec_observations[:, 2], color='blue')
 
     axes[0].plot(observations[:, 0], color='orange', label='new')
     axes[1].plot(observations[:, 1], color='orange')
@@ -100,12 +109,11 @@ def run_with_learned_policy(filename: str,
     axes[1].set_title("y pos")
     axes[2].set_title("theta")
     fig.legend()
-
+    print('finished plotting')
     fig.show()
 
 
+
 if __name__ == '__main__':
-    filename = 'learned_policy_params.pickle'
-    recording_name = 'offline_policy'
-    run_with_learned_policy(filename=filename,
-                            recording_name=recording_name)
+    filename = 'parameters.pkl'
+    run_with_learned_policy(filename=filename)

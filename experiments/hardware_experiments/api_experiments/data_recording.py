@@ -6,7 +6,7 @@ from sim_transfer.hardware.xbox_data_recording.xboxagent import CarXbox2D
 from brax.training.types import Transition
 import pickle
 
-RECORDING_NAME = 'test_1.pickle'
+RECORDING_NAME = 'recording_sep1_1.pickle'
 
 
 if __name__ == '__main__':
@@ -23,7 +23,7 @@ if __name__ == '__main__':
         observations.append(obs)
         new_observations.append(new_obs)
         actions.append(action)
-        print(action, stop)
+        print(action, stop, obs)
         obs = new_obs
         # if terminate:
         #    obs, _ = env.reset()

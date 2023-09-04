@@ -5,16 +5,23 @@ import sys
 import numpy as np
 from gym.spaces import Box
 from typing import Optional
+from sim_transfer.sims.envs import RCCarEnvReward
+from typing import Dict, Tuple, Any
 
-X_MIN_LIMIT = -3.2
-X_MAX_LIMIT = 3.2
-Y_MAX_LIMIT = -2.55
-Y_MIN_LIMIT = 2.55
+X_MIN_LIMIT = -1.4
+X_MAX_LIMIT = 2.8
+Y_MIN_LIMIT = -2.6
+Y_MAX_LIMIT = 1.5
 
 
 class CarEnv(gym.Env):
+    max_steps: int = 200
+    _goal: np.array = np.array([0.0, 0.0, 0.0])
+    _angle_idx: int = 2
 
     def __init__(self,
+                 ctrl_cost_weight: float = 0.005,
+                 margin_factor: float = 10.0,
                  control_frequency: float = 30,
                  max_wait_time: float = 1,
                  window_size: int = 6,
@@ -22,7 +29,6 @@ class CarEnv(gym.Env):
                  port_number: int = 8,  # leftmost usb port in the display has port number 8
                  encode_angle: bool = True,
                  max_throttle: float = 0.5,
-                 goal: np.ndarray = np.asarray([0.0, 0.0, 0.0])
                  ):
         super().__init__()
         sys.path.append("C:/Users/Panda/Desktop/rcCarInterface/rc-car-interface/build/src/libs/pyCarController")
@@ -39,18 +45,24 @@ class CarEnv(gym.Env):
         self.controller_started = False
 
         self.num_frame_stacks = num_frame_stacks
-        self.goal = goal
-        self.max_steps = 200
         self.env_steps = 0
+
+        # initialize reward model
+        self._reward_model = RCCarEnvReward(goal=self._goal,
+                                            ctrl_cost_weight=ctrl_cost_weight,
+                                            encode_angle=self.encode_angle,
+                                            margin_factor=margin_factor)
+
+        # setup observation and action space
         high = np.ones(6 + self.encode_angle + 2 * num_frame_stacks) * np.inf
         self.max_throttle = np.clip(max_throttle, 0.0, 1.0)
         if self.encode_angle:
             high[2:4] = 1
         high[6:] = 1
-
         self.observation_space = Box(low=-high, high=high, shape=(6 + self.encode_angle + 2 * num_frame_stacks,))
-
         self.action_space = Box(low=-1, high=1, shape=(2,))
+
+        # init state
         self.state: np.array = np.zeros((6 + int(self.encode_angle) + 2 * num_frame_stacks,))
 
     def log_mocap_info(self):
@@ -87,26 +99,20 @@ class CarEnv(gym.Env):
         current_state = self.normalize_theta(current_state)
         return current_state
 
-
-    def reset(
-            self,
-            *,
-            seed: Optional[int] = None,
-            options: Optional[dict] = None,
-    ):
+    def reset(self):
         # self.controller.stop()
         if not self.initial_reset:
             self.log_mocap_info()
         self.initial_reset = False
         answer = input("Press Y to continue the reset.")
-        assert answer == 'Y', "environment execution aborted."
+        assert answer == 'Y' or answer == 'y', "environment execution aborted."
         if not self.controller_started:
             self.controller.start()
-            print("Starting controller in ~5 sec")
-            time.sleep(5)
+            print("Starting controller in ~3 sec")
+            time.sleep(3)
             self.controller_started = True
         current_state = self.get_state_from_mocap()
-        current_state[0:3] = current_state[0:3] - self.goal
+        current_state[0:3] = current_state[0:3] - self._goal
         if self.encode_angle:
             new_state = self.get_encoded_state(current_state)
         else:
@@ -129,7 +135,7 @@ class CarEnv(gym.Env):
         encoded_state[3] = np.cos(true_state[2])
         return encoded_state
 
-    def step(self, action):
+    def step(self, action: np.array) -> Tuple[np.array, float, bool, Dict[str, Any]]:
         assert np.shape(action) == (2,)
         self.controller.control_mode()  # sets the mode to control
         action = np.clip(action, -1.0, 1.0)
@@ -139,7 +145,7 @@ class CarEnv(gym.Env):
         time_elapsed = self.controller.get_time_elapsed()
         next_state = self.get_state_from_mocap()  # get state
         # next_state[[1, 4]] *= -1
-        next_state[0:3] = next_state[0:3] - self.goal
+        next_state[0:3] = next_state[0:3] - self._goal
         new_state = np.zeros_like(self.state)
         # if desired, encode angle
         if self.encode_angle:
@@ -162,11 +168,11 @@ class CarEnv(gym.Env):
         return new_state, reward, terminate, {}
 
     def reward(self, state, action, next_state):
-        return 0.0
+        return self._reward_model.forward(obs=None, action=action, next_obs=next_state)
 
     def terminate(self, next_state): # TODO fix termination flag
-        reached_goal = self.reached_goal(next_state, self.goal).item()
-        out_of_bound = self.constraint_violation(next_state).item()
+        reached_goal = self.reached_goal(next_state, self._goal).item()
+        out_of_bound = self.constraint_violation(next_state)
         time_out = self.env_steps >= self.max_steps
 
         if reached_goal:
@@ -179,20 +185,20 @@ class CarEnv(gym.Env):
         return terminate
 
     @staticmethod
-    def constraint_violation(state):
+    def constraint_violation(state) -> bool:
         in_bounds = np.logical_and(
-            np.logical_and(X_MAX_LIMIT >= state[0], state[0] >= X_MIN_LIMIT),
-            np.logical_and(Y_MAX_LIMIT >= state[1], state[1] >= Y_MIN_LIMIT)
+            np.logical_and(X_MIN_LIMIT <= state[0], state[0] <= X_MAX_LIMIT),
+            np.logical_and(Y_MIN_LIMIT <= state[1], state[1] <= Y_MAX_LIMIT)
         )
-        return np.where(in_bounds, 0, 1)
+        return not in_bounds
 
     @staticmethod
-    def reached_goal(state, goal):
+    def reached_goal(state, goal) -> bool:
         dist = np.sqrt(np.square(state[:2] - goal[:2]).sum(-1))
         ang_dev = np.abs(state[2] - goal[2])
         speed = np.sqrt(np.square(state[..., 3:]).sum(-1))
         in_bounds = np.logical_and(np.logical_and(dist < 0.25, ang_dev < 1.0), speed < 1.5)
-        return np.where(in_bounds, 1, 0)
+        return in_bounds
 
     @staticmethod
     def normalize_theta(state):
