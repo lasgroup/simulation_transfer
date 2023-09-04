@@ -1,10 +1,10 @@
 import exp
 from experiments.util import generate_run_commands, generate_base_command, dict_permutations
 
-PROJECT_NAME = 'ModelTrainingOnOfflineData'
+PROJECT_NAME = 'ModelTrainingOnOfflineDataN2'
 
 applicable_configs = {
-    'horizon_len': [50, 2 ** 6, 100],
+    'horizon_len': [32, 16, 50, 2 ** 6, 100, 200],
     'seed': [0, 1],
     'project_name': [PROJECT_NAME],
     'sac_num_env_steps': [1_000_000],

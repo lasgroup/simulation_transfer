@@ -1,9 +1,10 @@
 import argparse
 
+import jax.random as jr
 import wandb
 
 from sim_transfer.rl.rl_on_offline_data import RLFromOfflineData
-import jax.random as jr
+
 
 def experiment(horizon_len: int,
                seed: int,
@@ -90,9 +91,12 @@ def experiment(horizon_len: int,
         predict_difference=bool(predict_difference),
 
     )
-    rl_from_offline_data.prepare_policy_from_offline_data(learn_std=bool(learnable_likelihood_std),
-                                                          bnn_train_steps=bnn_train_steps,
-                                                          return_best_bnn=bool(best_bnn_model))
+    policy, params, metrics, bnn_model = rl_from_offline_data.prepare_policy_from_offline_data(
+        learn_std=bool(learnable_likelihood_std),
+        bnn_train_steps=bnn_train_steps,
+        return_best_bnn=bool(best_bnn_model))
+
+    rl_from_offline_data.evaluate_policy(policy, bnn_model, key=jr.PRNGKey(0))
     wandb.finish()
 
 

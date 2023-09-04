@@ -1,6 +1,6 @@
 import os
 import pickle
-from typing import Callable
+from typing import Callable, Any
 
 import chex
 import jax.numpy as jnp
@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import wandb
 from brax.training.replay_buffers import UniformSamplingQueue, ReplayBufferState
 from brax.training.types import Transition
+from jax import jit
 from mbpo.optimizers.policy_optimizers.sac.sac import SAC
 from mbpo.systems.brax_wrapper import BraxWrapper
 
@@ -182,56 +183,16 @@ class RLFromOfflineData:
 
         make_inference_fn = sac_trainer.make_policy
 
+        @jit
         def policy(x):
             return make_inference_fn(params, deterministic=True)(x, jr.PRNGKey(0))[0]
 
         return policy, params, metrics
 
-    def prepare_policy(self, params):
-        x_train, y_train, x_test, y_test, sim = self.x_train, self.y_train, self.x_test, self.y_test, None
-        # Create a bnn model
-        standard_model_params = {
-            'input_size': x_train.shape[-1],
-            'output_size': y_train.shape[-1],
-            'rng_key': jr.PRNGKey(234234345),
-            # 'normalization_stats': sim.normalization_stats, TODO: Jonas: adjust sim for normalization stats
-            'likelihood_std': _RACECAR_NOISE_STD_ENCODED,
-            'normalize_likelihood_std': True,
-            'learn_likelihood_std': True,
-            'likelihood_exponent': 0.5,
-            'hidden_layer_sizes': [64, 64, 64],
-            'data_batch_size': 32,
-        }
-        bnn = BNN_SVGD(**standard_model_params,
-                       bandwidth_svgd=1.0)
-        system = LearnedCarSystem(model=bnn,
-                                  include_noise=self.include_aleatoric_noise,
-                                  predict_difference=self.predict_difference,
-                                  num_frame_stack=self.num_frame_stack,
-                                  **self.car_reward_kwargs)
-
-        key_train, key_simulate, *keys_sys_params = jr.split(self.key, 4)
-        env = BraxWrapper(system=system,
-                          sample_buffer_state=self.true_buffer_state,
-                          sample_buffer=self.true_data_buffer,
-                          system_params=system.init_params(keys_sys_params[0]))
-
-        _sac_kwargs = self.sac_kwargs
-        sac_trainer = SAC(environment=env,
-                          eval_environment=env,
-                          eval_key_fixed=True,
-                          return_best_model=self.return_best_policy,
-                          **_sac_kwargs, )
-        make_inference_fn = sac_trainer.make_policy
-
-        def policy(x):
-            return make_inference_fn(params, deterministic=True)(x, jr.PRNGKey(0))[0]
-
-        return policy
-
-    def prepare_policy_from_pickle(self, filename):
-        with open(filename, 'rb') as handle:
-            params = pickle.load(handle)
+    def prepare_policy(self, params: Any | None = None, filename: str = None):
+        if params is None:
+            with open(filename, 'rb') as handle:
+                params = pickle.load(handle)
 
         x_train, y_train, x_test, y_test, sim = self.x_train, self.y_train, self.x_test, self.y_test, None
         # Create a bnn model
@@ -269,6 +230,7 @@ class RLFromOfflineData:
                           **_sac_kwargs, )
         make_inference_fn = sac_trainer.make_policy
 
+        @jit
         def policy(x):
             return make_inference_fn(params, deterministic=True)(x, jr.PRNGKey(0))[0]
 
