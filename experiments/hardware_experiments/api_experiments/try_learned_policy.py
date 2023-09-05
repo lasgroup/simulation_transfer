@@ -60,7 +60,8 @@ def run_with_learned_policy(filename_policy: str,
         car_reward_kwargs=car_reward_kwargs)
     wandb.init(
         project="Race car test MBRL",
-        group='test',
+        group='hardware test',
+        entity='trevenl'
     )
 
     with open(filename__bnn_model, 'rb') as handle:
@@ -127,6 +128,7 @@ def run_with_learned_policy(filename_policy: str,
                                    sim_actions_for_plotting,
                                    encode_angle=True,
                                    show=True)
+    wandb.log({'Trajectory_on_learned_model': wandb.Image(fig)})
 
     if closed_loop:
         for i in range(200):
@@ -160,6 +162,8 @@ def run_with_learned_policy(filename_policy: str,
             # Now we shift the actions
             stacked_actions = jnp.roll(stacked_actions, shift=action_dim)
             stacked_actions = stacked_actions.at[:action_dim].set(action)
+            if terminate:
+                break
 
     env.close()
     observations = np.array(observations)
@@ -175,6 +179,7 @@ def run_with_learned_policy(filename_policy: str,
                                    actions_for_plotting,
                                    encode_angle=True,
                                    show=True)
+    wandb.log({'Trajectory_on_true_model': wandb.Image(fig)})
 
     observations = decode_angles(observations, angle_idx=2)
     # comparison plot recorded and new traj
