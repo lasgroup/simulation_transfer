@@ -27,7 +27,8 @@ class CarDynamics(Dynamics[CarDynamicsParams]):
     _dt: float = 1 / 30.
     dim_action: Tuple[int] = (2,)
     _goal: jnp.array = jnp.array([0.0, 0.0, - jnp.pi / 2.])
-    _init_pose: jnp.array = jnp.array([-1.04, -1.42, jnp.pi / 2.])
+    # _init_pose: jnp.array = jnp.array([-1.04, -1.42, jnp.pi / 2.])
+    _init_pose: jnp.array = jnp.array([1.42, -1.04, jnp.pi])
     # _init_pose: jnp.array = jnp.array([-1.04 - 1, -1.42 + 1, jnp.pi / 2.])
     _angle_idx: int = 2
     _obs_noise_stds: jnp.array = 0.05 * jnp.exp(jnp.array([-3.3170326, -3.7336411, -2.7081904,
@@ -195,7 +196,7 @@ class CarRewardParams:
 
 
 class CarReward(Reward[CarRewardParams]):
-    _goal: jnp.array = jnp.array([0.0, 0.0, - jnp.pi / 2.])
+    _goal: jnp.array = jnp.array([0.0, 0.0, 0.0])
 
     def __init__(self,
                  ctrl_cost_weight: float = 0.005,
