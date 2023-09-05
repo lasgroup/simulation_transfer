@@ -35,6 +35,7 @@ class RLFromOfflineData:
                  sac_kwargs: dict = None,
                  key: chex.PRNGKey = jr.PRNGKey(0),
                  return_best_policy: bool = True,
+                 num_frame_stack: int = 3
                  ):
         self.return_best_policy = return_best_policy
         self.include_aleatoric_noise = include_aleatoric_noise
@@ -53,18 +54,16 @@ class RLFromOfflineData:
         action_dim = 2
         self.state_dim = state_dim
         self.action_dim = action_dim
+        self.num_frame_stack = num_frame_stack
         # We compute number of frames to stack
-        state_with_frame_stack_dim = x_train.shape[1] - action_dim
-        self.state_with_frame_stack_dim = state_with_frame_stack_dim
-
-        self.num_frame_stack = (x_train.shape[1] - state_dim - action_dim) // action_dim
+        self.state_with_frame_stack_dim = self.num_frame_stack * action_dim + state_dim
 
         # Reshape the data and prepare it for training
         states_obs = x_train[:, :state_dim]
         next_state_obs = y_train
-        last_actions = x_train[:, state_with_frame_stack_dim:]
-        framestacked_actions = x_train[:, state_dim:state_with_frame_stack_dim]
-        framestacked_actions = jnp.flip(framestacked_actions, axis=-1)
+        last_actions = x_train[:, self.state_with_frame_stack_dim:]
+        framestacked_actions = x_train[:, state_dim:self.state_with_frame_stack_dim]
+        framestacked_actions = self.revert_order_of_stacked_actions(framestacked_actions)
 
         # Here we shift frame stacking
         next_framestacked_actions = jnp.roll(framestacked_actions, shift=action_dim, axis=-1)
@@ -112,7 +111,7 @@ class RLFromOfflineData:
         states_obs = xs[:, :self.state_dim]
         last_actions = xs[:, self.state_with_frame_stack_dim:]
         framestacked_actions = xs[:, self.state_dim:self.state_with_frame_stack_dim]
-        framestacked_actions = jnp.flip(framestacked_actions, axis=-1)
+        framestacked_actions = self.revert_order_of_stacked_actions(framestacked_actions)
         return jnp.concatenate([states_obs, framestacked_actions, last_actions], axis=-1)
 
     def load_data(self):
@@ -189,6 +188,16 @@ class RLFromOfflineData:
             return make_inference_fn(params, deterministic=True)(x, jr.PRNGKey(0))[0]
 
         return policy, params, metrics
+
+    def revert_order_of_stacked_actions(self, stacked_actions: chex.Array):
+        assert self.action_dim * self.num_frame_stack == stacked_actions.shape[-1]
+        actions_list = []
+        # We split the actions into a list of actions
+        for i in range(self.num_frame_stack):
+            actions_list.append(stacked_actions[..., 2 * i:2 * i + 2])
+        # We revert list now
+        actions_list = actions_list[::-1]
+        return jnp.concatenate(actions_list, axis=-1)
 
     def prepare_policy(self, params: Any | None = None, filename: str = None):
         if params is None:

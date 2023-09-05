@@ -27,7 +27,7 @@ _system = CarSystem(encode_angle=ENCODE_ANGLE,
                     )
 
 # Here we create framestacking wrapper
-num_frame_stack = 3
+num_frame_stack = 0
 system = FrameStackWrapper(_system, num_frame_stack)
 
 # Create replay buffer
