@@ -3,6 +3,7 @@ import pickle
 from typing import Callable, Any
 
 import chex
+import cloudpickle
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree_util as jtu
@@ -253,6 +254,14 @@ class RLFromOfflineData:
             pickle.dump(params, handle)
         wandb.save(os.path.join(wandb.run.dir, model_path), wandb.run.dir)
 
+        directory = os.path.join(wandb.run.dir, 'models')
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+        model_path = os.path.join('models', 'bnn_model.pkl')
+        with open(os.path.join(wandb.run.dir, model_path), 'wb') as handle:
+            pickle.dump(bnn_model, handle)
+        wandb.save(os.path.join(wandb.run.dir, model_path), wandb.run.dir)
+
         return policy, params, metrics, bnn_model
 
     def evaluate_policy(self,
@@ -311,7 +320,7 @@ if __name__ == '__main__':
 
     NUM_ENV_STEPS_BETWEEN_UPDATES = 16
     NUM_ENVS = 64
-    sac_num_env_steps = 1_000_000
+    sac_num_env_steps = 20_000
     horizon_len = 50
 
     SAC_KWARGS = dict(num_timesteps=sac_num_env_steps,
@@ -345,5 +354,11 @@ if __name__ == '__main__':
         sac_kwargs=SAC_KWARGS,
         car_reward_kwargs=car_reward_kwargs)
     policy, params, metrics, bnn_model = rl_from_offline_data.prepare_policy_from_offline_data(learn_std=True,
-                                                                                               bnn_train_steps=40_000)
+                                                                                               bnn_train_steps=2_000)
+    filename_params = os.path.join(wandb.run.dir, 'models/policy.pkl')
+    filename_bnn_model = os.path.join(wandb.run.dir, 'models/bnn_model.pkl')
+
+    with open(filename_bnn_model, 'rb') as handle:
+        bnn_model = cloudpickle.load(handle)
+
     rl_from_offline_data.evaluate_policy(policy, bnn_model, key=jr.PRNGKey(0))

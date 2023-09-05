@@ -1,7 +1,7 @@
 import exp
 from experiments.util import generate_run_commands, generate_base_command, dict_permutations
 
-PROJECT_NAME = 'ModelTrainingOnOfflineDataN2'
+PROJECT_NAME = 'ModelTrainingOnOfflineDataN3WithBNN'
 
 applicable_configs = {
     'horizon_len': [32, 16, 50, 2 ** 6, 100, 200],
