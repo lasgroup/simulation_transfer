@@ -212,7 +212,7 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
             sim_hf = PendulumSim(encode_angle=True, high_fidelity=True)
             sim_lf = PendulumSim(encode_angle=True, high_fidelity=False)
         else:
-            sim_hf = sim_lf = PendulumSim(encode_angle=True, high_fidelity=False)
+            sim_hf = sim_lf = PendulumSim(encode_angle=True, high_fidelity=True)
         if data_spec.get('pred_diff', DEFAULTS_PENDULUM['pred_diff']):
             # wrap sim in predict state change wrapper
             print('Using PredictStateChangeWrapper')
