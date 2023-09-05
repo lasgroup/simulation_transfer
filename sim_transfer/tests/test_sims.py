@@ -1,11 +1,13 @@
 import unittest
 import pytest
+import pickle
 import jax
 import jax.numpy as jnp
 from typing import Dict
 
 from sim_transfer.sims.mset_sampler import UniformMSetSampler
-from sim_transfer.sims.simulators import GaussianProcessSim, AdditiveSim, FunctionSimulator
+from sim_transfer.sims.simulators import (GaussianProcessSim, AdditiveSim, FunctionSimulator, RaceCarSim,
+                                          PredictStateChangeWrapper, PendulumSim)
 from sim_transfer.sims.util import decode_angles, encode_angles, angle_diff
 
 class TestUniformMSetSampler(unittest.TestCase):
@@ -166,6 +168,43 @@ class TestAngleDiff(unittest.TestCase):
         beta = (alpha + beta_diff + jnp.pi) % (2 * jnp.pi) - jnp.pi
         diff = angle_diff(alpha, beta)
         assert jnp.allclose(diff, jnp.pi - 0.5)
+
+
+@pytest.mark.parametrize('sim_name', ['rccar1', 'rccar2', 'rccar+gp', 'rccar+gp+diff'])
+def test_serialization_sim(sim_name):
+    if sim_name == 'rccar1':
+        sim = RaceCarSim(encode_angle=True, use_blend=True)
+    elif sim_name == 'rccar2':
+        sim = RaceCarSim(encode_angle=False, use_blend=False)
+    elif sim_name == 'rccar+gp':
+        sim = AdditiveSim([RaceCarSim(encode_angle=True, use_blend=True),
+                           GaussianProcessSim(input_size=9, output_size=7)])
+    elif sim_name == 'rccar+gp+diff':
+        sim = AdditiveSim([RaceCarSim(encode_angle=True, use_blend=True),
+                           GaussianProcessSim(input_size=9, output_size=7)])
+        sim = PredictStateChangeWrapper(sim)
+    elif sim_name == 'pendulum':
+        sim = PendulumSim(high_fidelity=True, encode_angle=True)
+    else:
+        raise ValueError('Invalid sim name')
+
+    sim2 = pickle.loads(pickle.dumps(sim))
+
+    for k in sim.normalization_stats.keys():
+        assert jnp.array_equal(sim.normalization_stats[k], sim2.normalization_stats[k])
+
+    if 'rccar' in sim_name:
+        x = jax.random.uniform(jax.random.PRNGKey(234234), shape=(4, 8), minval=-1, maxval=1)
+        if sim_name != 'rccar2':
+            x = encode_angles(x, angle_idx=2)
+    elif 'pendulum' in sim_name:
+        x = jax.random.uniform(jax.random.PRNGKey(234234), shape=(4, 3), minval=-1, maxval=1)
+        x = encode_angles(x, angle_idx=1)
+    else:
+        raise ValueError('Invalid sim name')
+    f1 = sim.sample_function_vals(x, num_samples=7, rng_key=jax.random.PRNGKey(6452))
+    f2 = sim2.sample_function_vals(x, num_samples=7, rng_key=jax.random.PRNGKey(6452))
+    assert jnp.array_equal(f1, f2)
 
 
 if __name__ == '__main__':

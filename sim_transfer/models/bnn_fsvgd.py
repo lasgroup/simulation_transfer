@@ -67,20 +67,6 @@ class BNN_FSVGD(AbstractFSVGD_BNN):
         dist = tfd.MultivariateNormalFullCovariance(jnp.zeros(x.shape[0]), k)
         return jnp.mean(jnp.sum(dist.log_prob(jnp.swapaxes(y, -1, -2)), axis=-1)) / x.shape[0]
 
-    def _get_state(self):
-        state_dict = {
-            'opt_state': self.opt_state,
-            'params': self.params,
-            '_rng_key': self._rng_key,
-            '_x_mean': self._x_mean,
-            '_x_std': self._x_std,
-            '_y_mean': self._y_mean,
-            '_y_std': self._y_std,
-            'affine_transform_y': self.affine_transform_y
-        }
-        return state_dict
-
-
 
 if __name__ == '__main__':
     from sim_transfer.sims import SinusoidsSim, QuadraticSim, LinearSim

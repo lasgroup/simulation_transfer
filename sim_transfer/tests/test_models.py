@@ -6,7 +6,7 @@ import pickle
 import jax.numpy as jnp
 
 from sim_transfer.models.abstract_model import AbstractRegressionModel
-from sim_transfer.models import BNN_SVGD, BNN_VI, BNN_FSVGD
+from sim_transfer.models import BNN_SVGD, BNN_VI, BNN_FSVGD, BNN_FSVGD_SimPrior
 from sim_transfer.sims import HypercubeDomain
 
 class TestAbstractRegression(unittest.TestCase):
@@ -213,6 +213,46 @@ def test_serialization(model: str):
     y1_mean, y1_std = model.predict(x_test)
     y2_mean, y2_std = model2.predict(x_test)
     assert jnp.allclose(y1_mean, y2_mean) and jnp.allclose(y1_std, y2_std)
+
+@pytest.mark.parametrize('score_estimator', ['gp', 'kde', 'ssge', 'nu-method'])
+def test_serialization_bnn_with_simprior(score_estimator: str):
+    from sim_transfer.sims.simulators import RaceCarSim, AdditiveSim, GaussianProcessSim, PredictStateChangeWrapper
+    sim = AdditiveSim([RaceCarSim(encode_angle=True, use_blend=True),
+                       GaussianProcessSim(input_size=9, output_size=7)])
+    sim = PredictStateChangeWrapper(sim)
+
+    x_train, y_train, x_test, _ = sim.sample_datasets(num_samples_train=16, num_samples_test= 50,
+                                                      rng_key=jax.random.PRNGKey(234657))
+    model = BNN_FSVGD_SimPrior(
+        input_size=sim.input_size,
+        output_size=sim.output_size,
+        domain=sim.domain,
+        rng_key=jax.random.PRNGKey(34534527),
+        function_sim=sim,
+        learn_likelihood_std=True,
+        score_estimator=score_estimator,
+        normalization_stats=sim.normalization_stats,
+        num_particles=5,
+    )
+    model.fit(x_train, y_train, num_steps=15)
+
+    # pickle and unpickle
+    model2 = pickle.loads(pickle.dumps(model))
+
+    # check that predictions are the same
+    y1_mean, y1_std = model.predict(x_test)
+    y2_mean, y2_std = model2.predict(x_test)
+    assert jnp.allclose(y1_mean, y2_mean) and jnp.allclose(y1_std, y2_std)
+
+    # check that training works
+    model.fit(x_train, y_train, num_steps=10)
+    model2.fit(x_train, y_train, num_steps=10)
+
+    # check that predictions are the same after some more training
+    y1_mean, y1_std = model.predict(x_test)
+    y2_mean, y2_std = model2.predict(x_test)
+    assert jnp.allclose(y1_mean, y2_mean) and jnp.allclose(y1_std, y2_std)
+
 
 
 """ TEST BNN_SVGD """

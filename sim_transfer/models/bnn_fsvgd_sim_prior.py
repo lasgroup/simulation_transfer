@@ -28,7 +28,7 @@ class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
                  likelihood_std: Union[float, jnp.array] = 0.2,
                  learn_likelihood_std: bool = False,
                  likelihood_exponent: float = 1.0,
-                 score_estimator: str = 'SSGE',
+                 score_estimator: str = 'gp',
                  ssge_kernel_type: str = 'IMQ',
                  bandwidth_score_estim: Optional[float] = None,  # if None, a bandwidth heuristic is used
                  bandwidth_svgd: float = 0.2,
@@ -52,6 +52,7 @@ class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
                          lr=lr, weight_decay=weight_decay, likelihood_exponent=likelihood_exponent,
                          likelihood_std=likelihood_std, learn_likelihood_std=learn_likelihood_std,
                          domain=domain, bandwidth_svgd=bandwidth_svgd)
+        self._save_init_args(locals())
         self.num_measurement_points = num_measurement_points
 
         # check and set function sim
@@ -223,6 +224,16 @@ class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
                 bandwidth_median = SSGE.bandwith_median_heuristic(f_samples.reshape(f_samples.shape[0], -1))
             bandwidth_median_list.append(bandwidth_median)
         return jnp.mean(jnp.stack(bandwidth_median_list))
+
+    def _get_state(self):
+        state_dict = super()._get_state()
+        state_dict.update({
+            'function_sim': self.function_sim,
+            'bandwidth_score_estim': self.bandwidth_score_estim,
+            'affine_transform_y': self.affine_transform_y,
+            '_itr': self._itr,
+        })
+        return state_dict
 
 
 if __name__ == '__main__':

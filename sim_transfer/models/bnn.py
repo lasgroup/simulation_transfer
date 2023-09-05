@@ -158,6 +158,20 @@ class AbstractParticleBNN(BatchedNeuralNetworkModel, LikelihoodMixin):
         assert y_pred.ndim == 3 and y_pred.shape[-2:] == (x.shape[0], self.output_size)
         return y_pred
 
+    def _get_state(self):
+        state_dict = {
+            'opt_state': self.opt_state,
+            'params': self.params,
+            '_rng_key': self._rng_key,
+            '_x_mean': self._x_mean,
+            '_x_std': self._x_std,
+            '_y_mean': self._y_mean,
+            '_y_std': self._y_std,
+            '_need_to_compute_norm_stats': self._need_to_compute_norm_stats,
+            'affine_transform_y': self.affine_transform_y
+        }
+        return state_dict
+
 
 class AbstractVariationalBNN(BatchedNeuralNetworkModel, LikelihoodMixin):
 

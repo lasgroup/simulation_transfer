@@ -166,7 +166,7 @@ class GaussianProcessSim(FunctionSimulator):
         # check mean function
         if mean_fn is None:
             # use a zero mean by default
-            self.mean_fn = lambda x: jnp.zeros((x.shape[0],))
+            self.mean_fn = self._zero_mean
         else:
             self.mean_fn = mean_fn
 
@@ -222,6 +222,10 @@ class GaussianProcessSim(FunctionSimulator):
 
     def _typical_f(self, x: jnp.array) -> jnp.array:
         return jnp.repeat(self.mean_fn(x)[:, None], self.output_size, axis=-1)
+
+    @staticmethod
+    def _zero_mean(x: jnp.array) -> jnp.array:
+        return jnp.zeros((x.shape[0],))
 
     @cached_property
     def normalization_stats(self) -> Dict[str, jnp.ndarray]:
