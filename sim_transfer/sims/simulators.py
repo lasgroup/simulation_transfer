@@ -965,6 +965,9 @@ class PredictStateChangeWrapper(FunctionSimulator):
     def _add_observation_noise(self, *args, **kwargs) -> jnp.ndarray:
         return self._function_simulator._add_observation_noise(*args, **kwargs)
 
+    def _sample_x_data(self, *args, **kwargs) -> Tuple[jnp.ndarray, jnp.ndarray]:
+        return self._function_simulator._sample_x_data(*args, **kwargs)
+
 
 class StackedActionSimWrapper(FunctionSimulator):
 
