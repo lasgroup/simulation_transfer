@@ -17,6 +17,8 @@ def experiment(horizon_len: int,
                best_policy: int,
                margin_factor: float,
                predict_difference: int,
+               ctrl_cost_weight: float,
+               ctrl_diff_weight: float,
                ):
     config_dict = dict(horizon_len=horizon_len,
                        seed=seed,
@@ -30,8 +32,10 @@ def experiment(horizon_len: int,
     group_name = '_'.join(list(str(key) + '=' + str(value) for key, value in config_dict.items() if key != 'seed'))
 
     car_reward_kwargs = dict(encode_angle=True,
-                             ctrl_cost_weight=0.005,
-                             margin_factor=margin_factor)
+                             ctrl_cost_weight=ctrl_cost_weight,
+                             margin_factor=margin_factor,
+                             ctrl_diff_weight=ctrl_diff_weight,
+                             )
 
     NUM_ENV_STEPS_BETWEEN_UPDATES = 16
     NUM_ENVS = 64
@@ -113,6 +117,8 @@ def main(args):
         best_policy=args.best_policy,
         margin_factor=args.margin_factor,
         predict_difference=args.predict_difference,
+        ctrl_cost_weight=args.ctrl_cost_weight,
+        ctrl_diff_weight=args.ctrl_diff_weight,
     )
 
 
@@ -120,7 +126,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--horizon_len', type=int, default=200)
-    parser.add_argument('--bnn_train_steps', type=int, default=10_000)
+    parser.add_argument('--bnn_train_steps', type=int, default=2_000)
     parser.add_argument('--sac_num_env_steps', type=int, default=10_000)
     parser.add_argument('--project_name', type=str, default='RaceCarPPO')
     parser.add_argument('--learnable_likelihood_std', type=str, default='yes')
@@ -129,5 +135,7 @@ if __name__ == '__main__':
     parser.add_argument('--best_policy', type=int, default=0)
     parser.add_argument('--margin_factor', type=float, default=20.0)
     parser.add_argument('--predict_difference', type=int, default=0)
+    parser.add_argument('--ctrl_cost_weight', type=float, default=0.005)
+    parser.add_argument('--ctrl_diff_weight', type=float, default=0.01)
     args = parser.parse_args()
     main(args)
