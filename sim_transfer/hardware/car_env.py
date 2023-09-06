@@ -22,7 +22,7 @@ class CarEnv(gym.Env):
     def __init__(self,
                  ctrl_cost_weight: float = 0.005,
                  margin_factor: float = 10.0,
-                 control_frequency: float = 30,
+                 control_frequency: float = 31.3,
                  max_wait_time: float = 1,
                  window_size: int = 6,
                  num_frame_stacks: int = 3,
@@ -32,6 +32,10 @@ class CarEnv(gym.Env):
                  ):
         super().__init__()
         sys.path.append("C:/Users/Panda/Desktop/rcCarInterface/rc-car-interface/build/src/libs/pyCarController")
+
+        assert 0.0 <= max_throttle <= 1.0
+        self.max_throttle = max_throttle
+
         import carl
         self.control_frequency = control_frequency
         self.max_wait_time = max_wait_time
@@ -55,7 +59,6 @@ class CarEnv(gym.Env):
 
         # setup observation and action space
         high = np.ones(6 + self.encode_angle + 2 * num_frame_stacks) * np.inf
-        self.max_throttle = np.clip(max_throttle, 0.0, 1.0)
         if self.encode_angle:
             high[2:4] = 1
         high[6:] = 1
@@ -136,25 +139,32 @@ class CarEnv(gym.Env):
         return encoded_state
 
     def step(self, action: np.array) -> Tuple[np.array, float, bool, Dict[str, Any]]:
+        """ Performs one step on the real car (sends commands to)
+
+        Args:
+            action: numpy array of shape (2,) with [steer, throttle]
+        """
         assert np.shape(action) == (2,)
         self.controller.control_mode()  # sets the mode to control
         action = np.clip(action, -1.0, 1.0)
-        action[0] *= self.max_throttle
+        action[1] *= self.max_throttle
         command_set_in_time = self.controller.set_command(action)  # set action
         assert command_set_in_time, "API blocked python thread for too long"
-        time_elapsed = self.controller.get_time_elapsed()
+        time_elapsed = self.controller.get_time_elapsed()  # time elapsed since last action
+
+        # get current state from mocap
         next_state = self.get_state_from_mocap()  # get state
-        # next_state[[1, 4]] *= -1
         next_state[0:3] = next_state[0:3] - self._goal
         new_state = np.zeros_like(self.state)
+
         # if desired, encode angle
         if self.encode_angle:
             robot_state = self.get_encoded_state(next_state)
         else:
             robot_state = next_state
 
+        # take care of frame stacking
         dim_true_state = 6 + int(self.encode_angle)
-        # set internal state for frames tacking
         new_state[0:dim_true_state] = robot_state
         num_previous_actions = 2 * (self.num_frame_stacks - 1)
         if self.num_frame_stacks > 1:
@@ -162,15 +172,19 @@ class CarEnv(gym.Env):
                 self.state[2 + dim_true_state:]
         new_state[num_previous_actions + dim_true_state:] = action  # store the latest action
 
+        # compute reward
         reward = self.reward(self.state, action, new_state)
+
+        # check termination conditions
         terminate = self.terminate(next_state)
+
         self.state = new_state
-        return new_state, reward, terminate, {}
+        return new_state, reward, terminate, {'time_elapsed': time_elapsed}
 
     def reward(self, state, action, next_state):
         return self._reward_model.forward(obs=None, action=action, next_obs=next_state)
 
-    def terminate(self, next_state): # TODO fix termination flag
+    def terminate(self, next_state):
         reached_goal = self.reached_goal(next_state, self._goal).item()
         out_of_bound = self.constraint_violation(next_state)
         time_out = self.env_steps >= self.max_steps
