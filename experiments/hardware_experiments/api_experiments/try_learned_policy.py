@@ -239,7 +239,7 @@ def plot_error_on_the_trajectory(data):
     for i in range(7):
         axes[i].plot(data[:, i], label=f"Dimension {i + 1}")
         axes[i].legend()
-        axes[i].set_title(f"Evolution of Dimension {i + 1}")
+        axes[i].set_title(f"Error evolution of Dimension {i + 1}")
 
     # Plot the evolution of all states on the last subplot
     for i in range(7):
