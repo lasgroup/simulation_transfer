@@ -35,7 +35,7 @@ DEFAULTS_RACECAR = {
 
 DEFAULTS_RACECAR_REAL = {
     'sampling': 'consecutive',
-    'num_samples_test': 6000
+    'num_samples_test': 10000
 }
 
 _RACECAR_NOISE_STD_ENCODED = 40 * jnp.concatenate([DEFAULTS_RACECAR['obs_noise_std'][:2],
@@ -135,19 +135,23 @@ def get_rccar_recorded_data(encode_angle: bool = True, skip_first_n_points: int 
     return x_train, y_train, x_test, y_test
 
 
-def get_rccar_recorded_data_new(encode_angle: bool = True, skip_first_n_points: int = 30,
+def get_rccar_recorded_data_new(encode_angle: bool = True, skip_first_n_points: int = 10,
                                 action_delay: int = 3, action_stacking: bool = False):
     from brax.training.types import Transition
     recordings_dir = os.path.join(DATA_DIR, 'recordings_rc_car_v1')
 
-    file_name = ['recording_sep1_6.pickle',
-                 'recording_sep1_1.pickle',
-                 'recording_sep1_7.pickle',
-                 'recording_sep1_3.pickle',
-                 'recording_sep1_5.pickle',
-                 'recording_sep1_2.pickle',
-                 'recording_sep1_4.pickle',
-                 'recording_sep1_8.pickle']
+    file_name = ['recording_sep6_1.pickle',
+                 'recording_sep6_5.pickle',
+                 'recording_sep6_12.pickle',
+                 'recording_sep6_8.pickle',
+                 'recording_sep6_3.pickle',
+                 'recording_sep6_7.pickle',
+                 'recording_sep6_10.pickle',
+                 'recording_sep6_2.pickle',
+                 'recording_sep6_4.pickle',
+                 'recording_sep6_9.pickle',
+                 'recording_sep6_6.pickle',
+                 'recording_sep6_11.pickle',]
     transitions = []
     for fn in file_name:
         with open(recordings_dir + '/' + fn, 'rb') as f:
@@ -189,7 +193,7 @@ def get_rccar_recorded_data_new(encode_angle: bool = True, skip_first_n_points: 
         assert x_data.shape[1] - (2 * (1 + int(action_stacking) * action_delay)) == y_data.shape[1]
         return x_data, y_data
 
-    num_train_traj = 5
+    num_train_traj = 8
     prep_fn = partial(prepare_rccar_data, encode_angles=encode_angle, skip_first_n=skip_first_n_points,
                       action_delay=action_delay, action_stacking=action_stacking)
     x_train, y_train = map(lambda x: jnp.concatenate(x, axis=0), zip(*map(prep_fn, transitions[:num_train_traj])))
