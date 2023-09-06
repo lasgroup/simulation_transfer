@@ -28,6 +28,8 @@ def experiment(horizon_len: int,
                        bnn_best=best_bnn_model,
                        policy_best=best_policy,
                        pred_dif=predict_difference,
+                       diff_w=ctrl_diff_weight,
+                       cost_w=ctrl_cost_weight,
                        )
     group_name = '_'.join(list(str(key) + '=' + str(value) for key, value in config_dict.items() if key != 'seed'))
 
@@ -76,6 +78,8 @@ def experiment(horizon_len: int,
                        best_policy=best_policy,
                        margin_factor=margin_factor,
                        predict_difference=predict_difference,
+                       ctrl_diff_weight=ctrl_diff_weight,
+                       ctrl_cost_weight=ctrl_cost_weight,
                        )
 
     total_config = SAC_KWARGS | config_dict
