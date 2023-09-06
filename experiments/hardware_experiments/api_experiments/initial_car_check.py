@@ -16,14 +16,14 @@ Instructions:
 
 def main():
     # load recorded trajectory
-    RECORDING_NAME = f'recording_sep4_1.pickle'
+    RECORDING_NAME = f'recording_sep6_carcheck.pickle'
     with open(RECORDING_NAME, 'rb') as f:
         rec_traj = pickle.load(f)
-    rec_observations = rec_traj.observation[:200]
-    rec_actions = rec_traj.action[:200]
+    rec_observations = rec_traj.observation
+    rec_actions = rec_traj.action
 
     # replay action sequence on car
-    env = CarEnv(encode_angle=True)
+    env = CarEnv(encode_angle=True, control_frequency=32.7)
     obs, _ = env.reset()
     env.step(np.zeros(2))
     t_prev = time.time()
@@ -50,6 +50,16 @@ def main():
     plt.show()
 
     plt.plot(rewards)
+    plt.title('reward')
+    plt.show()
+
+    plt.plot(rec_actions[:, 1], label='throttle')
+    plt.plot(rec_actions[:, 0], label='steering')
+    plt.legend()
+    plt.title('actions')
+    plt.show()
+
+
     plt.title('reward')
     plt.show()
 
