@@ -15,6 +15,8 @@ applicable_configs = {
     'best_policy': [1],
     'margin_factor': [20.0],
     'predict_difference': [1],
+    'ctrl_cost_weight': [0.005, 0.01, 0.05, 0.1, 0.5],
+    'ctrl_diff_weight': [0.005, 0.01, 0.05, 0.1, 0.5],
 }
 
 
