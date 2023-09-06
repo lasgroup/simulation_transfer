@@ -1,10 +1,10 @@
 import exp
 from experiments.util import generate_run_commands, generate_base_command, dict_permutations
 
-PROJECT_NAME = 'OfflineTrainingSearchForSmoothPolicy'
+PROJECT_NAME = 'OfflineTrainingMaxThrottleHalf'
 
 applicable_configs = {
-    'horizon_len': [100, 200],
+    'horizon_len': [100],
     'seed': [0, 1],
     'project_name': [PROJECT_NAME],
     'sac_num_env_steps': [2_000_000],
@@ -15,8 +15,8 @@ applicable_configs = {
     'best_policy': [1],
     'margin_factor': [20.0],
     'predict_difference': [1],
-    'ctrl_cost_weight': [0.005, 0.01, 0.05, 0.1, 0.5],
-    'ctrl_diff_weight': [0.005, 0.01, 0.05, 0.1, 0.5],
+    'ctrl_cost_weight': [0.005, 0.01, 0.05],
+    'ctrl_diff_weight': [0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0],
 }
 
 

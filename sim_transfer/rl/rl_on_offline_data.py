@@ -26,12 +26,12 @@ from sim_transfer.sims.util import plot_rc_trajectory
 class RLFromOfflineData:
     def __init__(self,
                  data_source: str = 'real_racecar_new_actionstack',
-                 data_spec: dict = {'num_samples_train': 10000},
+                 data_spec: dict = {'num_samples_train': 20000},
                  bnn_model: BatchedNeuralNetworkModel = None,
                  include_aleatoric_noise: bool = True,
                  predict_difference: bool = True,
                  car_reward_kwargs: dict = None,
-                 max_replay_size_true_data_buffer: int = 10 ** 4,
+                 max_replay_size_true_data_buffer: int = 30 ** 4,
                  sac_kwargs: dict = None,
                  key: chex.PRNGKey = jr.PRNGKey(0),
                  return_best_policy: bool = True,
@@ -116,8 +116,8 @@ class RLFromOfflineData:
 
     def load_data(self):
         # y_train is the next state not the difference
-        x_train, y_train, x_test, y_test, sim = provide_data_and_sim(data_source='real_racecar_new_actionstack',
-                                                                     data_spec={'num_samples_train': 10000})
+        x_train, y_train, x_test, y_test, sim = provide_data_and_sim(data_source=self.data_source,
+                                                                     data_spec=self.data_spec)
         return x_train, y_train, x_test, y_test, sim
 
     def train_model(self,
@@ -140,7 +140,7 @@ class RLFromOfflineData:
             'learn_likelihood_std': learn_std,
             'likelihood_exponent': 0.5,
             'hidden_layer_sizes': [64, 64, 64],
-            'data_batch_size': 32,
+            'data_batch_size': 128,
         }
 
         if self.bnn_model is not None:
