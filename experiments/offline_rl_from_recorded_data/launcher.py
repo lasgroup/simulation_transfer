@@ -4,11 +4,11 @@ from experiments.util import generate_run_commands, generate_base_command, dict_
 PROJECT_NAME = 'OfflineTrainingAfterBUGinFlippingStackkedFrames'
 
 applicable_configs = {
-    'horizon_len': [2 ** 6, 100],
+    'horizon_len': [100, 200],
     'seed': [0, 1],
     'project_name': [PROJECT_NAME],
-    'sac_num_env_steps': [1_000_000, 2_000_000, 3_000_000],
-    'bnn_train_steps': [60_000, 80_000, 100_000],
+    'sac_num_env_steps': [2_000_000],
+    'bnn_train_steps': [100_000],
     'learnable_likelihood_std': ['yes'],
     'include_aleatoric_noise': [1],
     'best_bnn_model': [1],

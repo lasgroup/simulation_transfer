@@ -104,8 +104,8 @@ class RLFromOfflineData:
         self.y_test = y_test
 
         if self.predict_difference:
-            self.y_train = self.y_train - self.x_train[..., :7]
-            self.y_test = self.y_test - self.x_test[..., :7]
+            self.y_train = self.y_train - self.x_train[..., :self.state_dim]
+            self.y_test = self.y_test - self.x_test[..., :self.state_dim]
 
     def reshape_xs(self, xs):
         states_obs = xs[:, :self.state_dim]
