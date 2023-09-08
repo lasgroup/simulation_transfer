@@ -134,43 +134,26 @@ def run_with_learned_policy(filename_policy: str,
                                    show=True)
     wandb.log({'Trajectory_on_learned_model': wandb.Image(fig)})
 
-    if closed_loop:
-        for i in range(200):
-            action = policy(jnp.concatenate([obs, stacked_actions], axis=-1))
-            action = np.array(action)
-            actions.append(action)
-            obs, reward, terminate, info = env.step(action)
-            t = time.time()
-            time_diff = t - t_prev
-            t_prev = t
-            print(i, action, reward, time_diff)
-            time_diffs.append(time_diff)
+    for i in range(200):
+        action = policy(jnp.concatenate([obs, stacked_actions], axis=-1))
+        action = np.array(action)
+        actions.append(action)
+        obs, reward, terminate, info = env.step(action)
+        t = time.time()
+        time_diff = t - t_prev
+        t_prev = t
+        print(i, action, reward, time_diff)
+        time_diffs.append(time_diff)
 
-            # Now we shift the actions
-            stacked_actions = jnp.roll(stacked_actions, shift=action_dim)
-            stacked_actions = stacked_actions.at[:action_dim].set(action)
+        # Now we shift the actions
+        stacked_actions = jnp.roll(stacked_actions, shift=action_dim)
+        stacked_actions = stacked_actions.at[:action_dim].set(action)
 
-            observations.append(obs)
-            all_stacked_actions.append(stacked_actions)
+        observations.append(obs)
+        all_stacked_actions.append(stacked_actions)
 
-    if not closed_loop:
-        for i in range(200):
-            action = all_sim_actions[i]
-            action = np.array(action)
-            actions.append(action)
-            obs, reward, terminate, info = env.step(action)
-            t = time.time()
-            time_diff = t - t_prev
-            t_prev = t
-            print(i, action, reward, time_diff)
-            time_diffs.append(time_diff)
-            observations.append(obs)
-
-            # Now we shift the actions
-            stacked_actions = jnp.roll(stacked_actions, shift=action_dim)
-            stacked_actions = stacked_actions.at[:action_dim].set(action)
-            if terminate:
-                break
+        if terminate:
+            break
 
     env.close()
     observations = np.array(observations)
