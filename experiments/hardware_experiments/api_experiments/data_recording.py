@@ -8,13 +8,13 @@ import pickle
 import time
 from matplotlib import pyplot as plt
 
-RECORDING_NAME = 'recording_sep6_carcheck.pickle'
+RECORDING_NAME = 'recording_sep8_carcheck_debug.pickle'
 AR1_param = 0.0
 ACT_NOISE_BOUND = 0.0
 
 if __name__ == '__main__':
     controller = CarXbox2D(base_speed=1.0)
-    env = CarEnv(encode_angle=False, max_throttle=0.5, control_frequency=31.3)
+    env = CarEnv(encode_angle=False, max_throttle=0.5, control_time_ms=32.)
     obs, _ = env.reset()
     env.step(np.zeros(2))
 
@@ -79,3 +79,15 @@ if __name__ == '__main__':
     with open(RECORDING_NAME, 'wb') as f:
         pickle.dump(transitions, f)
     print(f'Saved recordings to: {RECORDING_NAME}')
+
+    with open(RECORDING_NAME, 'rb') as f:
+        transitions = pickle.load(f)
+
+
+    from sim_transfer.sims.util import plot_rc_trajectory
+    print(RECORDING_NAME)
+    print(transitions.observation.shape)
+
+    traj = transitions.observation[:400, :6]
+    acts = transitions.action[:400]
+    plot_rc_trajectory(traj, acts)

@@ -3,9 +3,10 @@ import time
 
 import jax.numpy as jnp
 import jax.random as jr
+import matplotlib.pyplot as plt
 import numpy as np
 import wandb
-from matplotlib import pyplot as plt
+from jax import jit
 
 from sim_transfer.hardware.car_env import CarEnv
 from sim_transfer.rl.rl_on_offline_data import RLFromOfflineData
@@ -14,8 +15,7 @@ from sim_transfer.sims.util import plot_rc_trajectory
 
 
 def run_with_learned_policy(filename_policy: str,
-                            filename__bnn_model: str,
-                            closed_loop: bool = False):
+                            filename__bnn_model: str):
     """
     Num stacked frames: 3
     """
@@ -105,65 +105,29 @@ def run_with_learned_policy(filename_policy: str,
     all_sim_obs = []
     all_sim_actions = []
 
-    for i in range(200):
-        sim_action = policy(jnp.concatenate([sim_obs, sim_stacked_actions], axis=-1))
-        sim_action = np.array(sim_action)
+    all_sim_stacked_actions = []
+    all_stacked_actions = []
 
-        z = jnp.concatenate([sim_obs, sim_stacked_actions, sim_action], axis=-1)
-        z = z.reshape(1, -1)
-        delta_x_dist = bnn_model.predict_dist(z, include_noise=True)
-        sim_key, subkey = jr.split(sim_key)
-        delta_x = delta_x_dist.sample(seed=subkey)
-        sim_obs = sim_obs + delta_x.reshape(-1)
+    for i in range(200):
+        action = policy(jnp.concatenate([obs, stacked_actions], axis=-1))
+        action = np.array(action)
+        actions.append(action)
+        obs, reward, terminate, info = env.step(action)
+        t = time.time()
+        time_diff = t - t_prev
+        t_prev = t
+        print(i, action, reward, time_diff)
+        time_diffs.append(time_diff)
 
         # Now we shift the actions
-        sim_stacked_actions = jnp.roll(sim_stacked_actions, shift=action_dim)
-        sim_stacked_actions = sim_stacked_actions.at[:action_dim].set(sim_action)
-        all_sim_actions.append(sim_action)
-        all_sim_obs.append(sim_obs)
+        stacked_actions = jnp.roll(stacked_actions, shift=action_dim)
+        stacked_actions = stacked_actions.at[:action_dim].set(action)
 
-    sim_observations_for_plotting = np.stack(all_sim_obs, axis=0)
-    sim_actions_for_plotting = np.stack(all_sim_actions, axis=0)
-    fig, axes = plot_rc_trajectory(sim_observations_for_plotting,
-                                   sim_actions_for_plotting,
-                                   encode_angle=True,
-                                   show=True)
-    wandb.log({'Trajectory_on_learned_model': wandb.Image(fig)})
+        observations.append(obs)
+        all_stacked_actions.append(stacked_actions)
 
-    if closed_loop:
-        for i in range(200):
-            action = policy(jnp.concatenate([obs, stacked_actions], axis=-1))
-            action = np.array(action)
-            actions.append(action)
-            obs, reward, terminate, info = env.step(action)
-            t = time.time()
-            time_diff = t - t_prev
-            t_prev = t
-            print(i, action, reward, time_diff)
-            time_diffs.append(time_diff)
-            observations.append(obs)
-
-            # Now we shift the actions
-            stacked_actions = jnp.roll(stacked_actions, shift=action_dim)
-            stacked_actions = stacked_actions.at[:action_dim].set(action)
-    if not closed_loop:
-        for i in range(200):
-            action = all_sim_actions[i]
-            action = np.array(action)
-            actions.append(action)
-            obs, reward, terminate, info = env.step(action)
-            t = time.time()
-            time_diff = t - t_prev
-            t_prev = t
-            print(i, action, reward, time_diff)
-            time_diffs.append(time_diff)
-            observations.append(obs)
-
-            # Now we shift the actions
-            stacked_actions = jnp.roll(stacked_actions, shift=action_dim)
-            stacked_actions = stacked_actions.at[:action_dim].set(action)
-            if terminate:
-                break
+        if terminate:
+            break
 
     env.close()
     observations = np.array(observations)
@@ -171,6 +135,27 @@ def run_with_learned_policy(filename_policy: str,
     plt.plot(time_diffs)
     plt.title('time diffs')
     plt.show()
+
+    # We plot the error between the predicted next state and the true next state on the true model
+    all_stacked_actions = np.stack(all_stacked_actions, axis=0)
+    extended_state = jnp.concatenate([observations, all_stacked_actions], axis=-1)
+    state_action_pairs = jnp.concatenate([extended_state, actions], axis=-1)
+
+    all_inputs = state_action_pairs[:, :-1]
+    target_outputs = observations[:, 1:] - observations[:, :-1]
+
+    """
+    We test the model error on the predicted trajectory
+    """
+    all_outputs = bnn_model.predict_dist(all_inputs, include_noise=False)
+    sim_key, subkey = jr.split(sim_key)
+    delta_x = all_outputs.sample(seed=subkey)
+
+    assert delta_x.shape == target_outputs.shape
+    # Random data for demonstration purposes
+    data = delta_x - target_outputs
+    fig, axes = plot_error_on_the_trajectory(data)
+    wandb.log({'Error of state difference prediction': wandb.Image(fig)})
 
     # We plot the true trajectory
     observations_for_plotting = np.stack(observations, axis=0)
@@ -196,10 +181,59 @@ def run_with_learned_policy(filename_policy: str,
     print('finished plotting')
     fig.show()
 
+    for i in range(200):
+        sim_action = policy(jnp.concatenate([sim_obs, sim_stacked_actions], axis=-1))
+        sim_action = np.array(sim_action)
+
+        z = jnp.concatenate([sim_obs, sim_stacked_actions, sim_action], axis=-1)
+        z = z.reshape(1, -1)
+        delta_x_dist = jit(bnn_model.predict_dist)(z, include_noise=True)
+        sim_key, subkey = jr.split(sim_key)
+        delta_x = delta_x_dist.sample(seed=subkey)
+        sim_obs = sim_obs + delta_x.reshape(-1)
+
+        # Now we shift the actions
+        sim_stacked_actions = jnp.roll(sim_stacked_actions, shift=action_dim)
+        sim_stacked_actions = sim_stacked_actions.at[:action_dim].set(sim_action)
+        all_sim_actions.append(sim_action)
+        all_sim_obs.append(sim_obs)
+        all_sim_stacked_actions.append(sim_stacked_actions)
+
+    sim_observations_for_plotting = np.stack(all_sim_obs, axis=0)
+    sim_actions_for_plotting = np.stack(all_sim_actions, axis=0)
+    fig, axes = plot_rc_trajectory(sim_observations_for_plotting,
+                                   sim_actions_for_plotting,
+                                   encode_angle=True,
+                                   show=True)
+    wandb.log({'Trajectory_on_learned_model': wandb.Image(fig)})
+
+
+def plot_error_on_the_trajectory(data):
+    # Create a figure with 8 subplots arranged in 2x4
+    fig, axes = plt.subplots(2, 4, figsize=(15, 10))
+
+    # Flatten the axes for easy iteration
+    axes = axes.flatten()
+
+    # Plot each dimension on a separate subplot
+    for i in range(7):
+        axes[i].plot(data[:, i], label=f"Dimension {i + 1}")
+        axes[i].legend()
+        axes[i].set_title(f"Error evolution of Dimension {i + 1}")
+
+    # Plot the evolution of all states on the last subplot
+    for i in range(7):
+        axes[7].plot(data[:, i], label=f"Dimension {i + 1}")
+    axes[7].legend()
+    axes[7].set_title("Evolution of All States")
+
+    # Adjust layout for better view
+    plt.tight_layout()
+    return fig, axes
+
 
 if __name__ == '__main__':
     file_policy = 'parameters.pkl'
     file_bnn_model = 'bnn_model.pkl'
     run_with_learned_policy(filename_policy=file_policy,
-                            filename__bnn_model=file_bnn_model,
-                            closed_loop=True)
+                            filename__bnn_model=file_bnn_model)

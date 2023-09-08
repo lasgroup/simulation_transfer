@@ -44,7 +44,6 @@ sampling_buffer = UniformSamplingQueue(max_replay_size=num_init_states,
                                        sample_batch_size=1)
 
 sampling_buffer_state = sampling_buffer.init(jr.PRNGKey(0))
-
 sampling_buffer_state = sampling_buffer.insert(sampling_buffer_state, init_samples)
 
 # Create brax environment

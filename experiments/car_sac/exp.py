@@ -29,10 +29,11 @@ def experiment(num_envs: int,
     system = CarSystem(encode_angle=ENCODE_ANGLE,
                        action_delay=0.00,
                        use_tire_model=True,
-                       ctrl_cost_weight=0.005)
+                       ctrl_cost_weight=0.005,
+                       margin_factor=20)
 
     # Create replay buffer
-    num_init_states = 1000
+    num_init_states = 10
     keys = jr.split(jr.PRNGKey(seed), num_init_states)
     init_sys_state = vmap(system.reset)(key=keys)
 
@@ -113,6 +114,7 @@ def experiment(num_envs: int,
                           use_tire_model=True,
                           use_obs_noise=True,
                           ctrl_cost_weight=0.005,
+                          margin_factor=20.0
                           )
 
     def simulate_on_true_envs(key: chex.PRNGKey) -> Transition:

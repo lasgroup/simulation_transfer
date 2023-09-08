@@ -75,12 +75,12 @@ class LearnedCarSystem(System[DynamicsParams, CarRewardParams]):
                  num_frame_stack: int = 0,
                  **car_reward_kwargs: dict):
         self.num_frame_stack = num_frame_stack
-        reward = CarReward(**car_reward_kwargs)
+        reward = CarReward(**car_reward_kwargs, num_frame_stack=num_frame_stack)
         dynamics = LearnedDynamics(x_dim=reward.x_dim + self.num_frame_stack * reward.u_dim,
                                    u_dim=reward.u_dim, model=model, include_noise=include_noise,
                                    predict_difference=predict_difference,
                                    num_frame_stack=num_frame_stack)
-        System.__init__(self, dynamics=dynamics, reward=CarReward(**car_reward_kwargs))
+        System.__init__(self, dynamics=dynamics, reward=reward)
         self._x_dim = reward.x_dim
         self._u_dim = reward.u_dim
 
@@ -99,9 +99,7 @@ class LearnedCarSystem(System[DynamicsParams, CarRewardParams]):
         new_key, key_x_next, key_reward = jr.split(system_params.key, 3)
         x_next_dist, next_dynamics_params = self.dynamics.next_state(x, u, system_params.dynamics_params)
         x_next = x_next_dist.sample(seed=key_x_next)
-        _x = x[:self._x_dim]
-        _x_next = x_next[:self._x_dim]
-        reward_dist, next_reward_params = self.reward(_x, u, system_params.reward_params, _x_next)
+        reward_dist, next_reward_params = self.reward(x, u, system_params.reward_params, x_next)
         return SystemState(x_next=x_next,
                            reward=reward_dist.sample(seed=key_reward),
                            system_params=SystemParams(dynamics_params=next_dynamics_params,
