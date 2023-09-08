@@ -1,7 +1,7 @@
 import exp
 from experiments.util import generate_run_commands, generate_base_command, dict_permutations
 
-PROJECT_NAME = 'OfflineTrainingAfterBugWithDelayedActions'
+PROJECT_NAME = 'OfflineTrainingTestSmallerDatasets'
 
 applicable_configs = {
     'horizon_len': [100],
@@ -17,7 +17,7 @@ applicable_configs = {
     'predict_difference': [1],
     'ctrl_cost_weight': [0.005],
     'ctrl_diff_weight': [1.0],
-    'num_offline_collected_transitions': [200, 400, 600, 1000, 2000, 5000, 10000]
+    'num_offline_collected_transitions': [200, 400, 600, 1_000, 2_000, 5_000, 10_000, 15_000]
 }
 
 
