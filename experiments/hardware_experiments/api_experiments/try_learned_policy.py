@@ -6,7 +6,6 @@ import jax.random as jr
 import matplotlib.pyplot as plt
 import numpy as np
 import wandb
-from jax import jit
 
 from sim_transfer.hardware.car_env import CarEnv
 from sim_transfer.rl.rl_on_offline_data import RLFromOfflineData
@@ -15,7 +14,7 @@ from sim_transfer.sims.util import plot_rc_trajectory
 
 
 def run_with_learned_policy(filename_policy: str,
-                            filename__bnn_model: str):
+                            filename_bnn_model: str):
     """
     Num stacked frames: 3
     """
@@ -64,7 +63,7 @@ def run_with_learned_policy(filename_policy: str,
         entity='trevenl'
     )
 
-    with open(filename__bnn_model, 'rb') as handle:
+    with open(filename_bnn_model, 'rb') as handle:
         bnn_model = pickle.load(handle)
         """
         We predict state difference:
@@ -78,7 +77,8 @@ def run_with_learned_policy(filename_policy: str,
     policy = rl_from_offline_data.prepare_policy(params=None, filename=filename_policy)
 
     # replay action sequence on car
-    env = CarEnv(encode_angle=True, num_frame_stacks=0)
+    env = CarEnv(encode_angle=True, num_frame_stacks=0, max_throttle=0.5,
+                 control_time_ms=27.9)
     obs, _ = env.reset()
     print(obs)
     initial_obs = obs
@@ -108,6 +108,8 @@ def run_with_learned_policy(filename_policy: str,
     all_sim_stacked_actions = []
     all_stacked_actions = []
 
+    rewards = []
+
     for i in range(200):
         action = policy(jnp.concatenate([obs, stacked_actions], axis=-1))
         action = np.array(action)
@@ -124,29 +126,55 @@ def run_with_learned_policy(filename_policy: str,
         stacked_actions = stacked_actions.at[:action_dim].set(action)
 
         observations.append(obs)
+        rewards.append(reward)
         all_stacked_actions.append(stacked_actions)
 
         if terminate:
             break
 
+    print('We end with simulation')
     env.close()
     observations = np.array(observations)
+    actions = np.array(actions)
     time_diffs = np.array(time_diffs)
-    plt.plot(time_diffs)
+
+    print('Avg time per iter:', np.mean(time_diffs[1:]))
+    plt.plot(time_diffs[1:])
     plt.title('time diffs')
     plt.show()
 
+    # Here we compute the reward of the policy
+    print('We calculating rewards')
+    rewards = np.array(rewards)
+    print('1')
+    reward_from_observations = np.sum(rewards)
+    print('2')
+    reward_terminal = info['terminal_reward']
+    print('3')
+    total_reward = reward_from_observations + reward_terminal
+    print('4')
+    print('Terminal reward: ', reward_terminal)
+    print('Reward from observations: ', reward_from_observations)
+    print('Total reward: ', total_reward)
+
+    wandb.log({
+        "terminal_reward" : reward_terminal,
+        "reward_from_observations": reward_from_observations,
+        "total_reward": total_reward
+    })
+
     # We plot the error between the predicted next state and the true next state on the true model
     all_stacked_actions = np.stack(all_stacked_actions, axis=0)
-    extended_state = jnp.concatenate([observations, all_stacked_actions], axis=-1)
-    state_action_pairs = jnp.concatenate([extended_state, actions], axis=-1)
+    extended_state = np.concatenate([observations, all_stacked_actions], axis=-1)
+    state_action_pairs = np.concatenate([extended_state, actions], axis=-1)
 
-    all_inputs = state_action_pairs[:, :-1]
-    target_outputs = observations[:, 1:] - observations[:, :-1]
+    all_inputs = state_action_pairs[:-1, :]
+    target_outputs = observations[1:, :] - observations[:-1, :]
 
     """
     We test the model error on the predicted trajectory
     """
+    print('We test the model error on the predicted trajectory')
     all_outputs = bnn_model.predict_dist(all_inputs, include_noise=False)
     sim_key, subkey = jr.split(sim_key)
     delta_x = all_outputs.sample(seed=subkey)
@@ -158,28 +186,11 @@ def run_with_learned_policy(filename_policy: str,
     wandb.log({'Error of state difference prediction': wandb.Image(fig)})
 
     # We plot the true trajectory
-    observations_for_plotting = np.stack(observations, axis=0)
-    actions_for_plotting = np.stack(actions, axis=0)
-    fig, axes = plot_rc_trajectory(observations_for_plotting,
-                                   actions_for_plotting,
+    fig, axes = plot_rc_trajectory(observations,
+                                   actions,
                                    encode_angle=True,
                                    show=True)
     wandb.log({'Trajectory_on_true_model': wandb.Image(fig)})
-
-    observations = decode_angles(observations, angle_idx=2)
-    # comparison plot recorded and new traj
-    fig, axes = plt.subplots(ncols=3, figsize=(12, 4))
-
-    axes[0].plot(observations[:, 0], color='orange', label='new')
-    axes[1].plot(observations[:, 1], color='orange')
-    axes[2].plot(observations[:, 2], color='orange')
-
-    axes[0].set_title("x pos")
-    axes[1].set_title("y pos")
-    axes[2].set_title("theta")
-    fig.legend()
-    print('finished plotting')
-    fig.show()
 
     for i in range(200):
         sim_action = policy(jnp.concatenate([sim_obs, sim_stacked_actions], axis=-1))
@@ -187,7 +198,7 @@ def run_with_learned_policy(filename_policy: str,
 
         z = jnp.concatenate([sim_obs, sim_stacked_actions, sim_action], axis=-1)
         z = z.reshape(1, -1)
-        delta_x_dist = jit(bnn_model.predict_dist)(z, include_noise=True)
+        delta_x_dist = bnn_model.predict_dist(z, include_noise=True)
         sim_key, subkey = jr.split(sim_key)
         delta_x = delta_x_dist.sample(seed=subkey)
         sim_obs = sim_obs + delta_x.reshape(-1)
@@ -206,7 +217,7 @@ def run_with_learned_policy(filename_policy: str,
                                    encode_angle=True,
                                    show=True)
     wandb.log({'Trajectory_on_learned_model': wandb.Image(fig)})
-
+    return observations, actions
 
 def plot_error_on_the_trajectory(data):
     # Create a figure with 8 subplots arranged in 2x4
@@ -233,7 +244,7 @@ def plot_error_on_the_trajectory(data):
 
 
 if __name__ == '__main__':
-    file_policy = 'parameters.pkl'
-    file_bnn_model = 'bnn_model.pkl'
-    run_with_learned_policy(filename_policy=file_policy,
-                            filename__bnn_model=file_bnn_model)
+    filename_policy = 'parameters.pkl'
+    filename_bnn_model = 'bnn_model.pkl'
+    observations_for_plotting, actions_for_plotting = run_with_learned_policy(filename_policy=filename_policy,
+                           filename_bnn_model=filename_bnn_model)

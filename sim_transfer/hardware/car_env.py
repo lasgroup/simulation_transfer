@@ -112,6 +112,7 @@ class CarEnv(gym.Env):
         if not self.initial_reset:
             self.log_mocap_info()
         self.initial_reset = False
+        self.env_steps = 0
 
         # dialogue with user
         answer = input("Press Y to continue the reset.")
@@ -148,6 +149,8 @@ class CarEnv(gym.Env):
             action: numpy array of shape (2,) with [steer, throttle]
         """
 
+        # update time
+        self.env_steps += 1
         # check, clip and rescale actions
         assert np.shape(action) == (2,)
         action = np.clip(action, -1.0, 1.0)
@@ -184,13 +187,14 @@ class CarEnv(gym.Env):
         reward = self.reward(_last_state, action, state)
 
         # check termination conditions
-        terminate = self.terminate(state)
-        return state_with_last_acts, reward, terminate, {'time_elapsed': time_elapsed}
+        terminate, terminal_reward = self.terminate(state)
+        return state_with_last_acts, reward, terminate, {'time_elapsed': time_elapsed,
+                                                         'terminal_reward': terminal_reward}
 
     def reward(self, last_state, action, state):
         return self._reward_model.forward(obs=None, action=action, next_obs=state)
 
-    def terminate(self, state):
+    def terminate(self, state: np.array):
         reached_goal = self.reached_goal(state, self._goal)
         out_of_bound = self.constraint_violation(state)
         time_out = self.env_steps >= self.max_steps
@@ -202,7 +206,10 @@ class CarEnv(gym.Env):
         elif time_out:
             print("TIMEOUT!")
         terminate = reached_goal + out_of_bound + time_out
-        return terminate
+        terminal_reward = 0.0
+        if reached_goal:
+            terminal_reward += self.max_steps - self.env_steps
+        return terminate, terminal_reward
 
     def reached_goal(self, state: np.array, goal: np.array) -> bool:
         if self.encode_angle:
