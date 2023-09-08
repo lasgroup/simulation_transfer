@@ -1,7 +1,17 @@
 import jax
 import jax.numpy as jnp
+import numpy as np
 from typing import Optional
 
+
+def encode_angles_numpy(state: np.array, angle_idx: int) -> np.array:
+    """ Encodes the angle (theta) as sin(theta) and cos(theta) """
+    assert angle_idx <= state.shape[-1] - 1
+    theta = state[..., angle_idx:angle_idx + 1]
+    state_encoded = np.concatenate([state[..., :angle_idx], np.sin(theta), np.cos(theta),
+                                     state[..., angle_idx + 1:]], axis=-1)
+    assert state_encoded.shape[-1] == state.shape[-1] + 1
+    return state_encoded
 
 def encode_angles(state: jnp.array, angle_idx: int) -> jnp.array:
     """ Encodes the angle (theta) as sin(theta) and cos(theta) """
@@ -12,6 +22,15 @@ def encode_angles(state: jnp.array, angle_idx: int) -> jnp.array:
     assert state_encoded.shape[-1] == state.shape[-1] + 1
     return state_encoded
 
+
+def decode_angles_numpy(state: np.array, angle_idx: int) -> np.array:
+    """ Decodes the angle (theta) from sin(theta) and cos(theta)"""
+    assert angle_idx < state.shape[-1] - 1
+    theta = np.arctan2(state[..., angle_idx:angle_idx + 1],
+                        state[..., angle_idx + 1:angle_idx + 2])
+    state_decoded = np.concatenate([state[..., :angle_idx], theta, state[..., angle_idx + 2:]], axis=-1)
+    assert state_decoded.shape[-1] == state.shape[-1] - 1
+    return state_decoded
 
 def decode_angles(state: jnp.array, angle_idx: int) -> jnp.array:
     """ Decodes the angle (theta) from sin(theta) and cos(theta)"""

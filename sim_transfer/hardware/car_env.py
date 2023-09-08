@@ -6,7 +6,7 @@ import numpy as np
 from gym.spaces import Box
 from typing import Optional
 from sim_transfer.sims.envs import RCCarEnvReward
-from sim_transfer.sims.util import encode_angles, decode_angles
+from sim_transfer.sims.util import encode_angles_numpy as encode_angles, decode_angles_numpy as decode_angles
 from typing import Dict, Tuple, Any
 
 
@@ -214,7 +214,7 @@ class CarEnv(gym.Env):
         ang_dev = np.abs(self.normalize_theta(state[2] - goal[2]))
         speed = np.sqrt(np.square(state[..., 3:]).sum(-1))
 
-        in_bounds = np.logical_and(np.logical_and(dist < 0.25, ang_dev < 1.0), speed < 1.5)
+        in_bounds = np.logical_and(np.logical_and(dist < 0.05, ang_dev < 0.2), speed < 0.5)
         return in_bounds
 
     @staticmethod
