@@ -6,6 +6,7 @@ import jax.random as jr
 import matplotlib.pyplot as plt
 import numpy as np
 import wandb
+from jax import jit
 
 from sim_transfer.hardware.car_env import CarEnv
 from sim_transfer.rl.rl_on_offline_data import RLFromOfflineData
@@ -14,8 +15,7 @@ from sim_transfer.sims.util import plot_rc_trajectory
 
 
 def run_with_learned_policy(filename_policy: str,
-                            filename__bnn_model: str,
-                            closed_loop: bool = False):
+                            filename__bnn_model: str):
     """
     Num stacked frames: 3
     """
@@ -109,32 +109,6 @@ def run_with_learned_policy(filename_policy: str,
     all_stacked_actions = []
 
     for i in range(200):
-        sim_action = policy(jnp.concatenate([sim_obs, sim_stacked_actions], axis=-1))
-        sim_action = np.array(sim_action)
-
-        z = jnp.concatenate([sim_obs, sim_stacked_actions, sim_action], axis=-1)
-        z = z.reshape(1, -1)
-        delta_x_dist = bnn_model.predict_dist(z, include_noise=True)
-        sim_key, subkey = jr.split(sim_key)
-        delta_x = delta_x_dist.sample(seed=subkey)
-        sim_obs = sim_obs + delta_x.reshape(-1)
-
-        # Now we shift the actions
-        sim_stacked_actions = jnp.roll(sim_stacked_actions, shift=action_dim)
-        sim_stacked_actions = sim_stacked_actions.at[:action_dim].set(sim_action)
-        all_sim_actions.append(sim_action)
-        all_sim_obs.append(sim_obs)
-        all_sim_stacked_actions.append(sim_stacked_actions)
-
-    sim_observations_for_plotting = np.stack(all_sim_obs, axis=0)
-    sim_actions_for_plotting = np.stack(all_sim_actions, axis=0)
-    fig, axes = plot_rc_trajectory(sim_observations_for_plotting,
-                                   sim_actions_for_plotting,
-                                   encode_angle=True,
-                                   show=True)
-    wandb.log({'Trajectory_on_learned_model': wandb.Image(fig)})
-
-    for i in range(200):
         action = policy(jnp.concatenate([obs, stacked_actions], axis=-1))
         action = np.array(action)
         actions.append(action)
@@ -163,9 +137,6 @@ def run_with_learned_policy(filename_policy: str,
     plt.show()
 
     # We plot the error between the predicted next state and the true next state on the true model
-    if not closed_loop:
-        all_stacked_actions = all_sim_stacked_actions
-
     all_stacked_actions = np.stack(all_stacked_actions, axis=0)
     extended_state = jnp.concatenate([observations, all_stacked_actions], axis=-1)
     state_action_pairs = jnp.concatenate([extended_state, actions], axis=-1)
@@ -210,6 +181,32 @@ def run_with_learned_policy(filename_policy: str,
     print('finished plotting')
     fig.show()
 
+    for i in range(200):
+        sim_action = policy(jnp.concatenate([sim_obs, sim_stacked_actions], axis=-1))
+        sim_action = np.array(sim_action)
+
+        z = jnp.concatenate([sim_obs, sim_stacked_actions, sim_action], axis=-1)
+        z = z.reshape(1, -1)
+        delta_x_dist = jit(bnn_model.predict_dist)(z, include_noise=True)
+        sim_key, subkey = jr.split(sim_key)
+        delta_x = delta_x_dist.sample(seed=subkey)
+        sim_obs = sim_obs + delta_x.reshape(-1)
+
+        # Now we shift the actions
+        sim_stacked_actions = jnp.roll(sim_stacked_actions, shift=action_dim)
+        sim_stacked_actions = sim_stacked_actions.at[:action_dim].set(sim_action)
+        all_sim_actions.append(sim_action)
+        all_sim_obs.append(sim_obs)
+        all_sim_stacked_actions.append(sim_stacked_actions)
+
+    sim_observations_for_plotting = np.stack(all_sim_obs, axis=0)
+    sim_actions_for_plotting = np.stack(all_sim_actions, axis=0)
+    fig, axes = plot_rc_trajectory(sim_observations_for_plotting,
+                                   sim_actions_for_plotting,
+                                   encode_angle=True,
+                                   show=True)
+    wandb.log({'Trajectory_on_learned_model': wandb.Image(fig)})
+
 
 def plot_error_on_the_trajectory(data):
     # Create a figure with 8 subplots arranged in 2x4
@@ -239,5 +236,4 @@ if __name__ == '__main__':
     file_policy = 'parameters.pkl'
     file_bnn_model = 'bnn_model.pkl'
     run_with_learned_policy(filename_policy=file_policy,
-                            filename__bnn_model=file_bnn_model,
-                            closed_loop=True)
+                            filename__bnn_model=file_bnn_model)
