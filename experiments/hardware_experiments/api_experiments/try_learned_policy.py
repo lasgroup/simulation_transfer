@@ -81,8 +81,6 @@ def run_with_learned_policy(filename_policy: str,
                  control_time_ms=27.9)
     obs, _ = env.reset()
     print(obs)
-    initial_obs = obs
-    stop = False
     observations = []
     env.step(np.zeros(2))
     t_prev = time.time()
@@ -146,13 +144,9 @@ def run_with_learned_policy(filename_policy: str,
     # Here we compute the reward of the policy
     print('We calculating rewards')
     rewards = np.array(rewards)
-    print('1')
     reward_from_observations = np.sum(rewards)
-    print('2')
     reward_terminal = info['terminal_reward']
-    print('3')
     total_reward = reward_from_observations + reward_terminal
-    print('4')
     print('Terminal reward: ', reward_terminal)
     print('Reward from observations: ', reward_from_observations)
     print('Total reward: ', total_reward)
