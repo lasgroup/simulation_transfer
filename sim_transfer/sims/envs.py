@@ -76,7 +76,7 @@ class RCCarSimEnv:
         'c_r': 1.27,
         'd_f': 0.02,
         'd_r': 0.017,
-        'i_com': 0.0,
+        'i_com': 0.01,
         'steering_limit': 0.3543
     }
 
