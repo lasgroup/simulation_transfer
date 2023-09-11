@@ -58,27 +58,26 @@ class RCCarSimEnv:
     _goal: jnp.array = jnp.array([0.0, 0.0, 0.0])
     _init_pose: jnp.array = jnp.array([1.42, -1.04, jnp.pi])
     _angle_idx: int = 2
-    _obs_noise_stds: jnp.array = 0.05 * jnp.exp(jnp.array([-3.3170326, -3.7336411, -2.7081904,
-                                                           -2.7841284, -2.7067015, -1.4446207]))
+    _obs_noise_stds: jnp.array = 0.1 * jnp.exp(jnp.array([-4, -4, -3.5, -2.5, -2.5, -1.]))
     _default_car_model_params_bicycle: Dict = {
         'use_blend': 0.0,
         'm': 1.65,
         'l_f': 0.13,
         'l_r': 0.17,
-        'angle_offset': 0.028,
+        'angle_offset': 0.0156,
         'b_f': 2.58,
         'b_r': 3.39,
         'blend_ratio_lb': 0.01,
         'blend_ratio_ub': 0.01,
-        'c_d': 0.29308078,
+        'c_d': 0.41464928,
         'c_f': 1.2,
-        'c_m_1': 13.977059,
-        'c_m_2': 1.1913459,
+        'c_m_1': 10.701814,
+        'c_m_2': 1.4208151,
         'c_r': 1.27,
         'd_f': 0.02,
         'd_r': 0.017,
-        'i_com': 0.85,
-        'steering_limit': 0.4
+        'i_com': 0.0,
+        'steering_limit': 0.3543
     }
 
     _default_car_model_params_blend: Dict = {
@@ -86,20 +85,20 @@ class RCCarSimEnv:
         'm': 1.65,
         'l_f': 0.13,
         'l_r': 0.17,
-        'angle_offset': 0.005,
-        'b_f': 2.7741547,
-        'b_r': 4.0383615,
-        'blend_ratio_lb': 0.08643041,
-        'blend_ratio_ub': 0.0,
+        'angle_offset': -0.0213,
+        'b_f': 1.8966477,
+        'b_r': 6.2884626,
+        'blend_ratio_lb': 0.06637411,
+        'blend_ratio_ub': 0.00554,
         'c_d': 0.0,
-        'c_f': 1.5461895,
-        'c_m_1': 12.054457,
-        'c_m_2': 0.9322442,
-        'c_r': 1.2297437,
-        'd_f': 0.5795012,
-        'd_r': 0.31110075,
-        'i_com': 0.12327465,
-        'steering_limit': 0.5977784,
+        'c_f': 1.5381637,
+        'c_m_1': 11.102413,
+        'c_m_2': 1.3169205,
+        'c_r': 1.186591,
+        'd_f': 0.5968191,
+        'd_r': 0.42716035,
+        'i_com': 0.0685434,
+        'steering_limit': 0.6337473,
     }
 
     def __init__(self, ctrl_cost_weight: float = 0.005, encode_angle: bool = False, use_obs_noise: bool = True,
@@ -254,7 +253,7 @@ class RCCarSimEnv:
 if __name__ == '__main__':
     ENCODE_ANGLE = True
     env = RCCarSimEnv(encode_angle=ENCODE_ANGLE,
-                      action_delay=0.07,
+                      action_delay=0.00,
                       use_tire_model=True,
                       use_obs_noise=True)
 
@@ -265,7 +264,7 @@ if __name__ == '__main__':
     actions = []
     for i in range(120):
         t = i / 30.
-        a = jnp.array([- 1 * jnp.cos(1.0 * t), 0.8 / (t + 1)])
+        a = jnp.array([- 0.5 * jnp.cos(1.0 * t), 0.8 / (t + 1)])
         s, r, _, _ = env.step(a)
         traj.append(s)
         actions.append(a)
@@ -277,3 +276,4 @@ if __name__ == '__main__':
     actions = jnp.stack(actions)
 
     plot_rc_trajectory(traj, actions, encode_angle=ENCODE_ANGLE)
+    print(traj[-1, :])
