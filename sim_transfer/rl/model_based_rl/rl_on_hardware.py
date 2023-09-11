@@ -181,6 +181,7 @@ class RealCarRL:
             policy_input = jnp.concatenate([obs, actions_buffer], axis=-1)
             action = policy(policy_input)
             next_obs, reward, done, info = self.gym_env.step(action)
+            assert next_obs.shape == (self.state_dim,)
             transitions_for_plotting.append(Transition(observation=obs,
                                                        action=action,
                                                        reward=jnp.array(reward),
@@ -200,7 +201,10 @@ class RealCarRL:
 
         concatenated_transitions_for_plotting = jtu.tree_map(lambda *xs: jnp.stack(xs, axis=0),
                                                              *transitions_for_plotting)
-        reward_on_true_system = jnp.sum(concatenated_transitions_for_plotting.reward)
+        reward_from_trajectory = jnp.sum(concatenated_transitions_for_plotting.reward)
+        # We add now the
+        reward_terminal = info['terminal_reward']
+        reward_on_true_system = reward_from_trajectory + reward_terminal
         print('Reward on true system:', reward_on_true_system)
         fig, axes = plot_rc_trajectory(concatenated_transitions_for_plotting.next_observation,
                                        concatenated_transitions_for_plotting.action,

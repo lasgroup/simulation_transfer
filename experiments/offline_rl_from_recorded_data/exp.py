@@ -19,17 +19,13 @@ def experiment(horizon_len: int,
                predict_difference: int,
                ctrl_cost_weight: float,
                ctrl_diff_weight: float,
+               num_offline_collected_transitions: int,
                ):
     config_dict = dict(horizon_len=horizon_len,
                        seed=seed,
-                       ll_std=learnable_likelihood_std,
-                       bnn_s=bnn_train_steps,
-                       sac_s=sac_num_env_steps,
-                       bnn_best=best_bnn_model,
-                       policy_best=best_policy,
-                       pred_dif=predict_difference,
                        diff_w=ctrl_diff_weight,
                        cost_w=ctrl_cost_weight,
+                       num_offline_trans=num_offline_collected_transitions,
                        )
     group_name = '_'.join(list(str(key) + '=' + str(value) for key, value in config_dict.items() if key != 'seed'))
 
@@ -80,6 +76,7 @@ def experiment(horizon_len: int,
                        predict_difference=predict_difference,
                        ctrl_diff_weight=ctrl_diff_weight,
                        ctrl_cost_weight=ctrl_cost_weight,
+                       num_offline_collected_transitions=num_offline_collected_transitions
                        )
 
     total_config = SAC_KWARGS | config_dict
@@ -91,6 +88,7 @@ def experiment(horizon_len: int,
     )
 
     rl_from_offline_data = RLFromOfflineData(
+        data_spec={'num_samples_train': num_offline_collected_transitions},
         key=jr.PRNGKey(seed),
         sac_kwargs=SAC_KWARGS,
         car_reward_kwargs=car_reward_kwargs,
@@ -123,6 +121,7 @@ def main(args):
         predict_difference=args.predict_difference,
         ctrl_cost_weight=args.ctrl_cost_weight,
         ctrl_diff_weight=args.ctrl_diff_weight,
+        num_offline_collected_transitions=args.num_offline_collected_transitions,
     )
 
 
@@ -141,5 +140,6 @@ if __name__ == '__main__':
     parser.add_argument('--predict_difference', type=int, default=0)
     parser.add_argument('--ctrl_cost_weight', type=float, default=0.005)
     parser.add_argument('--ctrl_diff_weight', type=float, default=0.01)
+    parser.add_argument('--num_offline_collected_transitions', type=int, default=1_000)
     args = parser.parse_args()
     main(args)
