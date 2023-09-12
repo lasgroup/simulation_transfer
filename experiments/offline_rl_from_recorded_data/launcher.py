@@ -8,7 +8,7 @@ applicable_configs = {
     'seed': [0, 1],
     'project_name': [PROJECT_NAME],
     'sac_num_env_steps': [2_000_000],
-    'bnn_train_steps': [100_000],
+    'bnn_train_steps': [60_000],
     'learnable_likelihood_std': ['yes'],
     'include_aleatoric_noise': [1],
     'best_bnn_model': [1],
@@ -17,7 +17,8 @@ applicable_configs = {
     'predict_difference': [1],
     'ctrl_cost_weight': [0.005],
     'ctrl_diff_weight': [1.0],
-    'num_offline_collected_transitions': [200, 400, 600, 1_000, 2_000, 5_000, 10_000, 15_000]
+    'num_offline_collected_transitions': [200, 300, 400, 600, 800, 1_000, 2_000],
+    'use_sim_prior': [1],
 }
 
 
