@@ -24,6 +24,7 @@ def experiment(horizon_len: int,
                ctrl_diff_weight: float,
                num_offline_collected_transitions: int,
                use_sim_prior: int,
+               use_sim_normalization_stats: int
                ):
     config_dict = dict(horizon_len=horizon_len,
                        seed=seed,
@@ -119,17 +120,22 @@ def experiment(horizon_len: int,
                                      ])
         if predict_difference:
             sim = PredictStateChangeWrapper(sim)
+        if use_sim_normalization_stats:
+            standard_params['normalization_stats'] = sim.normalization_stats
         model = BNN_FSVGD_SimPrior(
             **standard_params,
             domain=sim.domain,
             function_sim=sim,
             score_estimator='gp',
             num_train_steps=bnn_train_steps,
-            normalization_stats=sim.normalization_stats,
             num_f_samples=256,
             bandwidth_svgd=1.0
         )
     else:
+        if predict_difference:
+            sim = PredictStateChangeWrapper(sim)
+        if use_sim_normalization_stats:
+            standard_params['normalization_stats'] = sim.normalization_stats
         model = BNN_SVGD(
             **standard_params,
             num_train_steps=bnn_train_steps,
@@ -170,6 +176,7 @@ def main(args):
         ctrl_diff_weight=args.ctrl_diff_weight,
         num_offline_collected_transitions=args.num_offline_collected_transitions,
         use_sim_prior=args.use_sim_prior,
+        use_sim_normalization_stats=args.use_sim_normalization_stats,
     )
 
 
@@ -190,5 +197,6 @@ if __name__ == '__main__':
     parser.add_argument('--ctrl_diff_weight', type=float, default=0.01)
     parser.add_argument('--num_offline_collected_transitions', type=int, default=1_000)
     parser.add_argument('--use_sim_prior', type=int, default=1)
+    parser.add_argument('--use_sim_normalization_stats', type=int, default=1)
     args = parser.parse_args()
     main(args)
