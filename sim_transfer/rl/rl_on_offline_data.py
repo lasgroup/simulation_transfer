@@ -121,7 +121,6 @@ class RLFromOfflineData:
         return x_train, y_train, x_test, y_test, sim
 
     def train_model(self,
-                    learn_std: bool,
                     bnn_train_steps: int,
                     return_best_bnn: bool = True
                     ) -> BNN_SVGD:
@@ -227,10 +226,9 @@ class RLFromOfflineData:
         return policy
 
     def prepare_policy_from_offline_data(self,
-                                         learn_std: bool = True,
                                          bnn_train_steps: int = 10_000,
                                          return_best_bnn: bool = True):
-        bnn_model = self.train_model(learn_std=learn_std, bnn_train_steps=bnn_train_steps,
+        bnn_model = self.train_model(bnn_train_steps=bnn_train_steps,
                                      return_best_bnn=return_best_bnn)
         policy, params, metrics = self.train_policy(bnn_model, self.true_buffer_state, self.key)
 
@@ -342,8 +340,7 @@ if __name__ == '__main__':
     rl_from_offline_data = RLFromOfflineData(
         sac_kwargs=SAC_KWARGS,
         car_reward_kwargs=car_reward_kwargs)
-    policy, params, metrics, bnn_model = rl_from_offline_data.prepare_policy_from_offline_data(learn_std=True,
-                                                                                               bnn_train_steps=2_000)
+    policy, params, metrics, bnn_model = rl_from_offline_data.prepare_policy_from_offline_data(bnn_train_steps=2_000)
     filename_params = os.path.join(wandb.run.dir, 'models/policy.pkl')
     filename_bnn_model = os.path.join(wandb.run.dir, 'models/bnn_model.pkl')
 
