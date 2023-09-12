@@ -98,11 +98,11 @@ def experiment(horizon_len: int,
                                                                      'num_samples_train': num_offline_collected_transitions})
 
     standard_params = {
-        'input_size': x_train.shape[-1],
-        'output_size': y_train.shape[-1],
+        'input_size': sim.input_size,
+        'output_size': sim.output_size,
         'rng_key': jr.PRNGKey(seed),
-        # 'normalization_stats': sim.normalization_stats, TODO: Jonas: adjust sim for normalization stats
         'likelihood_std': _RACECAR_NOISE_STD_ENCODED,
+        'normalize_data': True,
         'normalize_likelihood_std': True,
         'learn_likelihood_std': bool(learnable_likelihood_std),
         'likelihood_exponent': 0.5,
