@@ -685,41 +685,41 @@ class RaceCarSim(FunctionSimulator):
         'm': 1.65,
         'l_f': 0.13,
         'l_r': 0.17,
-        'angle_offset': 0.028,
+        'angle_offset': 0.0156,
         'b_f': 2.58,
         'b_r': 3.39,
         'blend_ratio_lb': 0.01,
         'blend_ratio_ub': 0.01,
-        'c_d': 0.29308078,
+        'c_d': 0.41464928,
         'c_f': 1.2,
-        'c_m_1': 13.977059,
-        'c_m_2': 1.1913459,
+        'c_m_1': 10.701814,
+        'c_m_2': 1.4208151,
         'c_r': 1.27,
         'd_f': 0.02,
         'd_r': 0.017,
-        'i_com': 0.85,
-        'steering_limit': 0.4
+        'i_com': 0.01,
+        'steering_limit': 0.3543
     }
 
     _bounds_car_model_params_bicycle: Dict = {
         'use_blend': (0.0, 0.0),
         'm': (1.6, 1.7),
-        'l_f': (0.12, 0.14),
-        'l_r': (0.16, 0.18),
-        'angle_offset': (0.02, 0.03),
+        'l_f': (0.11, 0.15),
+        'l_r': (0.15, 0.19),
+        'angle_offset': (0.001, 0.03),
         'b_f': (2.2, 2.8),
-        'b_r': (3.39, 3.39),
+        'b_r': (2.0, 6.0),
         'blend_ratio_lb': (0.4, 0.4),
         'blend_ratio_ub': (0.5, 0.5),
-        'c_d': (0.1, 0.45),
+        'c_d': (0.3, 0.5),
         'c_f': (1.2, 1.2),
-        'c_m_1': (12., 16.),
-        'c_m_2': (1.1, 1.5),
+        'c_m_1': (8., 13.),
+        'c_m_2': (1.1, 1.7),
         'c_r': (1.27, 1.27),
         'd_f': (0.02, 0.02),
         'd_r': (0.017, 0.017),
-        'i_com': (0.08, 0.1),
-        'steering_limit': (0.3, 0.5),
+        'i_com': (0.01, 0.1),
+        'steering_limit': (0.20, 0.5),
     }
 
     _default_car_model_params_blend: Dict = {
@@ -727,20 +727,20 @@ class RaceCarSim(FunctionSimulator):
         'm': 1.65,
         'l_f': 0.13,
         'l_r': 0.17,
-        'angle_offset': 0.005,
-        'b_f': 2.7741547,
-        'b_r': 4.0383615,
-        'blend_ratio_lb': 0.08643041,
-        'blend_ratio_ub': 0.0,
+        'angle_offset': -0.0213,
+        'b_f': 1.8966477,
+        'b_r': 6.2884626,
+        'blend_ratio_lb': 0.06637411,
+        'blend_ratio_ub': 0.00554,
         'c_d': 0.0,
-        'c_f': 1.5461895,
-        'c_m_1': 12.054457,
-        'c_m_2': 0.9322442,
-        'c_r': 1.2297437,
-        'd_f': 0.5795012,
-        'd_r': 0.31110075,
-        'i_com': 0.12327465,
-        'steering_limit': 0.5977784,
+        'c_f': 1.5381637,
+        'c_m_1': 11.102413,
+        'c_m_2': 1.3169205,
+        'c_r': 1.186591,
+        'd_f': 0.5968191,
+        'd_r': 0.42716035,
+        'i_com': 0.0685434,
+        'steering_limit': 0.6337473,
     }
 
     _bounds_car_model_params_blend = {
@@ -748,20 +748,20 @@ class RaceCarSim(FunctionSimulator):
         'm': (1.6, 1.7),
         'l_f': (0.125, 0.135),
         'l_r': (0.165, 0.175),
-        'angle_offset': (0.0, 0.025),
+        'angle_offset': (-0.025, 0.025),
         'b_f': (1.3, 3.0),
-        'b_r': (3.0, 4.5),
-        'blend_ratio_lb': (0.05, 0.1),
-        'blend_ratio_ub': (0.000, 0.02),
+        'b_r': (4.0, 10.0),
+        'blend_ratio_lb': (0.01, 0.1),
+        'blend_ratio_ub': (0.000, 0.2),
         'c_d': (0.0, 0.0),
-        'c_f': (1.1, 1.6),
-        'c_m_1': (11., 15.),
-        'c_m_2': (0.9, 1.2),
-        'c_r': (1.2, 1.35),
+        'c_f': (1.2, 1.8),
+        'c_m_1': (10., 12.),
+        'c_m_2': (1.1, 1.5),
+        'c_r': (0.9, 1.5),
         'd_f': (0.35, 0.65),
-        'd_r': (0.3, 0.7),
-        'i_com': (0.08, 0.14),
-        'steering_limit': (0.55, 0.7),
+        'd_r': (0.3, 0.6),
+        'i_com': (0.05, 0.09),
+        'steering_limit': (0.5, 0.9),
     }
 
     _dt: float = 1 / 30.
@@ -1029,55 +1029,44 @@ class StackedActionSimWrapper(FunctionSimulator):
 
 
 if __name__ == '__main__':
-    key = jax.random.PRNGKey(435345)
+    key1, key2 = jax.random.split(jax.random.PRNGKey(435345), 2)
     function_sim = RaceCarSim(use_blend=False, no_angular_velocity=True)
-    function_sim.normalization_stats
-    xs = function_sim.domain.sample_uniformly(key, 100)
-    num_f_samples = 20
-    f_vals = function_sim.sample_function_vals(xs, num_samples=num_f_samples, rng_key=key)
+    x, _ = function_sim._sample_x_data(key1, 1000, 1000)
 
-    NUM_PARALLEL = 20
-    fun_stacked = function_sim.sample_functions(num_samples=NUM_PARALLEL, rng_key=key)
-    # fun_stacked = jax.vmap(function_sim._typical_f)
-    fun_stacked = jax.jit(fun_stacked)
+    f1 = function_sim.sample_function_vals(x, num_samples=10, rng_key=key2)
+    f2 = function_sim._typical_f(x)
+    print(jnp.isnan(f1).any())
+    print(jnp.isnan(f2).any())
 
-    s = jnp.repeat(jnp.array([-9.5005625e-01, -1.4144412e+00, 9.9892426e-01, 4.6371352e-02,
-                              7.2260178e-04, 8.1058703e-03, -7.7542849e-03])[None, :], NUM_PARALLEL, axis=0)
-    traj = [s]
-    actions = []
-    for i in range(60):
-        t = i / 30.
-        a = jnp.array([- 1 * jnp.cos(2 * t), 0.8 / (t + 1)])
-        a = jnp.repeat(a[None, :], NUM_PARALLEL, axis=0)
-        x = jnp.concatenate([s, a], axis=-1)
-        s = fun_stacked(x)
-        traj.append(s)
-        actions.append(a)
-
-    traj = jnp.stack(traj, axis=0)
-    actions = jnp.stack(actions, axis=0)
-    from matplotlib import pyplot as plt
-
-    for i in range(NUM_PARALLEL):
-        plt.plot(traj[:, i, 0], traj[:, i, 1])
-    plt.xlim(-3, 1)
-    plt.ylim(-2, 3)
-    plt.show()
-
-    # key = jax.random.PRNGKey(675)
-    # sim = GaussianProcessSim(input_size=1, output_scale=3.0, mean_fn=lambda x: jnp.squeeze(2 * x, axis=-1))
-    # f_vals = sim.sample_function_vals(x=jax.random.normal(jax.random.PRNGKey(12312), (10, sim.input_size)), num_samples=5, rng_key=key)
-    # sim = RaceCarSim()
-    # sim.sample_function_vals(x=jnp.zeros((1, sim.input_size)), num_samples=5, rng_key=key)
-    # plt, axes = plt.subplots(ncols=1, figsize=(4.5, 4))
-    # for i in range(1):
-    #     x_plot = jnp.linspace(sim.domain.l, sim.domain.u, 200).reshape((-1, 1))
-    #     y_samples = sim.sample_function_vals(x_plot, 10, key)
-    #     for y in y_samples:
-    #         axes.plot(x_plot, y[:, i])
-
-    # axes[0].set_title('Output dimension 1')
-    # axes[1].set_title('Output dimension 2')
-    # x, y = sim.sample_dataset(key, 100, obs_noise_std=0.1, x_support_mode='partial', param_mode='random')
-    # plt.scatter(x, y)
+    # function_sim.normalization_stats
+    # xs = function_sim.domain.sample_uniformly(key, 100)
+    # num_f_samples = 20
+    # f_vals = function_sim.sample_function_vals(xs, num_samples=num_f_samples, rng_key=key)
+    #
+    # NUM_PARALLEL = 20
+    # fun_stacked = function_sim.sample_functions(num_samples=NUM_PARALLEL, rng_key=key)
+    # # fun_stacked = jax.vmap(function_sim._typical_f)
+    # fun_stacked = jax.jit(fun_stacked)
+    #
+    # s = jnp.repeat(jnp.array([-9.5005625e-01, -1.4144412e+00, 9.9892426e-01, 4.6371352e-02,
+    #                           7.2260178e-04, 8.1058703e-03, -7.7542849e-03])[None, :], NUM_PARALLEL, axis=0)
+    # traj = [s]
+    # actions = []
+    # for i in range(60):
+    #     t = i / 30.
+    #     a = jnp.array([- 1 * jnp.cos(2 * t), 0.8 / (t + 1)])
+    #     a = jnp.repeat(a[None, :], NUM_PARALLEL, axis=0)
+    #     x = jnp.concatenate([s, a], axis=-1)
+    #     s = fun_stacked(x)
+    #     traj.append(s)
+    #     actions.append(a)
+    #
+    # traj = jnp.stack(traj, axis=0)
+    # actions = jnp.stack(actions, axis=0)
+    # from matplotlib import pyplot as plt
+    #
+    # for i in range(NUM_PARALLEL):
+    #     plt.plot(traj[:, i, 0], traj[:, i, 1])
+    # plt.xlim(-3, 1)
+    # plt.ylim(-2, 3)
     # plt.show()
