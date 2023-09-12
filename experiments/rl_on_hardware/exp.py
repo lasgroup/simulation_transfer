@@ -1,15 +1,15 @@
 import argparse
 import pickle
-import wandb
 
 import jax.numpy as jnp
 import jax.random as jr
+import wandb
 
-from experiments.data_provider import _RACECAR_NOISE_STD_ENCODED
-from sim_transfer.models import BNN_SVGD, BNN_FSVGD_SimPrior
+from experiments.data_provider import provide_data_and_sim, _RACECAR_NOISE_STD_ENCODED
+from sim_transfer.models import BNN_FSVGD_SimPrior, BNN_SVGD
 from sim_transfer.rl.model_based_rl.rl_on_hardware import RealCarRL
 from sim_transfer.sims.envs import RCCarSimEnv
-from sim_transfer.sims.simulators import RaceCarSim, PredictStateChangeWrapper
+from sim_transfer.sims.simulators import AdditiveSim, PredictStateChangeWrapper, GaussianProcessSim
 
 
 def experiment(delay: float = 0.07,
@@ -27,6 +27,7 @@ def experiment(delay: float = 0.07,
                best_bnn_model: int = 1,
                best_policy: int = 1,
                seed: int = 0,
+               num_offline_collected_transitions: int = 400,
                ):
     with open('transitions.pkl', 'rb') as f:
         transitions = pickle.load(f)
@@ -45,25 +46,56 @@ def experiment(delay: float = 0.07,
                           margin_factor=margin_factor,
                           )
 
-    _sim = RaceCarSim(encode_angle=True, use_blend=True)
-    if predict_difference:
-        sim = PredictStateChangeWrapper(_sim)
-    else:
-        sim = _sim
-    learn_std = bool(learnable_likelihood_std)
+    x_train, y_train, x_test, y_test, sim = provide_data_and_sim(data_source='real_racecar_new_actionstack',
+                                                                 data_spec={
+                                                                     'num_samples_train': num_offline_collected_transitions})
 
-    standard_model_params = {
-        'input_size': x_dim + u_dim * num_frame_stack + u_dim,
-        'output_size': x_dim,
-        'rng_key': jr.PRNGKey(234234345),
-        # 'normalization_stats': sim.normalization_stats, TODO: Jonas: adjust sim for normalization stats
+    """
+    Make transtions out of x_train and y_train
+    """
+    assert x_train.shape[-1] == x_dim + u_dim + num_frame_stack * u_dim
+
+    standard_params = {
+        'input_size': sim.input_size,
+        'output_size': sim.output_size,
+        'rng_key': jr.PRNGKey(seed),
         'likelihood_std': _RACECAR_NOISE_STD_ENCODED,
+        'normalize_data': True,
         'normalize_likelihood_std': True,
-        'learn_likelihood_std': learn_std,
+        'learn_likelihood_std': bool(learnable_likelihood_std),
+        'normalization_stats': sim.normalization_stats,
         'likelihood_exponent': 0.5,
         'hidden_layer_sizes': [64, 64, 64],
-        'data_batch_size': 32,
     }
+
+    if use_sim_prior:
+        outputscales_racecar = [0.007, 0.007, 0.007, 0.007, 0.04, 0.04, 0.18]
+        sim = AdditiveSim(base_sims=[sim,
+                                     GaussianProcessSim(sim.input_size, sim.output_size,
+                                                        output_scale=outputscales_racecar,
+                                                        length_scale=10.0, consider_only_first_k_dims=None)
+                                     ])
+        if predict_difference:
+            sim = PredictStateChangeWrapper(sim)
+        model = BNN_FSVGD_SimPrior(
+            **standard_params,
+            domain=sim.domain,
+            function_sim=sim,
+            score_estimator='gp',
+            data_batch_size=32,
+            num_train_steps=bnn_train_steps,
+            num_f_samples=256,
+            bandwidth_svgd=1.0
+        )
+    else:
+        model = BNN_SVGD(
+            **standard_params,
+            data_batch_size=32,
+            num_train_steps=bnn_train_steps,
+        )
+
+    #################################################################################################################
+    #################################################################################################################
 
     car_reward_kwargs = dict(encode_angle=ENCODE_ANGLE,
                              ctrl_cost_weight=ctrl_cost_weight,
@@ -71,19 +103,8 @@ def experiment(delay: float = 0.07,
 
     print('Using sim prior:', bool(use_sim_prior))
 
-    if use_sim_prior:
-        bnn = BNN_FSVGD_SimPrior(domain=sim.domain,
-                                 function_sim=sim,
-                                 num_measurement_points=16,
-                                 num_f_samples=512,
-                                 score_estimator='gp',
-                                 **standard_model_params,
-                                 num_train_steps=bnn_train_steps
-                                 )
-    else:
-        bnn = BNN_SVGD(**standard_model_params,
-                       bandwidth_svgd=1.0,
-                       num_train_steps=bnn_train_steps)
+    #################################################################################################################
+    #################################################################################################################
 
     NUM_ENV_STEPS_BETWEEN_UPDATES = 16
     NUM_ENVS = 64
@@ -122,7 +143,7 @@ def experiment(delay: float = 0.07,
 
     real_car_rl = RealCarRL(
         gym_env=gym_env,
-        bnn_model=bnn,
+        bnn_model=model,
         offline_data=transitions,
         max_replay_size_true_data_buffer=max_replay_size_true_data_buffer,
         include_aleatoric_noise=bool(include_aleatoric_noise),
@@ -159,6 +180,7 @@ def main(args):
         best_bnn_model=args.best_bnn_model,
         best_policy=args.best_policy,
         seed=args.seed,
+        num_offline_collected_transitions=args.num_offline_collected_transitions,
     )
 
 
@@ -179,5 +201,6 @@ if __name__ == '__main__':
     parser.add_argument('--best_bnn_model', type=int, default=1)
     parser.add_argument('--best_policy', type=int, default=1)
     parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--num_offline_collected_transitions', type=int, default=400)
     args = parser.parse_args()
     main(args)
