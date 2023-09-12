@@ -32,6 +32,7 @@ def experiment(horizon_len: int,
                        cost_w=ctrl_cost_weight,
                        num_offline_trans=num_offline_collected_transitions,
                        use_sim_prior=use_sim_prior,
+                       use_sim_norm_stats=use_sim_normalization_stats
                        )
     group_name = '_'.join(list(str(key) + '=' + str(value) for key, value in config_dict.items() if key != 'seed'))
 
@@ -84,6 +85,7 @@ def experiment(horizon_len: int,
                        ctrl_cost_weight=ctrl_cost_weight,
                        num_offline_collected_transitions=num_offline_collected_transitions,
                        use_sim_prior=use_sim_prior,
+                       use_sim_normalization_stats=use_sim_normalization_stats
                        )
 
     total_config = SAC_KWARGS | config_dict
