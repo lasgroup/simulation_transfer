@@ -17,8 +17,8 @@ applicable_configs = {
     'predict_difference': [1],
     'ctrl_cost_weight': [0.005],
     'ctrl_diff_weight': [1.0],
-    'num_offline_collected_transitions': [200, 400, 600, 1_000, 2_000],
-    'use_sim_prior': [0],
+    'num_offline_collected_transitions': [200, 400, 600, 800, 1_000, 2_000],
+    'use_sim_prior': [0, 1],
 }
 
 
