@@ -1,4 +1,3 @@
-import copy
 import os
 import pickle
 from typing import Callable
@@ -78,7 +77,7 @@ class RealCarRL:
         self.key, key_bf_init = jr.split(self.key)
         true_data_bf_state = self.true_data_buffer.init(key_bf_init)
 
-        assert offline_data.observation.shape[-1] == (self.state_dim + self.action_dim * self.num_frame_stack,)
+        assert offline_data.observation.shape[-1] == self.state_dim + self.action_dim * self.num_frame_stack
         self.true_data_buffer_state = self.add_data_to_buffer(data=offline_data,
                                                               true_data_buffer_state=true_data_bf_state)
 
@@ -100,9 +99,9 @@ class RealCarRL:
                      key: chex.PRNGKey,
                      episode_idx: int) -> Tuple[Callable[[chex.Array], chex.Array], PyTree]:
         _sac_kwargs = self.sac_kwargs
-        if episode_idx == 0:
-            _sac_kwargs = copy.deepcopy(_sac_kwargs)
-            _sac_kwargs['num_timesteps'] = 10_000
+        # if episode_idx == 0:
+        #     _sac_kwargs = copy.deepcopy(_sac_kwargs)
+        #     _sac_kwargs['num_timesteps'] = 10_000
         system = LearnedCarSystem(model=bnn_model,
                                   include_noise=self.include_aleatoric_noise,
                                   predict_difference=self.predict_difference,
@@ -203,7 +202,9 @@ class RealCarRL:
                                                              *transitions_for_plotting)
         reward_from_trajectory = jnp.sum(concatenated_transitions_for_plotting.reward)
         # We add now the
-        reward_terminal = info['terminal_reward']
+        # reward_terminal = info['terminal_reward']
+        # Todo: add reward terminal in the simulation as well
+        reward_terminal = 0
         reward_on_true_system = reward_from_trajectory + reward_terminal
         print('Reward on true system:', reward_on_true_system)
         fig, axes = plot_rc_trajectory(concatenated_transitions_for_plotting.next_observation,
@@ -258,7 +259,7 @@ class RealCarRL:
         # We open the folder
 
         # Train transition model on the true data buffer only if episode_idx > 0
-        if episode_idx > 0:
+        if episode_idx == 0:
             print(f"Training bnn model in the episode {episode_idx}")
             bnn_model = self.train_transition_model(true_buffer_state=true_buffer_state, key=key)
 
@@ -328,7 +329,7 @@ class RealCarRL:
 
     def run_episodes(self, num_episodes: int, key: chex.PRNGKey):
         key, key_init_buffer, key_init_buffer_init_states = jr.split(key, 3)
-        true_buffer_state = self.true_data_buffer.init(key_init_buffer)
+        true_buffer_state = self.true_data_buffer_state
         init_states_buffer_state = self.init_states_buffer.init(key_init_buffer_init_states)
         bnn_model = self.bnn_model
         for episode in range(0, num_episodes):
