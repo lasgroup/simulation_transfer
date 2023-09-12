@@ -26,8 +26,7 @@ DEFAULTS_PENDULUM = {
 }
 
 DEFAULTS_RACECAR = {
-    'obs_noise_std': 0.05 * jnp.exp(jnp.array([-3.3170326, -3.7336411, -2.7081904,
-                                               -2.7841284, -2.7067015, -1.4446207])),
+    'obs_noise_std': 0.1 * jnp.exp(jnp.array([-4, -4, -3.5, -2.5, -2.5, -1.])),
     'x_support_mode_train': 'full',
     'param_mode': 'random',
     'pred_diff': False
@@ -38,10 +37,10 @@ DEFAULTS_RACECAR_REAL = {
     'num_samples_test': 10000
 }
 
-_RACECAR_NOISE_STD_ENCODED = 40 * jnp.concatenate([DEFAULTS_RACECAR['obs_noise_std'][:2],
-                                                  DEFAULTS_RACECAR['obs_noise_std'][2:3],
-                                                  DEFAULTS_RACECAR['obs_noise_std'][2:3],
-                                                  DEFAULTS_RACECAR['obs_noise_std'][3:]])
+_RACECAR_NOISE_STD_ENCODED = 20 * jnp.concatenate([DEFAULTS_RACECAR['obs_noise_std'][:2],
+                                                   DEFAULTS_RACECAR['obs_noise_std'][2:3],
+                                                   DEFAULTS_RACECAR['obs_noise_std'][2:3],
+                                                   DEFAULTS_RACECAR['obs_noise_std'][3:]])
 
 DATASET_CONFIGS = {
     'sinusoids1d': {
@@ -257,7 +256,7 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
             sim_hf = sim_lf = RaceCarSim(encode_angle=True, use_blend=True, only_pose=False)
         else:
             raise ValueError(f'Unknown data source {data_source}')
-        if data_spec.get('pred_diff', defaults):
+        if data_spec.get('pred_diff', defaults['pred_diff']):
             # wrap sim in predict state change wrapper
             print('Using PredictStateChangeWrapper')
             sim_lf = PredictStateChangeWrapper(sim_lf)
@@ -331,6 +330,8 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
 
 
 if __name__ == '__main__':
-    x_train, y_train, x_test, y_test, sim = provide_data_and_sim(data_source='real_racecar_new_actionstack',
+    x_train, y_train, x_test, y_test, sim = provide_data_and_sim(data_source='real_racecar_new',
                                                             data_spec={'num_samples_train': 10000})
     print(x_train.shape, y_train.shape, x_test.shape, y_test.shape)
+
+    print(jnp.max(x_train, axis=0))
