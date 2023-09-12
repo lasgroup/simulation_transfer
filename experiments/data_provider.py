@@ -87,20 +87,15 @@ DATASET_CONFIGS = {
         'likelihood_std': {'value': _RACECAR_NOISE_STD_ENCODED.tolist()},
         'num_samples_train': {'value': 100},
     },
-    'real_racecar': {
-        'likelihood_std': {'value': _RACECAR_NOISE_STD_ENCODED.tolist()},
-        'num_samples_train': {'value': 200},
-    },
-    'real_racecar_only_pose': {
-        'likelihood_std': {'value': _RACECAR_NOISE_STD_ENCODED.tolist()},
-        'num_samples_train': {'value': 200},
-    },
-    'real_racecar_no_angvel': {
-        'likelihood_std': {'value': _RACECAR_NOISE_STD_ENCODED.tolist()},
-        'num_samples_train': {'value': 200},
-    },
-
 }
+
+DATASET_CONFIGS.update({
+    name: {
+        'likelihood_std': {'value': _RACECAR_NOISE_STD_ENCODED.tolist()},
+        'num_samples_train': {'value': 200},
+    } for name in ['real_racecar_new', 'real_racecar_new_only_pose', 'real_racecar_new_no_angvel',
+                   'real_racecar_new_actionstack']
+})
 
 
 def get_rccar_recorded_data(encode_angle: bool = True, skip_first_n_points: int = 30):
@@ -265,15 +260,17 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
     elif data_source.startswith('real_racecar'):
         from sim_transfer.sims.simulators import RaceCarSim
 
-        if data_spec.get('pred_diff', False):
-            raise NotImplementedError
-
         if data_source.endswith('only_pose'):
             sim_lf = RaceCarSim(encode_angle=True, use_blend=True, only_pose=True)
         elif data_source.endswith('no_angvel'):
             sim_lf = RaceCarSim(encode_angle=True, use_blend=True, no_angular_velocity=True)
         else:
             sim_lf = RaceCarSim(encode_angle=True, use_blend=True)
+
+        if data_spec.get('pred_diff', DEFAULTS_PENDULUM['pred_diff']):
+            # wrap sim in predict state change wrapper
+            print('Using PredictStateChangeWrapper')
+            sim_lf = PredictStateChangeWrapper(sim_lf)
 
         if data_source.startswith('real_racecar_new_actionstack'):
             x_train, y_train, x_test, y_test = get_rccar_recorded_data_new(encode_angle=True, action_stacking=True,
@@ -284,6 +281,12 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
                                                                            action_delay=3)
         else:
             x_train, y_train, x_test, y_test = get_rccar_recorded_data(encode_angle=True)
+
+        if data_spec.get('pred_diff', DEFAULTS_PENDULUM['pred_diff']):
+            # convert targets to the state difference
+            y_train = y_train - x_train[..., :7]
+            y_test = y_test - x_test[..., :7]
+
         num_train_available = x_train.shape[0]
         num_test_available = x_test.shape[0]
 
