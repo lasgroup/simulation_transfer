@@ -55,13 +55,15 @@ def meta_learning_experiment(
                                           num_iter_meta_train=num_iter_meta_train,
                                           num_iter_meta_test=5000,
                                           learn_likelihood=False,
+                                          normalize_likelihood_std=True,
                                           hidden_layer_sizes=(64, 64, 64),
                                           activation='leaky_relu',
                                           likelihood_std=likelihood_std,
                                           prior_weight=prior_weight,
                                           meta_batch_size=meta_batch_size,
                                           batch_size=batch_size,
-                                          bandwidth=bandwidth)
+                                          bandwidth=bandwidth,
+                                          lr=lr)
 
         # run meta-testing
         pacoh_model.meta_fit(meta_val_data=meta_test_data, eval_period=5000)
@@ -156,7 +158,7 @@ if __name__ == '__main__':
     parser.add_argument('--use_wandb', type=bool, default=False)
 
     # data parameters
-    parser.add_argument('--data_source', type=str, default='pendulum')
+    parser.add_argument('--data_source', type=str, default='racecar')
     parser.add_argument('--num_samples_train', type=int, default=20)
     parser.add_argument('--data_seed', type=int, default=77698)
     parser.add_argument('--num_tasks', type=int, default=200)
@@ -164,7 +166,7 @@ if __name__ == '__main__':
     # model parameters
 
     # -- general
-    parser.add_argument('--model', type=str, default='NP')
+    parser.add_argument('--model', type=str, default='PACOH')
     parser.add_argument('--model_seed', type=int, default=892616)
     parser.add_argument('--likelihood_std', type=float, default=None)
     parser.add_argument('--num_iter_meta_train', type=int, default=50000)
