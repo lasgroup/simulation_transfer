@@ -110,21 +110,6 @@ def experiment(horizon_len: int,
         'data_batch_size': 128,
     }
 
-
-    # standard_params = {
-    #     'input_size': sim.input_size,
-    #     'output_size': sim.output_size,
-    #     'rng_key': jr.PRNGKey(seed),
-    #     'likelihood_std': _RACECAR_NOISE_STD_ENCODED,
-    #     'normalize_data': True,
-    #     'normalize_likelihood_std': True,
-    #     'learn_likelihood_std': bool(learnable_likelihood_std),
-    #     'normalization_stats': sim.normalization_stats,
-    #     'likelihood_exponent': 0.5,
-    #     'hidden_layer_sizes': [64, 64, 64],
-    #     'data_batch_size': 128,
-    # }
-
     if use_sim_prior:
         outputscales_racecar = [0.007, 0.007, 0.007, 0.007, 0.04, 0.04, 0.18]
         sim = AdditiveSim(base_sims=[sim,
@@ -140,6 +125,7 @@ def experiment(horizon_len: int,
             function_sim=sim,
             score_estimator='gp',
             num_train_steps=bnn_train_steps,
+            normalization_stats=sim.normalization_stats,
             num_f_samples=256,
             bandwidth_svgd=1.0
         )
