@@ -1,7 +1,7 @@
 import exp
 from experiments.util import generate_run_commands, generate_base_command, dict_permutations
 
-PROJECT_NAME = 'OfflineTrainingTestDebugN4'
+PROJECT_NAME = 'OfflineTrainingTestDebugN5'
 
 applicable_configs = {
     'horizon_len': [100],
