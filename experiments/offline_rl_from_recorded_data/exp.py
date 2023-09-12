@@ -3,7 +3,10 @@ import argparse
 import jax.random as jr
 import wandb
 
+from experiments.data_provider import provide_data_and_sim, _RACECAR_NOISE_STD_ENCODED
+from sim_transfer.models import BNN_FSVGD_SimPrior, BNN_SVGD
 from sim_transfer.rl.rl_on_offline_data import RLFromOfflineData
+from sim_transfer.sims.simulators import AdditiveSim, PredictStateChangeWrapper, GaussianProcessSim
 
 
 def experiment(horizon_len: int,
@@ -20,12 +23,14 @@ def experiment(horizon_len: int,
                ctrl_cost_weight: float,
                ctrl_diff_weight: float,
                num_offline_collected_transitions: int,
+               use_sim_prior: int,
                ):
     config_dict = dict(horizon_len=horizon_len,
                        seed=seed,
                        diff_w=ctrl_diff_weight,
                        cost_w=ctrl_cost_weight,
                        num_offline_trans=num_offline_collected_transitions,
+                       use_sim_prior=use_sim_prior,
                        )
     group_name = '_'.join(list(str(key) + '=' + str(value) for key, value in config_dict.items() if key != 'seed'))
 
@@ -76,7 +81,8 @@ def experiment(horizon_len: int,
                        predict_difference=predict_difference,
                        ctrl_diff_weight=ctrl_diff_weight,
                        ctrl_cost_weight=ctrl_cost_weight,
-                       num_offline_collected_transitions=num_offline_collected_transitions
+                       num_offline_collected_transitions=num_offline_collected_transitions,
+                       use_sim_prior=use_sim_prior,
                        )
 
     total_config = SAC_KWARGS | config_dict
@@ -87,18 +93,59 @@ def experiment(horizon_len: int,
         config=total_config,
     )
 
+    x_train, y_train, x_test, y_test, sim = provide_data_and_sim(data_source='real_racecar_new_actionstack',
+                                                                 data_spec={
+                                                                     'num_samples_train': num_offline_collected_transitions})
+
+    standard_params = {
+        'input_size': sim.input_size,
+        'output_size': sim.output_size,
+        'rng_key': jr.PRNGKey(seed),
+        'likelihood_std': _RACECAR_NOISE_STD_ENCODED,
+        'normalize_data': True,
+        'normalize_likelihood_std': True,
+        'learn_likelihood_std': bool(learnable_likelihood_std),
+        'normalization_stats': sim.normalization_stats,
+        'likelihood_exponent': 0.5,
+        'hidden_layer_sizes': [64, 64, 64],
+        'data_batch_size': 128,
+    }
+
+    if use_sim_prior:
+        outputscales_racecar = [0.007, 0.007, 0.007, 0.007, 0.04, 0.04, 0.18]
+        sim = AdditiveSim(base_sims=[sim,
+                                     GaussianProcessSim(sim.input_size, sim.output_size,
+                                                        output_scale=outputscales_racecar,
+                                                        length_scale=10.0, consider_only_first_k_dims=None)
+                                     ])
+        if predict_difference:
+            sim = PredictStateChangeWrapper(sim)
+        model = BNN_FSVGD_SimPrior(
+            **standard_params,
+            domain=sim.domain,
+            function_sim=sim,
+            score_estimator='gp',
+            num_train_steps=bnn_train_steps,
+            num_f_samples=256,
+            bandwidth_svgd=1.0
+        )
+    else:
+        model = BNN_SVGD(
+            **standard_params,
+            num_train_steps=bnn_train_steps,
+        )
+
     rl_from_offline_data = RLFromOfflineData(
         data_spec={'num_samples_train': num_offline_collected_transitions},
+        bnn_model=model,
         key=jr.PRNGKey(seed),
         sac_kwargs=SAC_KWARGS,
         car_reward_kwargs=car_reward_kwargs,
         include_aleatoric_noise=bool(include_aleatoric_noise),
         return_best_policy=bool(best_policy),
         predict_difference=bool(predict_difference),
-
     )
     policy, params, metrics, bnn_model = rl_from_offline_data.prepare_policy_from_offline_data(
-        learn_std=bool(learnable_likelihood_std),
         bnn_train_steps=bnn_train_steps,
         return_best_bnn=bool(best_bnn_model))
 
@@ -122,6 +169,7 @@ def main(args):
         ctrl_cost_weight=args.ctrl_cost_weight,
         ctrl_diff_weight=args.ctrl_diff_weight,
         num_offline_collected_transitions=args.num_offline_collected_transitions,
+        use_sim_prior=args.use_sim_prior,
     )
 
 
@@ -141,5 +189,6 @@ if __name__ == '__main__':
     parser.add_argument('--ctrl_cost_weight', type=float, default=0.005)
     parser.add_argument('--ctrl_diff_weight', type=float, default=0.01)
     parser.add_argument('--num_offline_collected_transitions', type=int, default=1_000)
+    parser.add_argument('--use_sim_prior', type=int, default=1)
     args = parser.parse_args()
     main(args)

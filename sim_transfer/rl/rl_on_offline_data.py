@@ -128,27 +128,7 @@ class RLFromOfflineData:
         # x_train, y_train, x_test, y_test, sim = self.load_data()
         x_train, y_train, x_test, y_test, sim = self.x_train, self.y_train, self.x_test, self.y_test, None
         print(x_train.shape, y_train.shape, x_test.shape, y_test.shape)
-
-        # Create a bnn model
-        standard_model_params = {
-            'input_size': x_train.shape[-1],
-            'output_size': y_train.shape[-1],
-            'rng_key': jr.PRNGKey(234234345),
-            # 'normalization_stats': sim.normalization_stats, TODO: Jonas: adjust sim for normalization stats
-            'likelihood_std': _RACECAR_NOISE_STD_ENCODED,
-            'normalize_likelihood_std': True,
-            'learn_likelihood_std': learn_std,
-            'likelihood_exponent': 0.5,
-            'hidden_layer_sizes': [64, 64, 64],
-            'data_batch_size': 128,
-        }
-
-        if self.bnn_model is not None:
-            bnn = self.bnn_model
-        else:
-            bnn = BNN_SVGD(**standard_model_params,
-                           bandwidth_svgd=1.0)
-
+        bnn = self.bnn_model
         # Train the bnn model
         bnn.fit(x_train=x_train, y_train=y_train, x_eval=x_test, y_eval=y_test, log_to_wandb=True,
                 keep_the_best=return_best_bnn, metrics_objective='eval_nll', num_steps=bnn_train_steps)
