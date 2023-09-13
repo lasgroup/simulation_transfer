@@ -1,5 +1,6 @@
-import pickle
+import os
 import time
+from typing import NamedTuple
 
 import jax.numpy as jnp
 import jax.random as jr
@@ -12,9 +13,66 @@ from sim_transfer.hardware.car_env import CarEnv
 from sim_transfer.rl.rl_on_offline_data import RLFromOfflineData
 from sim_transfer.sims.util import plot_rc_trajectory
 
+ENTITY = 'trevenl'
 
-def run_with_learned_policy(filename_policy: str,
-                            filename_bnn_model: str):
+
+class RunSpec(NamedTuple):
+    group_name: str
+    run_name: str
+
+
+def run_all_hardware_experiments(project_name_load: str,
+                                 project_name_save: str | None = None, ):
+    api = wandb.Api()
+    project_name = ENTITY + '/' + project_name_load
+    local_dir = "saved_data"
+    dir_to_save = 'models'
+
+    project_name_save = project_name_load if project_name_save is None else project_name_save
+
+    # check if directory exists
+    if not os.path.exists(local_dir):
+        # if directory does not exist, create it
+        os.makedirs(local_dir)
+
+    runs_spec = []
+
+    # Download all models
+    runs = api.runs(project_name)
+    for run in runs:
+        group_name = run.group
+        run_name = run.name
+        for file in run.files():
+            if file.name.startswith(dir_to_save):
+                file.download(replace=True, root=os.path.join(local_dir, group_name, run_name))
+                runs_spec.append(RunSpec(group_name=group_name, run_name=run_name))
+
+    # Run all models on hardware
+    for run_spec in runs_spec:
+        # We open the file with pickle
+        pre_path = os.path.join(local_dir, run_spec.group_name, run_spec.run_name)
+        policy_name = 'parameters.pkl'
+        bnn_name = 'bnn_model.pkl'
+
+        with open(os.path.join(pre_path, bnn_name), 'rb') as handle:
+            bnn_model = pickle.load(handle)
+
+        with open(os.path.join(pre_path, policy_name), 'rb') as handle:
+            policy_params = pickle.load(handle)
+
+        run_with_learned_policy(policy_params=policy_params,
+                                bnn_model=bnn_model,
+                                project_name=project_name_save,
+                                group_name=run_spec.group_name,
+                                run_name=run_spec.run_name)
+
+
+def run_with_learned_policy(policy_params,
+                            bnn_model,
+                            project_name: str,
+                            group_name: str,
+                            run_name: str,
+                            ):
     """
     Num stacked frames: 3
     """
@@ -26,23 +84,12 @@ def run_with_learned_policy(filename_policy: str,
         sac_kwargs=SAC_KWARGS,
         car_reward_kwargs=car_reward_kwargs)
     wandb.init(
-        project="Race car test MBRL",
-        group='400_points',
-        entity='trevenl'
+        project=project_name,
+        group=group_name,
+        entity=ENTITY,
+        name=run_name
     )
-
-    with open(filename_bnn_model, 'rb') as handle:
-        bnn_model = pickle.load(handle)
-        """
-        We predict state difference:
-        
-        delta_x_dist = bnn_model.predict_dist(z, include_noise=self.include_noise)
-        delta_x = delta_x_dist.sample(seed=key_sample_x_next)
-        
-        z is of the shape (-1, state_dim + num_frame_stack * action_dim + action_dim)
-        """
-
-    policy = rl_from_offline_data.prepare_policy(params=None, filename=filename_policy)
+    policy = rl_from_offline_data.prepare_policy(params=policy_params)
 
     # replay action sequence on car
     env = CarEnv(encode_angle=True, num_frame_stacks=0, max_throttle=0.5,
@@ -179,6 +226,7 @@ def run_with_learned_policy(filename_policy: str,
                                    encode_angle=True,
                                    show=True)
     wandb.log({'Trajectory_on_learned_model': wandb.Image(fig)})
+    wandb.finish()
     return observations, actions
 
 
@@ -207,7 +255,20 @@ def plot_error_on_the_trajectory(data):
 
 
 if __name__ == '__main__':
+    import pickle
+
     filename_policy = 'parameters.pkl'
     filename_bnn_model = 'bnn_model.pkl'
-    observations_for_plotting, actions_for_plotting = run_with_learned_policy(filename_policy=filename_policy,
-                                                                              filename_bnn_model=filename_bnn_model)
+
+    with open(filename_bnn_model, 'rb') as handle:
+        bnn_model = pickle.load(handle)
+
+    with open(filename_policy, 'rb') as handle:
+        policy_params = pickle.load(handle)
+
+    observations_for_plotting, actions_for_plotting = run_with_learned_policy(bnn_model=bnn_model,
+                                                                              policy_params=policy_params,
+                                                                              project_name='Test',
+                                                                              group_name='MyGroup',
+                                                                              run_name='Butterfly'
+                                                                              )
