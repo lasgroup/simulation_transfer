@@ -213,7 +213,7 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
             sim_hf = sim_lf = PendulumSim(encode_angle=True, high_fidelity=True)
         if data_spec.get('pred_diff', DEFAULTS_PENDULUM['pred_diff']):
             # wrap sim in predict state change wrapper
-            print('Using PredictStateChangeWrapper')
+            print('[data_provider] Using PredictStateChangeWrapper')
             sim_lf = PredictStateChangeWrapper(sim_lf)
             sim_hf = PredictStateChangeWrapper(sim_hf)
         assert {'num_samples_train'} <= set(data_spec.keys()) <= {'num_samples_train'}.union(DEFAULTS_PENDULUM.keys())
@@ -227,7 +227,7 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
             sim_hf = sim_lf = PendulumBiModalSim(encode_angle=True)
         if data_spec.get('pred_diff', DEFAULTS_PENDULUM['pred_diff']):
             # wrap sim in predict state change wrapper
-            print('Using PredictStateChangeWrapper')
+            print('[data_provider] Using PredictStateChangeWrapper')
             sim_lf = PredictStateChangeWrapper(sim_lf)
             sim_hf = PredictStateChangeWrapper(sim_hf)
         assert {'num_samples_train'} <= set(data_spec.keys()) <= {'num_samples_train'}.union(DEFAULTS_PENDULUM.keys())
@@ -253,23 +253,25 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
             raise ValueError(f'Unknown data source {data_source}')
         if data_spec.get('pred_diff', defaults['pred_diff']):
             # wrap sim in predict state change wrapper
-            print('Using PredictStateChangeWrapper')
+            print('[data_provider] Using PredictStateChangeWrapper')
             sim_lf = PredictStateChangeWrapper(sim_lf)
             sim_hf = PredictStateChangeWrapper(sim_hf)
         assert {'num_samples_train'} <= set(data_spec.keys()) <= {'num_samples_train'}.union(DEFAULTS_RACECAR.keys())
     elif data_source.startswith('real_racecar'):
         from sim_transfer.sims.simulators import RaceCarSim
+        use_hf_sim = data_spec.get('use_hf_sim', True)
+        print('[data_provider] Use high-fidelity car sim:', use_hf_sim)
 
         if data_source.endswith('only_pose'):
-            sim_lf = RaceCarSim(encode_angle=True, use_blend=True, only_pose=True)
+            sim_lf = RaceCarSim(encode_angle=True, use_blend=use_hf_sim, only_pose=True)
         elif data_source.endswith('no_angvel'):
-            sim_lf = RaceCarSim(encode_angle=True, use_blend=True, no_angular_velocity=True)
+            sim_lf = RaceCarSim(encode_angle=True, use_blend=use_hf_sim, no_angular_velocity=True)
         else:
-            sim_lf = RaceCarSim(encode_angle=True, use_blend=True)
+            sim_lf = RaceCarSim(encode_angle=True, use_blend=use_hf_sim)
 
         if data_spec.get('pred_diff', DEFAULTS_PENDULUM['pred_diff']):
             # wrap sim in predict state change wrapper
-            print('Using PredictStateChangeWrapper')
+            print('[data_provider] Using PredictStateChangeWrapper')
             sim_lf = PredictStateChangeWrapper(sim_lf)
 
         if data_source.startswith('real_racecar_new_actionstack'):
