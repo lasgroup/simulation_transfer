@@ -1,22 +1,24 @@
 import exp
 from experiments.util import generate_run_commands, generate_base_command, dict_permutations
 
-PROJECT_NAME = 'OfflineTrainingMaxThrottleHalf'
+PROJECT_NAME = 'OfflineTrainingSimVsNoSimComparison'
 
 applicable_configs = {
     'horizon_len': [100],
     'seed': [0, 1],
     'project_name': [PROJECT_NAME],
     'sac_num_env_steps': [2_000_000],
-    'bnn_train_steps': [100_000],
+    'bnn_train_steps': [60_000],
     'learnable_likelihood_std': ['yes'],
     'include_aleatoric_noise': [1],
     'best_bnn_model': [1],
     'best_policy': [1],
     'margin_factor': [20.0],
     'predict_difference': [1],
-    'ctrl_cost_weight': [0.005, 0.01, 0.05],
-    'ctrl_diff_weight': [0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0],
+    'ctrl_cost_weight': [0.005],
+    'ctrl_diff_weight': [1.0],
+    'num_offline_collected_transitions': [200, 300, 400, 600, 800, 1_000, 2_000],
+    'use_sim_prior': [0, 1],
 }
 
 

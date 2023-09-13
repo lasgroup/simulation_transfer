@@ -26,8 +26,7 @@ DEFAULTS_PENDULUM = {
 }
 
 DEFAULTS_RACECAR = {
-    'obs_noise_std': 0.05 * jnp.exp(jnp.array([-3.3170326, -3.7336411, -2.7081904,
-                                               -2.7841284, -2.7067015, -1.4446207])),
+    'obs_noise_std': 0.1 * jnp.exp(jnp.array([-4, -4, -3.5, -2.5, -2.5, -1.])),
     'x_support_mode_train': 'full',
     'param_mode': 'random',
     'pred_diff': False
@@ -38,10 +37,10 @@ DEFAULTS_RACECAR_REAL = {
     'num_samples_test': 10000
 }
 
-_RACECAR_NOISE_STD_ENCODED = 40 * jnp.concatenate([DEFAULTS_RACECAR['obs_noise_std'][:2],
-                                                  DEFAULTS_RACECAR['obs_noise_std'][2:3],
-                                                  DEFAULTS_RACECAR['obs_noise_std'][2:3],
-                                                  DEFAULTS_RACECAR['obs_noise_std'][3:]])
+_RACECAR_NOISE_STD_ENCODED = 20 * jnp.concatenate([DEFAULTS_RACECAR['obs_noise_std'][:2],
+                                                   DEFAULTS_RACECAR['obs_noise_std'][2:3],
+                                                   DEFAULTS_RACECAR['obs_noise_std'][2:3],
+                                                   DEFAULTS_RACECAR['obs_noise_std'][3:]])
 
 DATASET_CONFIGS = {
     'sinusoids1d': {
@@ -88,20 +87,15 @@ DATASET_CONFIGS = {
         'likelihood_std': {'value': _RACECAR_NOISE_STD_ENCODED.tolist()},
         'num_samples_train': {'value': 100},
     },
-    'real_racecar': {
-        'likelihood_std': {'value': _RACECAR_NOISE_STD_ENCODED.tolist()},
-        'num_samples_train': {'value': 200},
-    },
-    'real_racecar_only_pose': {
-        'likelihood_std': {'value': _RACECAR_NOISE_STD_ENCODED.tolist()},
-        'num_samples_train': {'value': 200},
-    },
-    'real_racecar_no_angvel': {
-        'likelihood_std': {'value': _RACECAR_NOISE_STD_ENCODED.tolist()},
-        'num_samples_train': {'value': 200},
-    },
-
 }
+
+DATASET_CONFIGS.update({
+    name: {
+        'likelihood_std': {'value': _RACECAR_NOISE_STD_ENCODED.tolist()},
+        'num_samples_train': {'value': 200},
+    } for name in ['real_racecar_new', 'real_racecar_new_only_pose', 'real_racecar_new_no_angvel',
+                   'real_racecar_new_actionstack']
+})
 
 
 def get_rccar_recorded_data(encode_angle: bool = True, skip_first_n_points: int = 30):
@@ -219,7 +213,7 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
             sim_hf = sim_lf = PendulumSim(encode_angle=True, high_fidelity=True)
         if data_spec.get('pred_diff', DEFAULTS_PENDULUM['pred_diff']):
             # wrap sim in predict state change wrapper
-            print('Using PredictStateChangeWrapper')
+            print('[data_provider] Using PredictStateChangeWrapper')
             sim_lf = PredictStateChangeWrapper(sim_lf)
             sim_hf = PredictStateChangeWrapper(sim_hf)
         assert {'num_samples_train'} <= set(data_spec.keys()) <= {'num_samples_train'}.union(DEFAULTS_PENDULUM.keys())
@@ -233,7 +227,7 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
             sim_hf = sim_lf = PendulumBiModalSim(encode_angle=True)
         if data_spec.get('pred_diff', DEFAULTS_PENDULUM['pred_diff']):
             # wrap sim in predict state change wrapper
-            print('Using PredictStateChangeWrapper')
+            print('[data_provider] Using PredictStateChangeWrapper')
             sim_lf = PredictStateChangeWrapper(sim_lf)
             sim_hf = PredictStateChangeWrapper(sim_hf)
         assert {'num_samples_train'} <= set(data_spec.keys()) <= {'num_samples_train'}.union(DEFAULTS_PENDULUM.keys())
@@ -257,24 +251,28 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
             sim_hf = sim_lf = RaceCarSim(encode_angle=True, use_blend=True, only_pose=False)
         else:
             raise ValueError(f'Unknown data source {data_source}')
-        if data_spec.get('pred_diff', defaults):
+        if data_spec.get('pred_diff', defaults['pred_diff']):
             # wrap sim in predict state change wrapper
-            print('Using PredictStateChangeWrapper')
+            print('[data_provider] Using PredictStateChangeWrapper')
             sim_lf = PredictStateChangeWrapper(sim_lf)
             sim_hf = PredictStateChangeWrapper(sim_hf)
         assert {'num_samples_train'} <= set(data_spec.keys()) <= {'num_samples_train'}.union(DEFAULTS_RACECAR.keys())
     elif data_source.startswith('real_racecar'):
         from sim_transfer.sims.simulators import RaceCarSim
-
-        if data_spec.get('pred_diff', False):
-            raise NotImplementedError
+        use_hf_sim = data_spec.get('use_hf_sim', True)
+        print('[data_provider] Use high-fidelity car sim:', use_hf_sim)
 
         if data_source.endswith('only_pose'):
-            sim_lf = RaceCarSim(encode_angle=True, use_blend=True, only_pose=True)
+            sim_lf = RaceCarSim(encode_angle=True, use_blend=use_hf_sim, only_pose=True)
         elif data_source.endswith('no_angvel'):
-            sim_lf = RaceCarSim(encode_angle=True, use_blend=True, no_angular_velocity=True)
+            sim_lf = RaceCarSim(encode_angle=True, use_blend=use_hf_sim, no_angular_velocity=True)
         else:
-            sim_lf = RaceCarSim(encode_angle=True, use_blend=True)
+            sim_lf = RaceCarSim(encode_angle=True, use_blend=use_hf_sim)
+
+        if data_spec.get('pred_diff', DEFAULTS_PENDULUM['pred_diff']):
+            # wrap sim in predict state change wrapper
+            print('[data_provider] Using PredictStateChangeWrapper')
+            sim_lf = PredictStateChangeWrapper(sim_lf)
 
         if data_source.startswith('real_racecar_new_actionstack'):
             x_train, y_train, x_test, y_test = get_rccar_recorded_data_new(encode_angle=True, action_stacking=True,
@@ -285,6 +283,12 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
                                                                            action_delay=3)
         else:
             x_train, y_train, x_test, y_test = get_rccar_recorded_data(encode_angle=True)
+
+        if data_spec.get('pred_diff', DEFAULTS_PENDULUM['pred_diff']):
+            # convert targets to the state difference
+            y_train = y_train - x_train[..., :7]
+            y_test = y_test - x_test[..., :7]
+
         num_train_available = x_train.shape[0]
         num_test_available = x_test.shape[0]
 
@@ -331,6 +335,8 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
 
 
 if __name__ == '__main__':
-    x_train, y_train, x_test, y_test, sim = provide_data_and_sim(data_source='real_racecar_new_actionstack',
+    x_train, y_train, x_test, y_test, sim = provide_data_and_sim(data_source='real_racecar_new',
                                                             data_spec={'num_samples_train': 10000})
     print(x_train.shape, y_train.shape, x_test.shape, y_test.shape)
+
+    print(jnp.max(x_train, axis=0))

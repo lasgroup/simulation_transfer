@@ -154,9 +154,22 @@ class AbstractRegressionModel(RngKeyMixin):
     def predict(self, x: jnp.ndarray, include_noise: bool = False) -> Tuple[jnp.ndarray, jnp.ndarray]:
         raise NotImplementedError
 
-    def eval(self, x: jnp.ndarray, y: np.ndarray, prefix: str = '') -> Dict[str, jnp.ndarray]:
+    def eval(self, x: jnp.ndarray, y: np.ndarray, prefix: str = '', per_dim_metrics: bool = False) \
+            -> Dict[str, jnp.ndarray]:
+        """ Evaluates the model on the given data and returns a dictionary of evaluation metrics.
+        Args:
+            x: inputs
+            y: targets
+            prefix: (str) prefix for the returned dictionary keys
+            per_dim_metrics: (bool) whether to also return the per-dimension MAE
+
+        Returns: dict of evaluation metrics
+        """
+        # make predictions
         x, y = self._ensure_atleast_2d_float(x, y)
         pred_dist = self.predict_dist(x, include_noise=True)
+
+        # compute standard evaluation metrics
         nll = - jnp.mean(pred_dist.log_prob(y))
         rmse = jnp.sqrt(jnp.mean(jnp.sum((pred_dist.mean - y) ** 2, axis=-1)))
         cal_err_cum = calibration_error_cum(pred_dist, y)
@@ -164,6 +177,14 @@ class AbstractRegressionModel(RngKeyMixin):
         avg_std = jnp.mean(pred_dist.stddev)
         eval_stats = {'nll': nll, 'rmse': rmse, 'avg_std': avg_std,
                       'cal_err_cum': cal_err_cum, 'cal_err_bin': cal_err_bin}
+
+        # compute per-dimension MAE
+        if per_dim_metrics:
+            mae_per_dim = jnp.mean(jnp.abs(pred_dist.mean - y), axis=0)
+            rmse_per_dim = jnp.sqrt(jnp.mean((pred_dist.mean - y)**2, axis=0))
+            eval_stats.update({f'per_dim_metrics/mae_{i}': mae_per_dim[i] for i in range(self.output_size)})
+            eval_stats.update({f'per_dim_rmse/rmse_{i}': rmse_per_dim[i] for i in range(self.output_size)})
+
         # add prefix to stats names
         eval_stats = {f'{prefix}{name}': val for name, val in eval_stats.items()}
         # make sure that all stats are python native floats
@@ -251,7 +272,8 @@ class BatchedNeuralNetworkModel(AbstractRegressionModel):
 
     def fit(self, x_train: jnp.ndarray, y_train: jnp.ndarray, x_eval: Optional[jnp.ndarray] = None,
             y_eval: Optional[jnp.ndarray] = None, num_steps: Optional[int] = None, log_period: int = 1000,
-            log_to_wandb: bool = False, metrics_objective: str = 'train_nll', keep_the_best: bool = False):
+            log_to_wandb: bool = False, metrics_objective: str = 'train_nll', keep_the_best: bool = False,
+            per_dim_metrics: bool = False):
         # check whether eval data has been passed
         evaluate = x_eval is not None or y_eval is not None
         assert not evaluate or x_eval.shape[0] == y_eval.shape[0]
@@ -289,7 +311,7 @@ class BatchedNeuralNetworkModel(AbstractRegressionModel):
                 stats_agg = aggregate_stats(stats_list)
 
                 if evaluate:
-                    eval_stats = self.eval(x_eval, y_eval, prefix='eval_')
+                    eval_stats = self.eval(x_eval, y_eval, prefix='eval_', per_dim_metrics=per_dim_metrics)
                     if keep_the_best:
                         if eval_stats[metrics_objective] < best_objective:
                             best_objective = eval_stats[metrics_objective]

@@ -14,7 +14,8 @@ from baselines.pacoh_nn.meta_algo import MetaLearner
 class PACOH_NN_Regression(MetaLearner):
 
     def __init__(self, meta_train_data, lr=2e-3,  hidden_layer_sizes=(32, 32, 32, 32), activation='relu',
-                 learn_likelihood=True, likelihood_std=0.1, meta_batch_size=4, batch_size=5, num_iter_meta_train=30000,
+                 learn_likelihood=True, likelihood_std=0.1, normalize_likelihood_std: bool = True,
+                 meta_batch_size=4, batch_size=5, num_iter_meta_train=30000,
                  num_iter_meta_test=5000, n_samples_per_prior=10, num_hyper_posterior_particles=3,
                  num_posterior_particles=5, prior_weight=0.1, hyper_prior_weight=1e-4, hyper_prior_nn_std=0.4,
                  hyper_prior_log_var_mean=-3.0, hyper_prior_likelihood_log_var_mean_mean=-8,
@@ -59,6 +60,8 @@ class PACOH_NN_Regression(MetaLearner):
         self.nn_model.build((None, self.input_dim))
 
         # setup likelihood
+        if normalize_likelihood_std:
+            likelihood_std = tf.convert_to_tensor(likelihood_std) / tf.reshape(self.y_std, (self.output_dim,))
         self.likelihood = GaussianLikelihood(self.output_dim, self.n_batched_models_train,
                                              std=likelihood_std, trainable=learn_likelihood)
         self.learn_likelihood = learn_likelihood
