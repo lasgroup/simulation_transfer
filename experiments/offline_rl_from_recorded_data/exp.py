@@ -24,14 +24,10 @@ def experiment(horizon_len: int,
                ctrl_diff_weight: float,
                num_offline_collected_transitions: int,
                use_sim_prior: int,
+               test_data_ratio: float = 0.2,
                ):
-    config_dict = dict(horizon_len=horizon_len,
-                       seed=seed,
-                       diff_w=ctrl_diff_weight,
-                       cost_w=ctrl_cost_weight,
-                       num_offline_trans=num_offline_collected_transitions,
-                       use_sim_prior=use_sim_prior,
-                       )
+    config_dict = dict(use_sim_prior=use_sim_prior,
+                       num_offline_collected_transitions=num_offline_collected_transitions, )
     group_name = '_'.join(list(str(key) + '=' + str(value) for key, value in config_dict.items() if key != 'seed'))
 
     car_reward_kwargs = dict(encode_angle=True,
@@ -97,17 +93,21 @@ def experiment(horizon_len: int,
                                                                  data_spec={
                                                                      'num_samples_train': num_offline_collected_transitions})
 
+    # Deal with randomness
+    key = jr.PRNGKey(seed)
+    key_bnn, key_offline_rl, key_evaluation_on_sim_env = jr.split(key, 3)
+
     standard_params = {
         'input_size': sim.input_size,
         'output_size': sim.output_size,
-        'rng_key': jr.PRNGKey(seed),
+        'rng_key': key_bnn,
         'likelihood_std': _RACECAR_NOISE_STD_ENCODED,
         'normalize_data': True,
         'normalize_likelihood_std': True,
         'learn_likelihood_std': bool(learnable_likelihood_std),
-        'normalization_stats': sim.normalization_stats,
         'likelihood_exponent': 0.5,
         'hidden_layer_sizes': [64, 64, 64],
+        'data_batch_size': 32,
     }
 
     if use_sim_prior:
@@ -119,38 +119,45 @@ def experiment(horizon_len: int,
                                      ])
         if predict_difference:
             sim = PredictStateChangeWrapper(sim)
+
+        standard_params['normalization_stats'] = sim.normalization_stats
+        standard_params['num_measurement_points'] = 32
         model = BNN_FSVGD_SimPrior(
             **standard_params,
             domain=sim.domain,
             function_sim=sim,
             score_estimator='gp',
-            data_batch_size=32,
             num_train_steps=bnn_train_steps,
             num_f_samples=256,
             bandwidth_svgd=1.0
         )
     else:
+        if predict_difference:
+            sim = PredictStateChangeWrapper(sim)
+        # We don't use precomputed normalization stats for the BNNSVGD model, since it works better then
+        # if use_sim_normalization_stats:
+        #     standard_params['normalization_stats'] = sim.normalization_stats
         model = BNN_SVGD(
             **standard_params,
-            data_batch_size=32,
             num_train_steps=bnn_train_steps,
         )
 
     rl_from_offline_data = RLFromOfflineData(
         data_spec={'num_samples_train': num_offline_collected_transitions},
         bnn_model=model,
-        key=jr.PRNGKey(seed),
+        key=key_offline_rl,
         sac_kwargs=SAC_KWARGS,
         car_reward_kwargs=car_reward_kwargs,
         include_aleatoric_noise=bool(include_aleatoric_noise),
         return_best_policy=bool(best_policy),
         predict_difference=bool(predict_difference),
+        test_data_ratio=test_data_ratio,
     )
     policy, params, metrics, bnn_model = rl_from_offline_data.prepare_policy_from_offline_data(
         bnn_train_steps=bnn_train_steps,
         return_best_bnn=bool(best_bnn_model))
 
-    rl_from_offline_data.evaluate_policy(policy, bnn_model, key=jr.PRNGKey(0))
+    rl_from_offline_data.evaluate_policy(policy, bnn_model, key=key_evaluation_on_sim_env)
     wandb.finish()
 
 

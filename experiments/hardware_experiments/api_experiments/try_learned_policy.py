@@ -9,7 +9,6 @@ import wandb
 
 from sim_transfer.hardware.car_env import CarEnv
 from sim_transfer.rl.rl_on_offline_data import RLFromOfflineData
-from sim_transfer.sims.util import decode_angles
 from sim_transfer.sims.util import plot_rc_trajectory
 
 
@@ -59,7 +58,7 @@ def run_with_learned_policy(filename_policy: str,
         car_reward_kwargs=car_reward_kwargs)
     wandb.init(
         project="Race car test MBRL",
-        group='hardware test',
+        group='400_points',
         entity='trevenl'
     )
 
@@ -152,7 +151,7 @@ def run_with_learned_policy(filename_policy: str,
     print('Total reward: ', total_reward)
 
     wandb.log({
-        "terminal_reward" : reward_terminal,
+        "terminal_reward": reward_terminal,
         "reward_from_observations": reward_from_observations,
         "total_reward": total_reward
     })
@@ -213,6 +212,7 @@ def run_with_learned_policy(filename_policy: str,
     wandb.log({'Trajectory_on_learned_model': wandb.Image(fig)})
     return observations, actions
 
+
 def plot_error_on_the_trajectory(data):
     # Create a figure with 8 subplots arranged in 2x4
     fig, axes = plt.subplots(2, 4, figsize=(15, 10))
@@ -241,4 +241,4 @@ if __name__ == '__main__':
     filename_policy = 'parameters.pkl'
     filename_bnn_model = 'bnn_model.pkl'
     observations_for_plotting, actions_for_plotting = run_with_learned_policy(filename_policy=filename_policy,
-                           filename_bnn_model=filename_bnn_model)
+                                                                              filename_bnn_model=filename_bnn_model)
