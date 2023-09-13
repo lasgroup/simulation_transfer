@@ -16,9 +16,10 @@ from sim_transfer.models.abstract_model import BatchedNeuralNetworkModel
 class LikelihoodMixin:
 
     def __init__(self, likelihood_std: Union[float, jnp.array, List[float]] = 0.2,
-                 learn_likelihood_std: bool = False,
-                 normalize_likelihood_std: bool = False):
+                 learn_likelihood_std: bool = False, normalize_likelihood_std: bool = False,
+                 lognormal_prior_std: float = 1.):
         self.learn_likelihood_std = learn_likelihood_std
+        self._lognormal_prior_std = lognormal_prior_std
 
         if isinstance(likelihood_std, list):
             likelihood_std = jnp.array(likelihood_std)  # convert to jnp.array if necessary
@@ -78,6 +79,13 @@ class LikelihoodMixin:
 
     def _init_likelihood(self):
         self.likelihood_std = self._initial_likelihood_std
+
+    def _likelihood_prior_logprob(self, likelihood_std_raw: jnp.array) -> Union[float, jnp.ndarray]:
+        # computes the logprob of the raw likelihood_std (i.e. in log-space) under a log-normal prior
+        log_probs = tfd.Normal(loc=0., scale=self._lognormal_prior_std).log_prob(likelihood_std_raw)
+        assert log_probs.shape == (self.output_size,)
+        return jnp.sum(log_probs)
+
 
 
 class AbstractParticleBNN(BatchedNeuralNetworkModel, LikelihoodMixin):
@@ -290,11 +298,12 @@ class MeasurementSetMixin:
 
 class AbstractFSVGD_BNN(AbstractParticleBNN, MeasurementSetMixin):
 
-    def __init__(self, domain, bandwidth_svgd: float = 0.4, **kwargs):
+    def __init__(self, domain, bandwidth_svgd: float = 0.4, likelihood_reg: float = 0.0, **kwargs):
         AbstractParticleBNN.__init__(self, **kwargs)
         MeasurementSetMixin.__init__(self, domain=domain)
         self.bandwidth_svgd = bandwidth_svgd
         self.kernel_svgd = tfp.math.psd_kernels.ExponentiatedQuadratic(length_scale=self.bandwidth_svgd)
+        self.likelihood_reg = likelihood_reg if self.learn_likelihood_std else 0.0
 
     @partial(jax.jit, static_argnums=(0,))
     def _evaluate_kernel(self, pred_raw: jnp.ndarray):
@@ -347,11 +356,12 @@ class AbstractFSVGD_BNN(AbstractParticleBNN, MeasurementSetMixin):
 
 class AbstractSVGD_BNN(AbstractParticleBNN):
 
-    def __init__(self, bandwidth_svgd: float = 0.4, use_prior: bool = True, **kwargs):
+    def __init__(self, bandwidth_svgd: float = 0.4, use_prior: bool = True, likelihood_reg: float = 0.0, **kwargs):
         AbstractParticleBNN.__init__(self, **kwargs)
         self.use_prior = use_prior
         self.bandwidth_svgd = bandwidth_svgd
         self.svgd_kernel = tfp.math.psd_kernels.ExponentiatedQuadratic(length_scale=self.bandwidth_svgd)
+        self.likelihood_reg = likelihood_reg if self.learn_likelihood_std else 0.0
 
     @property
     def prior_dist(self) -> tfd.Distribution:
@@ -410,6 +420,9 @@ class AbstractSVGD_BNN(AbstractParticleBNN):
             log_prior = jnp.mean(self.prior_dist.log_prob(
                 self.batched_model.flatten_batch(params['nn_params_stacked'])))
             log_prior /= self.prior_dist.event_shape[0]
+            if self.likelihood_reg > 0:
+                likelihood_penalty = self.likelihood_reg * self._likelihood_prior_logprob(params['likelihood_std_raw'])
+                log_prior += (num_train_points**self.likelihood_exponent) * likelihood_penalty
             stats = OrderedDict(train_nll_loss=nll, neg_log_prior=-log_prior)
             neg_log_post = nll - log_prior
         else:
@@ -417,4 +430,6 @@ class AbstractSVGD_BNN(AbstractParticleBNN):
             stats = OrderedDict(train_nll_loss=nll)
         if self.learn_likelihood_std:
             stats['likelihood_std'] = jnp.mean(self._likelihood_std_transform(params['likelihood_std_raw']))
+        if self.likelihood_reg > 0:
+            stats['likelihood_penalty'] = likelihood_penalty
         return neg_log_post, stats

@@ -14,6 +14,7 @@ class BNN_SVGD(AbstractSVGD_BNN):
                  rng_key: jax.random.PRNGKey,
                  likelihood_std: Union[float, jnp.array] = 0.2,
                  learn_likelihood_std: bool = False,
+                 likelihood_reg: float = 0.0,
                  likelihood_exponent: float = 1.0,
                  num_particles: int = 10,
                  bandwidth_svgd: float = 10.0,
@@ -39,7 +40,8 @@ class BNN_SVGD(AbstractSVGD_BNN):
                          lr=lr, weight_decay=weight_decay, likelihood_std=likelihood_std,
                          learn_likelihood_std=learn_likelihood_std,
                          likelihood_exponent=likelihood_exponent,
-                         bandwidth_svgd=bandwidth_svgd, use_prior=use_prior)
+                         bandwidth_svgd=bandwidth_svgd, use_prior=use_prior,
+                         likelihood_reg=likelihood_reg)
         self._save_init_args(locals())
 
         # construct the neural network prior distribution

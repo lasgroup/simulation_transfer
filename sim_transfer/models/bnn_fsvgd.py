@@ -20,6 +20,7 @@ class BNN_FSVGD(AbstractFSVGD_BNN):
                  rng_key: jax.random.PRNGKey,
                  likelihood_std: float = 0.2,
                  learn_likelihood_std: bool = False,
+                 likelihood_reg: float = 0.0,
                  likelihood_exponent: float = 1.0,
                  num_particles: int = 10,
                  bandwidth_svgd: float = 0.2,
@@ -42,7 +43,8 @@ class BNN_FSVGD(AbstractFSVGD_BNN):
                          normalize_data=normalize_data, normalization_stats=normalization_stats,
                          lr=lr, weight_decay=weight_decay, domain=domain, bandwidth_svgd=bandwidth_svgd,
                          likelihood_std=likelihood_std, learn_likelihood_std=learn_likelihood_std,
-                         likelihood_exponent=likelihood_exponent, normalize_likelihood_std=normalize_likelihood_std)
+                         likelihood_exponent=likelihood_exponent, normalize_likelihood_std=normalize_likelihood_std,
+                         likelihood_reg=likelihood_reg)
         self._save_init_args(locals())
         self.bandwidth_gp_prior = bandwidth_gp_prior
         self.num_measurement_points = num_measurement_points
@@ -56,10 +58,15 @@ class BNN_FSVGD(AbstractFSVGD_BNN):
         nll = - num_train_points**self.likelihood_exponent\
               * self._ll(pred_raw, likelihood_std, y_batch, train_data_till_idx)
         neg_log_prior = - self._gp_prior_log_prob(x_stacked, pred_raw, eps=1e-3)
+        if self.likelihood_reg > 0:
+            likelihood_penalty = self.likelihood_reg * self._likelihood_prior_logprob(jnp.log(likelihood_std))
+            neg_log_prior -= (num_train_points**self.likelihood_exponent) * likelihood_penalty
         neg_log_post = nll + neg_log_prior
         stats = OrderedDict(train_nll_loss=nll, neg_log_prior=neg_log_prior)
         if self.learn_likelihood_std:
             stats['likelihood_std'] = jnp.mean(likelihood_std)
+        if self.likelihood_reg > 0:
+            stats['likelihood_penalty'] = likelihood_penalty
         return neg_log_post, stats
 
     def _gp_prior_log_prob(self, x: jnp.array, y: jnp.array, eps: float = 1e-3) -> jnp.ndarray:
