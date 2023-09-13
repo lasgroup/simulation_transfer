@@ -35,8 +35,12 @@ class RLFromOfflineData:
                  sac_kwargs: dict = None,
                  key: chex.PRNGKey = jr.PRNGKey(0),
                  return_best_policy: bool = True,
-                 num_frame_stack: int = 3
+                 num_frame_stack: int = 3,
+                 test_data_ratio: float = 0.2,
                  ):
+        self.test_data_ratio = test_data_ratio
+        self.key = key
+
         self.return_best_policy = return_best_policy
         self.include_aleatoric_noise = include_aleatoric_noise
         self.data_source = data_source
@@ -91,7 +95,6 @@ class RLFromOfflineData:
             sample_batch_size=1)
 
         # We init and insert the data in the true data buffer
-        self.key = key
         self.key, key_init_buffer, key_insert_data = jr.split(self.key, 3)
         true_buffer_state = self.true_data_buffer.init(key_init_buffer)
         true_buffer_state = self.true_data_buffer.insert(true_buffer_state, transitions)
@@ -116,9 +119,38 @@ class RLFromOfflineData:
 
     def load_data(self):
         # y_train is the next state not the difference
-        x_train, y_train, x_test, y_test, sim = provide_data_and_sim(data_source=self.data_source,
-                                                                     data_spec=self.data_spec)
+        x_data, y_data, _, _, sim = provide_data_and_sim(data_source=self.data_source,
+                                                         data_spec=self.data_spec)
+
+        # Now we split x_train_data into train and test
+        self.key, key_split = jr.split(self.key)
+        x_train, y_train, x_test, y_test = self.shuffle_and_split_data(x_data, y_data, self.test_data_ratio, key_split)
         return x_train, y_train, x_test, y_test, sim
+
+    @staticmethod
+    def shuffle_and_split_data(x_data, y_data, test_ratio, key: chex.PRNGKey):
+        # Get the size of the data
+        num_data = x_data.shape[0]
+
+        # Create a permutation of indices
+        perm = jr.permutation(key, num_data)
+        # Permute the data
+        x_data = x_data[perm]
+        y_data = y_data[perm]
+
+        # Calculate the number of examples in the test set
+        num_test = int(test_ratio * num_data)
+
+        # Calculate the number of examples in the train set
+        num_train = num_data - num_test
+
+        # Split the data
+        x_train = x_data[:num_train]
+        x_test = x_data[num_train:]
+        y_train = y_data[:num_train]
+        y_test = y_data[num_train:]
+
+        return x_train, y_train, x_test, y_test
 
     def train_model(self,
                     bnn_train_steps: int,
@@ -291,7 +323,7 @@ class RLFromOfflineData:
                                        concatenated_transitions.action, encode_angle=True,
                                        show=False)
         wandb.log({'Trajectory_on_learned_model': wandb.Image(fig),
-                   'reward_on_learned_model': rewards})
+                   'reward_on_learned_model': float(rewards)})
         plt.close('all')
 
 
