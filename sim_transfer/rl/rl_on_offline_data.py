@@ -39,6 +39,8 @@ class RLFromOfflineData:
                  test_data_ratio: float = 0.2,
                  ):
         self.test_data_ratio = test_data_ratio
+        self.key = key
+
         self.return_best_policy = return_best_policy
         self.include_aleatoric_noise = include_aleatoric_noise
         self.data_source = data_source
@@ -93,7 +95,6 @@ class RLFromOfflineData:
             sample_batch_size=1)
 
         # We init and insert the data in the true data buffer
-        self.key = key
         self.key, key_init_buffer, key_insert_data = jr.split(self.key, 3)
         true_buffer_state = self.true_data_buffer.init(key_init_buffer)
         true_buffer_state = self.true_data_buffer.insert(true_buffer_state, transitions)
