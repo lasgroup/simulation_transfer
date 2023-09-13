@@ -59,7 +59,7 @@ def run_with_learned_policy(filename_policy: str,
         car_reward_kwargs=car_reward_kwargs)
     wandb.init(
         project="Race car test MBRL",
-        group='hardware test',
+        group='400_points',
         entity='trevenl'
     )
 
