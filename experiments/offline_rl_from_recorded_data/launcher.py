@@ -1,7 +1,7 @@
 import exp
 from experiments.util import generate_run_commands, generate_base_command, dict_permutations
 
-PROJECT_NAME = 'OfflineRLFromRecordedDataN1'
+PROJECT_NAME = 'OfflineRLFromRecordedDataLowFidelityN1'
 
 applicable_configs = {
     'horizon_len': [100],
@@ -19,6 +19,7 @@ applicable_configs = {
     'ctrl_diff_weight': [1.0],
     'num_offline_collected_transitions': [400, 800, 1_600],
     'use_sim_prior': [0, 1],
+    'high_fidelity': [0],
 }
 
 
