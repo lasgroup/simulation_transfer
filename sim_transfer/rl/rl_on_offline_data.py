@@ -294,28 +294,32 @@ class RLFromOfflineData:
         obs = sim.reset()
         # Obs represents samples from the init_states_buffer which is of dim x_dim + u_dim * num_frame_stack
         stacked_actions = jnp.zeros(shape=(self.num_frame_stack * self.action_dim,))
-
         transitions = []
+
+        learned_car_system = LearnedCarSystem(model=bnn_model,
+                                              include_noise=self.include_aleatoric_noise,
+                                              predict_difference=self.predict_difference,
+                                              num_frame_stack=self.num_frame_stack,
+                                              **self.car_reward_kwargs)
+
+        key, subkey = jr.split(key)
+        sys_params = learned_car_system.init_params(subkey)
+        state = jnp.concatenate([obs, stacked_actions], axis=-1)
         for step in range(eval_horizon):
             key, subkey = jr.split(key)
-            action = policy(jnp.concatenate([obs, stacked_actions], axis=-1))
-            z = jnp.concatenate([obs, stacked_actions, action], axis=-1)
-            z = z.reshape((1, -1))
-            delta_x_dist = bnn_model.predict_dist(z, include_noise=True)
-            delta_x = delta_x_dist.sample(seed=subkey)
-            delta_x = delta_x.reshape(-1)
-            next_obs = obs + delta_x
+            action = policy(state)
+            sys_state = learned_car_system.step(x=state, u=action, system_params=sys_params)
+            new_state = sys_state.x_next
 
-            transitions.append(Transition(observation=obs,
+            transitions.append(Transition(observation=state[:self.state_dim],
                                           action=action,
-                                          reward=jnp.array(0.0),
+                                          reward=sys_state.reward,
                                           discount=jnp.array(0.99),
-                                          next_observation=next_obs))
-            # We prepare set of new inputs
-            obs = next_obs
-            # Now we shift the actions
-            stacked_actions = jnp.roll(stacked_actions, shift=self.action_dim)
-            stacked_actions = stacked_actions.at[:self.action_dim].set(action)
+                                          next_observation=new_state[:self.state_dim], ))
+
+            # Update state, sys_params
+            sys_params = sys_state.system_params
+            state = new_state
 
         concatenated_transitions = jtu.tree_map(lambda *xs: jnp.stack(xs, axis=0), *transitions)
         rewards = jnp.sum(concatenated_transitions.reward)
@@ -369,9 +373,36 @@ if __name__ == '__main__':
                       deterministic_eval=True,
                       wandb_logging=True)
 
+    x_train, y_train, x_test, y_test, sim = provide_data_and_sim(
+        data_source='real_racecar_new_actionstack',
+        data_spec={'num_samples_train': 10_000,
+                   'use_hf_sim': True, })
+
+    standard_params = {
+        'input_size': sim.input_size,
+        'output_size': sim.output_size,
+        'rng_key': jr.PRNGKey(0),
+        'likelihood_std': _RACECAR_NOISE_STD_ENCODED,
+        'normalize_data': True,
+        'normalize_likelihood_std': True,
+        'learn_likelihood_std': True,
+        'likelihood_exponent': 0.5,
+        'hidden_layer_sizes': [64, 64, 64],
+        'data_batch_size': 32,
+    }
+
+    model = BNN_SVGD(
+        **standard_params,
+        num_train_steps=2_000,
+    )
+
     rl_from_offline_data = RLFromOfflineData(
+        data_spec={'num_samples_train': 5_000},
         sac_kwargs=SAC_KWARGS,
-        car_reward_kwargs=car_reward_kwargs)
+        car_reward_kwargs=car_reward_kwargs,
+        bnn_model=model,
+        test_data_ratio=0.2,
+    )
     policy, params, metrics, bnn_model = rl_from_offline_data.prepare_policy_from_offline_data(bnn_train_steps=2_000)
     filename_params = os.path.join(wandb.run.dir, 'models/policy.pkl')
     filename_bnn_model = os.path.join(wandb.run.dir, 'models/bnn_model.pkl')
@@ -380,3 +411,5 @@ if __name__ == '__main__':
         bnn_model = cloudpickle.load(handle)
 
     rl_from_offline_data.evaluate_policy(policy, bnn_model, key=jr.PRNGKey(0))
+
+    wandb.finish()
