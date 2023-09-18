@@ -18,7 +18,7 @@ ENTITY = 'trevenl'
 
 class RunSpec(NamedTuple):
     group_name: str
-    run_name: str
+    run_id: str
 
 
 def run_all_hardware_experiments(project_name_load: str,
@@ -40,17 +40,16 @@ def run_all_hardware_experiments(project_name_load: str,
     # Download all models
     runs = api.runs(project_name)
     for run in runs:
-        group_name = run.group
-        run_name = run.name
         for file in run.files():
             if file.name.startswith(dir_to_save):
-                file.download(replace=True, root=os.path.join(local_dir, group_name, run_name))
-                runs_spec.append(RunSpec(group_name=group_name, run_name=run_name))
+                file.download(replace=True, root=os.path.join(local_dir, run.group, run.id))
+                runs_spec.append(RunSpec(group_name=run.group,
+                                         run_id=run.id))
 
     # Run all models on hardware
     for run_spec in runs_spec:
         # We open the file with pickle
-        pre_path = os.path.join(local_dir, run_spec.group_name, run_spec.run_name)
+        pre_path = os.path.join(local_dir, run_spec.group_name, run_spec.run_id)
         policy_name = 'parameters.pkl'
         bnn_name = 'bnn_model.pkl'
 
@@ -64,14 +63,14 @@ def run_all_hardware_experiments(project_name_load: str,
                                 bnn_model=bnn_model,
                                 project_name=project_name_save,
                                 group_name=run_spec.group_name,
-                                run_name=run_spec.run_name)
+                                run_id=run_spec.run_id)
 
 
 def run_with_learned_policy(policy_params,
                             bnn_model,
                             project_name: str,
                             group_name: str,
-                            run_name: str,
+                            run_id: str,
                             ):
     """
     Num stacked frames: 3
@@ -87,7 +86,8 @@ def run_with_learned_policy(policy_params,
         project=project_name,
         group=group_name,
         entity=ENTITY,
-        name=run_name
+        id=run_id,
+        resume="allow",
     )
     policy = rl_from_offline_data.prepare_policy(params=policy_params)
 
