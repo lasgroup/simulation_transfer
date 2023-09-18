@@ -3,7 +3,7 @@ from experiments.util import generate_run_commands, generate_base_command, dict_
 
 PROJECT_NAME = 'OfflineRLFromRecordedDataLowFidelityN1'
 
-applicable_configs = {
+_applicable_configs = {
     'horizon_len': [100],
     'seed': list(range(5)),
     'project_name': [PROJECT_NAME],
@@ -18,15 +18,21 @@ applicable_configs = {
     'ctrl_cost_weight': [0.005],
     'ctrl_diff_weight': [1.0],
     'num_offline_collected_transitions': [400, 800, 1_600],
-    'use_sim_prior': [0, 1],
-    'high_fidelity': [0],
 }
+
+_applicable_configs_no_sim_prior = {'use_sim_prior': [0],
+                                    'high_fidelity': [0]} | _applicable_configs
+_applicable_configs_high_fidelity = {'use_sim_prior': [1],
+                                     'high_fidelity': [1]} | _applicable_configs
+_applicable_configs_low_fidelity = {'use_sim_prior': [1],
+                                    'high_fidelity': [0]} | _applicable_configs
+
+all_flags_combinations = dict_permutations(_applicable_configs_no_sim_prior) + dict_permutations(
+    _applicable_configs_high_fidelity) + dict_permutations(_applicable_configs_low_fidelity)
 
 
 def main():
     command_list = []
-
-    all_flags_combinations = dict_permutations(applicable_configs)
     for flags in all_flags_combinations:
         cmd = generate_base_command(exp, flags=flags)
         command_list.append(cmd)

@@ -341,7 +341,7 @@ def count(row):
     return row.shape[0]
 
 
-def dict_permutations(d):
+def dict_permutations(d: dict) -> List[dict]:
     keys = d.keys()
     values = d.values()
     perms = []
