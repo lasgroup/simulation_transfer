@@ -1,10 +1,10 @@
 import exp
 from experiments.util import generate_run_commands, generate_base_command, dict_permutations
 
-PROJECT_NAME = 'OfflineRLFromRecordedDataLowFidelityN1'
+PROJECT_NAME = 'OfflineRLAllBNNs'
 
 _applicable_configs = {
-    'horizon_len': [100],
+    'horizon_len': [100, 200],
     'seed': list(range(5)),
     'project_name': [PROJECT_NAME],
     'sac_num_env_steps': [2_000_000],
@@ -21,11 +21,16 @@ _applicable_configs = {
 }
 
 _applicable_configs_no_sim_prior = {'use_sim_prior': [0],
-                                    'high_fidelity': [0]} | _applicable_configs
+                                    'high_fidelity': [0],
+                                    'bnn_batch_size': [128]} | _applicable_configs
 _applicable_configs_high_fidelity = {'use_sim_prior': [1],
-                                     'high_fidelity': [1]} | _applicable_configs
+                                     'high_fidelity': [1],
+                                     'num_measurement_points': [8, 16, 32, 64],
+                                     'bnn_batch_size': [64, 128]} | _applicable_configs
 _applicable_configs_low_fidelity = {'use_sim_prior': [1],
-                                    'high_fidelity': [0]} | _applicable_configs
+                                    'high_fidelity': [0],
+                                    'num_measurement_points': [8, 16, 32, 64],
+                                    'bnn_batch_size': [64, 128]} | _applicable_configs
 
 all_flags_combinations = dict_permutations(_applicable_configs_no_sim_prior) + dict_permutations(
     _applicable_configs_high_fidelity) + dict_permutations(_applicable_configs_low_fidelity)

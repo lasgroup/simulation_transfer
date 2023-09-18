@@ -25,11 +25,16 @@ def experiment(horizon_len: int,
                num_offline_collected_transitions: int,
                use_sim_prior: int,
                high_fidelity: int,
+               num_measurement_points: int,
+               bnn_batch_size: int,
                test_data_ratio: float = 0.2,
                ):
     config_dict = dict(use_sim_prior=use_sim_prior,
                        high_fidelity=high_fidelity,
-                       num_offline_collected_transitions=num_offline_collected_transitions, )
+                       num_offline_data=num_offline_collected_transitions,
+                       bnn_batch_size=bnn_batch_size,
+                       num_mes_points=num_measurement_points,
+                       horizon_len=horizon_len)
     group_name = '_'.join(list(str(key) + '=' + str(value) for key, value in config_dict.items() if key != 'seed'))
 
     car_reward_kwargs = dict(encode_angle=True,
@@ -82,6 +87,9 @@ def experiment(horizon_len: int,
                        num_offline_collected_transitions=num_offline_collected_transitions,
                        use_sim_prior=use_sim_prior,
                        high_fidelity=high_fidelity,
+                       bnn_batch_size=bnn_batch_size,
+                       num_measurement_points=num_measurement_points,
+                       test_data_ratio=test_data_ratio,
                        )
 
     total_config = SAC_KWARGS | config_dict
@@ -111,7 +119,7 @@ def experiment(horizon_len: int,
         'learn_likelihood_std': bool(learnable_likelihood_std),
         'likelihood_exponent': 0.5,
         'hidden_layer_sizes': [64, 64, 64],
-        'data_batch_size': 128,
+        'data_batch_size': bnn_batch_size,
     }
 
     if use_sim_prior:
@@ -128,7 +136,6 @@ def experiment(horizon_len: int,
             sim = PredictStateChangeWrapper(sim)
 
         standard_params['normalization_stats'] = sim.normalization_stats
-        standard_params['num_measurement_points'] = 32
         model = BNN_FSVGD_SimPrior(
             **standard_params,
             domain=sim.domain,
@@ -136,7 +143,8 @@ def experiment(horizon_len: int,
             score_estimator='gp',
             num_train_steps=bnn_train_steps,
             num_f_samples=256,
-            bandwidth_svgd=1.0
+            bandwidth_svgd=1.0,
+            num_measurement_points=num_measurement_points,
         )
     else:
         # if predict_difference:
@@ -186,6 +194,9 @@ def main(args):
         num_offline_collected_transitions=args.num_offline_collected_transitions,
         use_sim_prior=args.use_sim_prior,
         high_fidelity=args.high_fidelity,
+        num_measurement_points=args.num_measurement_points,
+        bnn_batch_size=args.bnn_batch_size,
+        test_data_ratio=args.test_data_ratio,
     )
 
 
@@ -205,7 +216,10 @@ if __name__ == '__main__':
     parser.add_argument('--ctrl_cost_weight', type=float, default=0.005)
     parser.add_argument('--ctrl_diff_weight', type=float, default=0.01)
     parser.add_argument('--num_offline_collected_transitions', type=int, default=1_000)
-    parser.add_argument('--use_sim_prior', type=int, default=1)
-    parser.add_argument('--high_fidelity', type=int, default=1)
+    parser.add_argument('--use_sim_prior', type=int, default=0)
+    parser.add_argument('--high_fidelity', type=int, default=0)
+    parser.add_argument('--num_measurement_points', type=int, default=8)
+    parser.add_argument('--bnn_batch_size', type=int, default=32)
+    parser.add_argument('--test_data_ratio', type=float, default=0.1)
     args = parser.parse_args()
     main(args)
