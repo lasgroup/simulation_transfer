@@ -168,9 +168,13 @@ class RLFromOfflineData:
         x_train, y_train, x_test, y_test, sim = self.x_train, self.y_train, self.x_test, self.y_test, None
         print(x_train.shape, y_train.shape, x_test.shape, y_test.shape)
         bnn = self.bnn_model
+        if self.test_data_ratio == 0.0:
+            metrics_objective = 'train_nll_loss'
+        else:
+            metrics_objective = 'eval_nll'
         # Train the bnn model
         bnn.fit(x_train=x_train, y_train=y_train, x_eval=x_test, y_eval=y_test, log_to_wandb=True,
-                keep_the_best=return_best_bnn, metrics_objective='eval_nll', num_steps=bnn_train_steps)
+                keep_the_best=return_best_bnn, metrics_objective=metrics_objective, num_steps=bnn_train_steps)
 
         return bnn
 
