@@ -18,7 +18,7 @@ _applicable_configs = {
     'ctrl_cost_weight': [0.005],
     'ctrl_diff_weight': [1.0],
     'num_offline_collected_transitions': [400, 800],
-    'test_data_ratio': [0.0, 0.1, 0.2, 0.3],
+    'test_data_ratio': [0.0],
 }
 
 _applicable_configs_no_sim_prior = {'use_sim_prior': [0],
