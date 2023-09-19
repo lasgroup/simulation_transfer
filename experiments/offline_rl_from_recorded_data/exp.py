@@ -32,9 +32,8 @@ def experiment(horizon_len: int,
     config_dict = dict(use_sim_prior=use_sim_prior,
                        high_fidelity=high_fidelity,
                        num_offline_data=num_offline_collected_transitions,
-                       bnn_batch_size=bnn_batch_size,
                        num_mes_points=num_measurement_points,
-                       horizon_len=horizon_len)
+                       test_data_ratio=test_data_ratio, )
     group_name = '_'.join(list(str(key) + '=' + str(value) for key, value in config_dict.items() if key != 'seed'))
 
     car_reward_kwargs = dict(encode_angle=True,
