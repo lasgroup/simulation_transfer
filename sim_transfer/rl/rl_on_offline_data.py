@@ -35,7 +35,7 @@ class RLFromOfflineData:
                  key: chex.PRNGKey = jr.PRNGKey(0),
                  return_best_policy: bool = True,
                  num_frame_stack: int = 3,
-                 test_data_ratio: float = 0.2,
+                 test_data_ratio: float = 0.1,
                  ):
         # We load the model trained on dataset of 20_000 points for evaluation
         simulation_transfer_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -410,7 +410,7 @@ if __name__ == '__main__':
     )
 
     rl_from_offline_data = RLFromOfflineData(
-        data_spec={'num_samples_train': 5_000},
+        data_spec={'num_samples_train': 400},
         sac_kwargs=SAC_KWARGS,
         car_reward_kwargs=car_reward_kwargs,
         bnn_model=model,
