@@ -418,7 +418,7 @@ if __name__ == '__main__':
         sac_kwargs=SAC_KWARGS,
         car_reward_kwargs=car_reward_kwargs,
         bnn_model=model,
-        test_data_ratio=0.2,
+        test_data_ratio=0.1,
     )
     policy, params, metrics, bnn_model = rl_from_offline_data.prepare_policy_from_offline_data(bnn_train_steps=2_000)
     filename_params = os.path.join(wandb.run.dir, 'models/policy.pkl')
