@@ -107,7 +107,7 @@ def experiment(horizon_len: int,
 
     # Deal with randomness
     key = jr.PRNGKey(seed)
-    key_bnn, key_offline_rl, key_evaluation_on_sim_env = jr.split(key, 3)
+    key_bnn, key_offline_rl, key_evaluation_trained_bnn, key_evaluation_pretrained_bnn = jr.split(key, 4)
 
     standard_params = {
         'input_size': sim.input_size,
@@ -172,7 +172,8 @@ def experiment(horizon_len: int,
         bnn_train_steps=bnn_train_steps,
         return_best_bnn=bool(best_bnn_model))
 
-    rl_from_offline_data.evaluate_policy(policy, bnn_model, key=key_evaluation_on_sim_env)
+    rl_from_offline_data.evaluate_policy(policy, key=key_evaluation_pretrained_bnn)
+    rl_from_offline_data.evaluate_policy(policy, bnn_model, key=key_evaluation_trained_bnn)
     wandb.finish()
 
 
