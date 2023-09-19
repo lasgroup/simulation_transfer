@@ -1,11 +1,11 @@
 import exp
 from experiments.util import generate_run_commands, generate_base_command, dict_permutations
 
-PROJECT_NAME = 'OfflineRLAllBNNs'
+PROJECT_NAME = 'OfflineRLEvalOnPretrained'
 
 _applicable_configs = {
-    'horizon_len': [100, 200],
-    'seed': list(range(5)),
+    'horizon_len': [100],
+    'seed': list(range(2)),
     'project_name': [PROJECT_NAME],
     'sac_num_env_steps': [2_000_000],
     'bnn_train_steps': [100_000],
@@ -17,20 +17,21 @@ _applicable_configs = {
     'predict_difference': [1],
     'ctrl_cost_weight': [0.005],
     'ctrl_diff_weight': [1.0],
-    'num_offline_collected_transitions': [400, 800, 1_600],
+    'num_offline_collected_transitions': [400, 800],
+    'test_data_ratio': [0.0, 0.1, 0.2, 0.3],
 }
 
 _applicable_configs_no_sim_prior = {'use_sim_prior': [0],
                                     'high_fidelity': [0],
-                                    'bnn_batch_size': [128]} | _applicable_configs
+                                    'bnn_batch_size': [64]} | _applicable_configs
 _applicable_configs_high_fidelity = {'use_sim_prior': [1],
                                      'high_fidelity': [1],
-                                     'num_measurement_points': [8, 16, 32, 64],
-                                     'bnn_batch_size': [64, 128]} | _applicable_configs
+                                     'num_measurement_points': [8, 16],
+                                     'bnn_batch_size': [64]} | _applicable_configs
 _applicable_configs_low_fidelity = {'use_sim_prior': [1],
                                     'high_fidelity': [0],
-                                    'num_measurement_points': [8, 16, 32, 64],
-                                    'bnn_batch_size': [64, 128]} | _applicable_configs
+                                    'num_measurement_points': [8, 16],
+                                    'bnn_batch_size': [64]} | _applicable_configs
 
 all_flags_combinations = dict_permutations(_applicable_configs_no_sim_prior) + dict_permutations(
     _applicable_configs_high_fidelity) + dict_permutations(_applicable_configs_low_fidelity)
