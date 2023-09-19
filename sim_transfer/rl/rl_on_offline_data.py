@@ -3,7 +3,6 @@ import pickle
 from typing import Callable, Any
 
 import chex
-import cloudpickle
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree_util as jtu
@@ -38,6 +37,15 @@ class RLFromOfflineData:
                  num_frame_stack: int = 3,
                  test_data_ratio: float = 0.2,
                  ):
+        # We load the model trained on dataset of 20_000 points for evaluation
+        simulation_transfer_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        bnn_dir = os.path.join(simulation_transfer_dir, 'bnn_models_pretrained')
+        bnn_model_path = os.path.join(bnn_dir, 'bnn_svgd_model_on_20_000_points.pkl')
+
+        with open(bnn_model_path, 'rb') as handle:
+            bnn_model_pretrained = pickle.load(handle)
+
+        self.bnn_model_pretrained = bnn_model_pretrained
         self.test_data_ratio = test_data_ratio
         self.key = key
 
@@ -276,7 +284,7 @@ class RLFromOfflineData:
         directory = os.path.join(wandb.run.dir, 'models')
         if not os.path.exists(directory):
             os.makedirs(directory)
-        model_path = os.path.join('models', 'bnn_model.pkl')
+        model_path = os.path.join('models', 'bnn_svgd_model_on_20_000_points.pkl')
         with open(os.path.join(wandb.run.dir, model_path), 'wb') as handle:
             pickle.dump(bnn_model, handle)
         wandb.save(os.path.join(wandb.run.dir, model_path), wandb.run.dir)
@@ -285,8 +293,8 @@ class RLFromOfflineData:
 
     def evaluate_policy(self,
                         policy: Callable,
-                        bnn_model: BatchedNeuralNetworkModel,
-                        key=jr.PRNGKey(0)):
+                        bnn_model: BatchedNeuralNetworkModel | None = None,
+                        key: chex.PRNGKey = jr.PRNGKey(0)):
         sim = RCCarSimEnv(encode_angle=True, use_tire_model=True)
         eval_horizon = 200
         # Now we simulate the policy on the learned model
@@ -296,6 +304,10 @@ class RLFromOfflineData:
         stacked_actions = jnp.zeros(shape=(self.num_frame_stack * self.action_dim,))
         transitions = []
 
+        model_name = 'pretrained_model' if bnn_model is None else 'learned_model'
+
+        if bnn_model is None:
+            bnn_model = self.bnn_model_pretrained
         learned_car_system = LearnedCarSystem(model=bnn_model,
                                               include_noise=self.include_aleatoric_noise,
                                               predict_difference=self.predict_difference,
@@ -326,8 +338,9 @@ class RLFromOfflineData:
         fig, axes = plot_rc_trajectory(concatenated_transitions.next_observation,
                                        concatenated_transitions.action, encode_angle=True,
                                        show=False)
-        wandb.log({'Trajectory_on_learned_model': wandb.Image(fig),
-                   'reward_on_learned_model': float(rewards)})
+
+        wandb.log({f'Trajectory_on_{model_name}': wandb.Image(fig),
+                   f'reward_on_{model_name}': float(rewards)})
         plt.close('all')
 
 
@@ -405,11 +418,12 @@ if __name__ == '__main__':
     )
     policy, params, metrics, bnn_model = rl_from_offline_data.prepare_policy_from_offline_data(bnn_train_steps=2_000)
     filename_params = os.path.join(wandb.run.dir, 'models/policy.pkl')
-    filename_bnn_model = os.path.join(wandb.run.dir, 'models/bnn_model.pkl')
+    filename_bnn_model = os.path.join(wandb.run.dir, 'models/bnn_svgd_model_on_20_000_points.pkl')
 
     with open(filename_bnn_model, 'rb') as handle:
-        bnn_model = cloudpickle.load(handle)
+        bnn_model = pickle.load(handle)
 
-    rl_from_offline_data.evaluate_policy(policy, bnn_model, key=jr.PRNGKey(0))
+    rl_from_offline_data.evaluate_policy(policy, key=jr.PRNGKey(0))
+    rl_from_offline_data.evaluate_policy(policy, bnn_model=bnn_model, key=jr.PRNGKey(0))
 
     wandb.finish()
