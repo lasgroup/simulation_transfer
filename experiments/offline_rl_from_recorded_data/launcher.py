@@ -1,7 +1,7 @@
 import exp
 from experiments.util import generate_run_commands, generate_base_command, dict_permutations
 
-PROJECT_NAME = 'OfflineRL3Dataset'
+PROJECT_NAME = 'OfflineRLWithShare'
 
 _applicable_configs = {
     'horizon_len': [200],
@@ -17,11 +17,11 @@ _applicable_configs = {
     'predict_difference': [1],
     'ctrl_cost_weight': [0.005],
     'ctrl_diff_weight': [1.0],
-    'num_offline_collected_transitions': [800],
-    'test_data_ratio': [0.0, 0.2],
+    'num_offline_collected_transitions': [400, 800, 1600],
+    'test_data_ratio': [0.0],
     'eval_on_all_offline_data': [1],
-    'eval_only_on_init_states': [0, 1],
-    'num_init_points_to_bs_for_learning': [400, 800, 1_600],
+    'eval_only_on_init_states': [0],
+    'share_of_x0s_in_sac_buffer': [0.3, 0.5, 0.7, 0.9],
     'bnn_batch_size': [32]
 }
 
