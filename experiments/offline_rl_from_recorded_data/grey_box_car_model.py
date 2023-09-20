@@ -5,6 +5,7 @@ import jax
 from sim_transfer.sims.dynamics_models import RaceCar, CarParams
 import tensorflow_probability.substrates.jax as tfp
 import tensorflow_probability.substrates.jax.distributions as tfd
+from sim_transfer.modules.distribution import AffineTransform
 
 
 class GreyBoxSVGDCarModel(BNN_SVGD):
@@ -56,9 +57,8 @@ class GreyBoxSVGDCarModel(BNN_SVGD):
     def predict_dist(self, x: jnp.ndarray, include_noise: bool = True):
         pred_dist_bnn = super().predict_dist(x, include_noise)
         sim_model_prediction = self.sim_model_step(x, car_params=self.params['car_model_params'])
-        pred_dist = pred_dist_bnn
-        shift = tfp.bijectors.Shift(sim_model_prediction)
-        pred_dist.mean = shift(pred_dist_bnn.mean)
+        affine_transform_y = AffineTransform(shift=sim_model_prediction, scale=1.0)
+        pred_dist = affine_transform_y(pred_dist_bnn)
         assert pred_dist.batch_shape == x.shape[:-1]
         assert pred_dist.event_shape == (self.output_size,)
         return pred_dist
@@ -107,7 +107,6 @@ if __name__ == '__main__':
                                                            obs_noise_std=0.05)
     bnn = GreyBoxSVGDCarModel(True, True, NUM_DIM_X, NUM_DIM_Y, next(key_iter), num_train_steps=20000,
                               bandwidth_svgd=10., likelihood_std=0.05, likelihood_exponent=1.0,
-                              normalize_likelihood_std=True)
-    # bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=20000)
+                              normalize_likelihood_std=True, learn_likelihood_std=False)
     for i in range(10):
-        bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=2000)
+        bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=2000, per_dim_metrics=True)
