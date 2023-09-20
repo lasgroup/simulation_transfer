@@ -181,7 +181,7 @@ class AbstractRegressionModel(RngKeyMixin):
         # compute per-dimension MAE
         if per_dim_metrics:
             mae_per_dim = jnp.mean(jnp.abs(pred_dist.mean - y), axis=0)
-            rmse_per_dim = jnp.sqrt(jnp.mean((pred_dist.mean - y)**2, axis=0))
+            rmse_per_dim = jnp.sqrt(jnp.mean((pred_dist.mean - y) ** 2, axis=0))
             eval_stats.update({f'per_dim_metrics/mae_{i}': mae_per_dim[i] for i in range(self.output_size)})
             eval_stats.update({f'per_dim_rmse/rmse_{i}': rmse_per_dim[i] for i in range(self.output_size)})
 
@@ -272,7 +272,7 @@ class BatchedNeuralNetworkModel(AbstractRegressionModel):
 
     def fit(self, x_train: jnp.ndarray, y_train: jnp.ndarray, x_eval: Optional[jnp.ndarray] = None,
             y_eval: Optional[jnp.ndarray] = None, num_steps: Optional[int] = None, log_period: int = 1000,
-            log_to_wandb: bool = False, metrics_objective: str = 'train_nll', keep_the_best: bool = False,
+            log_to_wandb: bool = False, metrics_objective: str = 'train_nll_loss', keep_the_best: bool = False,
             per_dim_metrics: bool = False):
         # check whether eval data has been passed
         evaluate = x_eval is not None or y_eval is not None
@@ -313,9 +313,14 @@ class BatchedNeuralNetworkModel(AbstractRegressionModel):
                 if evaluate:
                     eval_stats = self.eval(x_eval, y_eval, prefix='eval_', per_dim_metrics=per_dim_metrics)
                     if keep_the_best:
-                        if eval_stats[metrics_objective] < best_objective:
-                            best_objective = eval_stats[metrics_objective]
-                            best_params = copy.deepcopy(self.params)
+                        if metrics_objective in eval_stats.keys():
+                            if eval_stats[metrics_objective] < best_objective:
+                                best_objective = eval_stats[metrics_objective]
+                                best_params = copy.deepcopy(self.params)
+                        else:
+                            if stats[metrics_objective] < best_objective:
+                                best_objective = stats[metrics_objective]
+                                best_params = copy.deepcopy(self.params)
                     stats_agg.update(eval_stats)
                 if log_to_wandb:
                     log_dict = {f'regression_model_training/{n}': float(v) for n, v in stats_agg.items()}

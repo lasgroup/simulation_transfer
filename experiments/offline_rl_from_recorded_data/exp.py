@@ -29,14 +29,18 @@ def experiment(horizon_len: int,
                high_fidelity: int,
                num_measurement_points: int,
                bnn_batch_size: int,
+               num_init_points_to_bs_for_learning: int,
+               eval_only_on_init_states: int,
+               eval_on_all_offline_data: int = 1,
                test_data_ratio: float = 0.2,
                ):
     config_dict = dict(use_sim_prior=use_sim_prior,
                        high_fidelity=high_fidelity,
                        num_offline_data=num_offline_collected_transitions,
-                       bnn_batch_size=bnn_batch_size,
                        num_mes_points=num_measurement_points,
-                       horizon_len=horizon_len)
+                       test_data_ratio=test_data_ratio,
+                       num_x0s=num_init_points_to_bs_for_learning,
+                       only_x0_eval=eval_only_on_init_states)
     group_name = '_'.join(list(str(key) + '=' + str(value) for key, value in config_dict.items() if key != 'seed'))
 
     car_reward_kwargs = dict(encode_angle=True,
@@ -66,7 +70,7 @@ def experiment(horizon_len: int,
                       wd_policy=0,
                       wd_q=0,
                       wd_alpha=0,
-                      num_eval_envs=2 * NUM_ENVS,
+                      num_eval_envs=num_init_points_to_bs_for_learning if eval_only_on_init_states else 2 * NUM_ENVS,
                       max_replay_size=5 * 10 ** 4,
                       min_replay_size=2 ** 11,
                       policy_hidden_layer_sizes=(64, 64),
@@ -92,6 +96,9 @@ def experiment(horizon_len: int,
                        bnn_batch_size=bnn_batch_size,
                        num_measurement_points=num_measurement_points,
                        test_data_ratio=test_data_ratio,
+                       num_init_points_to_bs_for_learning=num_init_points_to_bs_for_learning,
+                       eval_only_on_init_states=eval_only_on_init_states,
+                       eval_on_all_offline_data=eval_on_all_offline_data,
                        )
 
     total_config = SAC_KWARGS | config_dict
@@ -109,7 +116,7 @@ def experiment(horizon_len: int,
 
     # Deal with randomness
     key = jr.PRNGKey(seed)
-    key_bnn, key_offline_rl, key_evaluation_on_sim_env = jr.split(key, 3)
+    key_bnn, key_offline_rl, key_evaluation_trained_bnn, key_evaluation_pretrained_bnn = jr.split(key, 4)
 
     standard_params = {
         'input_size': sim.input_size,
@@ -176,12 +183,16 @@ def experiment(horizon_len: int,
         return_best_policy=bool(best_policy),
         predict_difference=bool(predict_difference),
         test_data_ratio=test_data_ratio,
+        eval_on_all_offline_data=bool(eval_on_all_offline_data),
+        eval_only_on_init_states=bool(eval_only_on_init_states),
+        num_init_points_to_bs_for_learning=num_init_points_to_bs_for_learning,
     )
     policy, params, metrics, bnn_model = rl_from_offline_data.prepare_policy_from_offline_data(
         bnn_train_steps=bnn_train_steps,
         return_best_bnn=bool(best_bnn_model))
 
-    rl_from_offline_data.evaluate_policy(policy, bnn_model, key=key_evaluation_on_sim_env)
+    rl_from_offline_data.evaluate_policy(policy, key=key_evaluation_pretrained_bnn)
+    rl_from_offline_data.evaluate_policy(policy, bnn_model, key=key_evaluation_trained_bnn)
     wandb.finish()
 
 
@@ -207,6 +218,9 @@ def main(args):
         num_measurement_points=args.num_measurement_points,
         bnn_batch_size=args.bnn_batch_size,
         test_data_ratio=args.test_data_ratio,
+        num_init_points_to_bs_for_learning=args.num_init_points_to_bs_for_learning,
+        eval_only_on_init_states=args.eval_only_on_init_states,
+        eval_on_all_offline_data=args.eval_on_all_offline_data
     )
 
 
@@ -232,5 +246,8 @@ if __name__ == '__main__':
     parser.add_argument('--num_measurement_points', type=int, default=8)
     parser.add_argument('--bnn_batch_size', type=int, default=32)
     parser.add_argument('--test_data_ratio', type=float, default=0.1)
+    parser.add_argument('--num_init_points_to_bs_for_learning', type=int, default=100)
+    parser.add_argument('--eval_only_on_init_states', type=int, default=1)
+    parser.add_argument('--eval_on_all_offline_data', type=int, default=1)
     args = parser.parse_args()
     main(args)
