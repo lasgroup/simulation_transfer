@@ -27,7 +27,7 @@ def experiment(horizon_len: int,
                high_fidelity: int,
                num_measurement_points: int,
                bnn_batch_size: int,
-               num_init_points_to_bs_for_learning: int,
+               share_of_x0s_in_sac_buffer: float,
                eval_only_on_init_states: int,
                eval_on_all_offline_data: int = 1,
                test_data_ratio: float = 0.2,
@@ -37,7 +37,7 @@ def experiment(horizon_len: int,
                        num_offline_data=num_offline_collected_transitions,
                        num_mes_points=num_measurement_points,
                        test_data_ratio=test_data_ratio,
-                       num_x0s=num_init_points_to_bs_for_learning,
+                       share_of_x0s=share_of_x0s_in_sac_buffer,
                        only_x0_eval=eval_only_on_init_states)
     group_name = '_'.join(list(str(key) + '=' + str(value) for key, value in config_dict.items() if key != 'seed'))
 
@@ -68,7 +68,7 @@ def experiment(horizon_len: int,
                       wd_policy=0,
                       wd_q=0,
                       wd_alpha=0,
-                      num_eval_envs=num_init_points_to_bs_for_learning if eval_only_on_init_states else 2 * NUM_ENVS,
+                      num_eval_envs=2 * NUM_ENVS,
                       max_replay_size=5 * 10 ** 4,
                       min_replay_size=2 ** 11,
                       policy_hidden_layer_sizes=(64, 64),
@@ -94,7 +94,7 @@ def experiment(horizon_len: int,
                        bnn_batch_size=bnn_batch_size,
                        num_measurement_points=num_measurement_points,
                        test_data_ratio=test_data_ratio,
-                       num_init_points_to_bs_for_learning=num_init_points_to_bs_for_learning,
+                       share_of_x0s_in_sac_buffer=share_of_x0s_in_sac_buffer,
                        eval_only_on_init_states=eval_only_on_init_states,
                        eval_on_all_offline_data=eval_on_all_offline_data,
                        )
@@ -164,6 +164,9 @@ def experiment(horizon_len: int,
             num_train_steps=bnn_train_steps,
         )
 
+    s = share_of_x0s_in_sac_buffer
+    num_init_points_to_bs_for_learning = int(num_offline_collected_transitions * s / (1 - s))
+
     rl_from_offline_data = RLFromOfflineData(
         data_spec={'num_samples_train': num_offline_collected_transitions},
         bnn_model=model,
@@ -208,7 +211,7 @@ def main(args):
         num_measurement_points=args.num_measurement_points,
         bnn_batch_size=args.bnn_batch_size,
         test_data_ratio=args.test_data_ratio,
-        num_init_points_to_bs_for_learning=args.num_init_points_to_bs_for_learning,
+        share_of_x0s_in_sac_buffer=args.share_of_x0s_in_sac_buffer,
         eval_only_on_init_states=args.eval_only_on_init_states,
         eval_on_all_offline_data=args.eval_on_all_offline_data
     )
@@ -235,7 +238,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_measurement_points', type=int, default=8)
     parser.add_argument('--bnn_batch_size', type=int, default=32)
     parser.add_argument('--test_data_ratio', type=float, default=0.1)
-    parser.add_argument('--num_init_points_to_bs_for_learning', type=int, default=100)
+    parser.add_argument('--share_of_x0s_in_sac_buffer', type=float, default=0.5)
     parser.add_argument('--eval_only_on_init_states', type=int, default=1)
     parser.add_argument('--eval_on_all_offline_data', type=int, default=1)
     args = parser.parse_args()
