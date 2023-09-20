@@ -1,11 +1,11 @@
 import exp
 from experiments.util import generate_run_commands, generate_base_command, dict_permutations
 
-PROJECT_NAME = 'OfflineRLEvalOnPretrainedMoreStats'
+PROJECT_NAME = 'OfflineRL3Dataset'
 
 _applicable_configs = {
     'horizon_len': [200],
-    'seed': list(range(3)),
+    'seed': list(range(5)),
     'project_name': [PROJECT_NAME],
     'sac_num_env_steps': [2_000_000],
     'bnn_train_steps': [100_000],
@@ -21,20 +21,18 @@ _applicable_configs = {
     'test_data_ratio': [0.0, 0.2],
     'eval_on_all_offline_data': [1],
     'eval_only_on_init_states': [0, 1],
-    'num_init_points_to_bs_for_learning': [800]
+    'num_init_points_to_bs_for_learning': [400, 800, 1_600],
+    'bnn_batch_size': [32]
 }
 
 _applicable_configs_no_sim_prior = {'use_sim_prior': [0],
-                                    'high_fidelity': [0],
-                                    'bnn_batch_size': [64]} | _applicable_configs
+                                    'high_fidelity': [0]} | _applicable_configs
 _applicable_configs_high_fidelity = {'use_sim_prior': [1],
                                      'high_fidelity': [1],
-                                     'num_measurement_points': [16],
-                                     'bnn_batch_size': [64]} | _applicable_configs
+                                     'num_measurement_points': [8]} | _applicable_configs
 _applicable_configs_low_fidelity = {'use_sim_prior': [1],
                                     'high_fidelity': [0],
-                                    'num_measurement_points': [16],
-                                    'bnn_batch_size': [64]} | _applicable_configs
+                                    'num_measurement_points': [8]} | _applicable_configs
 
 all_flags_combinations = dict_permutations(_applicable_configs_no_sim_prior) + dict_permutations(
     _applicable_configs_high_fidelity) + dict_permutations(_applicable_configs_low_fidelity)
