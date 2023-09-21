@@ -7,6 +7,7 @@ from experiments.data_provider import provide_data_and_sim, _RACECAR_NOISE_STD_E
 from sim_transfer.models import BNN_FSVGD_SimPrior, BNN_SVGD
 from sim_transfer.rl.rl_on_offline_data import RLFromOfflineData
 from sim_transfer.sims.simulators import AdditiveSim, PredictStateChangeWrapper, GaussianProcessSim
+from grey_box_car_model import GreyBoxSVGDCarModel
 
 
 def experiment(horizon_len: int,
@@ -24,6 +25,7 @@ def experiment(horizon_len: int,
                ctrl_diff_weight: float,
                num_offline_collected_transitions: int,
                use_sim_prior: int,
+               use_grey_box: int,
                high_fidelity: int,
                num_measurement_points: int,
                bnn_batch_size: int,
@@ -150,6 +152,13 @@ def experiment(horizon_len: int,
             bandwidth_svgd=1.0,
             num_measurement_points=num_measurement_points,
         )
+    elif use_grey_box:
+        model = GreyBoxSVGDCarModel(
+            **standard_params,
+            high_fidelity=bool(high_fidelity),
+            num_train_steps=bnn_train_steps,
+        )
+        predict_difference = False
     else:
         # if predict_difference:
         #     sim = PredictStateChangeWrapper(sim)
@@ -205,6 +214,7 @@ def main(args):
         ctrl_diff_weight=args.ctrl_diff_weight,
         num_offline_collected_transitions=args.num_offline_collected_transitions,
         use_sim_prior=args.use_sim_prior,
+        use_grey_box=args.use_grey_box,
         high_fidelity=args.high_fidelity,
         num_measurement_points=args.num_measurement_points,
         bnn_batch_size=args.bnn_batch_size,
@@ -232,6 +242,7 @@ if __name__ == '__main__':
     parser.add_argument('--ctrl_diff_weight', type=float, default=0.01)
     parser.add_argument('--num_offline_collected_transitions', type=int, default=1_000)
     parser.add_argument('--use_sim_prior', type=int, default=0)
+    parser.add_argument('--use_grey_box', type=int, default=0)
     parser.add_argument('--high_fidelity', type=int, default=0)
     parser.add_argument('--num_measurement_points', type=int, default=8)
     parser.add_argument('--bnn_batch_size', type=int, default=32)
