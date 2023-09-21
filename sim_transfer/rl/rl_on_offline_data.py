@@ -11,6 +11,7 @@ import wandb
 from brax.training.replay_buffers import UniformSamplingQueue, ReplayBufferState
 from brax.training.types import Transition
 from jax import jit, vmap
+from jax.lax import scan
 from mbpo.optimizers.policy_optimizers.sac.sac import SAC
 from mbpo.systems.brax_wrapper import BraxWrapper
 
@@ -352,21 +353,32 @@ class RLFromOfflineData:
 
         return policy, params, metrics, bnn_model
 
+    @staticmethod
+    def arg_median(a):
+        if len(a) % 2 == 1:
+            return jnp.where(a == jnp.median(a))[0][0]
+        else:
+            l, r = len(a) // 2 - 1, len(a) // 2
+            left = jnp.partition(a, l)[l]
+            # right = jnp.partition(a, r)[r]
+            return jnp.where(a == left)[0][0]
+
     def evaluate_policy(self,
                         policy: Callable,
                         bnn_model: BatchedNeuralNetworkModel | None = None,
-                        key: chex.PRNGKey = jr.PRNGKey(0)):
+                        key: chex.PRNGKey = jr.PRNGKey(0),
+                        num_evals: int = 1, ):
+        init_stacked_actions = jnp.zeros(shape=(self.num_frame_stack * self.action_dim,))
+        model_name = 'pretrained_model' if bnn_model is None else 'learned_model'
+
         sim = RCCarSimEnv(encode_angle=True, use_tire_model=True)
         eval_horizon = 200
         # Now we simulate the policy on the learned model
 
-        obs = sim.reset()
-        # Obs represents samples from the init_states_buffer which is of dim x_dim + u_dim * num_frame_stack
-        stacked_actions = jnp.zeros(shape=(self.num_frame_stack * self.action_dim,))
-        transitions = []
-
-        model_name = 'pretrained_model' if bnn_model is None else 'learned_model'
-
+        # TODO: the following part needs to be vmapped:
+        key_init_obs, key_generate_trajectories = jr.split(key)
+        key_init_obs = jr.split(key_init_obs, num_evals)
+        obs = vmap(sim.reset)(rng_key=key_init_obs)
         if bnn_model is None:
             bnn_model = self.bnn_model_pretrained
         learned_car_system = LearnedCarSystem(model=bnn_model,
@@ -375,33 +387,44 @@ class RLFromOfflineData:
                                               num_frame_stack=self.num_frame_stack,
                                               **self.car_reward_kwargs)
 
-        key, subkey = jr.split(key)
-        sys_params = learned_car_system.init_params(subkey)
-        state = jnp.concatenate([obs, stacked_actions], axis=-1)
-        for step in range(eval_horizon):
-            key, subkey = jr.split(key)
+        def f_step(carry, _):
+            state, sys_params = carry
             action = policy(state)
             sys_state = learned_car_system.step(x=state, u=action, system_params=sys_params)
             new_state = sys_state.x_next
+            transition = Transition(observation=state[:self.state_dim],
+                                    action=action,
+                                    reward=sys_state.reward,
+                                    discount=jnp.array(0.99),
+                                    next_observation=new_state[:self.state_dim], )
+            new_carry = (new_state, sys_state.system_params)
+            return new_carry, transition
 
-            transitions.append(Transition(observation=state[:self.state_dim],
-                                          action=action,
-                                          reward=sys_state.reward,
-                                          discount=jnp.array(0.99),
-                                          next_observation=new_state[:self.state_dim], ))
+        key_generate_trajectories = jr.split(key_generate_trajectories, num_evals)
 
-            # Update state, sys_params
-            sys_params = sys_state.system_params
-            state = new_state
+        def get_trajectory_transitions(init_obs, key):
+            sys_params = learned_car_system.init_params(key)
+            state = jnp.concatenate([init_obs, init_stacked_actions], axis=-1)
+            last_carry, transitions = scan(f_step, (state, sys_params), None, length=eval_horizon)
+            return transitions
 
-        concatenated_transitions = jtu.tree_map(lambda *xs: jnp.stack(xs, axis=0), *transitions)
-        rewards = jnp.sum(concatenated_transitions.reward)
-        fig, axes = plot_rc_trajectory(concatenated_transitions.next_observation,
-                                       concatenated_transitions.action, encode_angle=True,
+        trajectories = vmap(get_trajectory_transitions)(obs, key_generate_trajectories)
+
+        # Now we calculate median reward and std of rewards
+        rewards = jnp.sum(trajectories.reward, axis=-1)
+        reward_median = jnp.median(rewards)
+        reward_std = jnp.std(rewards)
+
+        reward_median_index = self.arg_median(rewards)
+
+        transitions_median = jtu.tree_map(lambda x: x[reward_median_index], trajectories)
+        fig, axes = plot_rc_trajectory(transitions_median.next_observation,
+                                       transitions_median.action, encode_angle=True,
                                        show=False)
 
-        wandb.log({f'Trajectory_on_{model_name}': wandb.Image(fig),
-                   f'reward_on_{model_name}': float(rewards)})
+        wandb.log({f'Median_trajectory_on_{model_name}': wandb.Image(fig),
+                   f'reward_median_on_{model_name}': float(reward_median),
+                   f'reward_std_on_{model_name}': float(reward_std)})
         plt.close('all')
 
 
@@ -486,7 +509,7 @@ if __name__ == '__main__':
     with open(filename_bnn_model, 'rb') as handle:
         bnn_model = pickle.load(handle)
 
-    rl_from_offline_data.evaluate_policy(policy, key=jr.PRNGKey(0))
-    rl_from_offline_data.evaluate_policy(policy, bnn_model=bnn_model, key=jr.PRNGKey(0))
+    rl_from_offline_data.evaluate_policy(policy, key=jr.PRNGKey(0), num_evals=100)
+    rl_from_offline_data.evaluate_policy(policy, bnn_model=bnn_model, key=jr.PRNGKey(0), num_evals=100)
 
     wandb.finish()

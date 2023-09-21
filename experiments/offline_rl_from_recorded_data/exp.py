@@ -182,8 +182,9 @@ def experiment(horizon_len: int,
         bnn_train_steps=bnn_train_steps,
         return_best_bnn=bool(best_bnn_model))
 
-    rl_from_offline_data.evaluate_policy(policy, key=key_evaluation_pretrained_bnn)
-    rl_from_offline_data.evaluate_policy(policy, bnn_model, key=key_evaluation_trained_bnn)
+    # We evaluate the policy on 100 different initial states and different seeds
+    rl_from_offline_data.evaluate_policy(policy, key=key_evaluation_pretrained_bnn, num_evals=100)
+    rl_from_offline_data.evaluate_policy(policy, bnn_model, key=key_evaluation_trained_bnn, num_evals=100)
     wandb.finish()
 
 
