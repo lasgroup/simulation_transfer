@@ -14,7 +14,6 @@ _applicable_configs = {
     'best_bnn_model': [1],
     'best_policy': [1],
     'margin_factor': [20.0],
-    'predict_difference': [1],
     'ctrl_cost_weight': [0.005],
     'ctrl_diff_weight': [1.0],
     'num_offline_collected_transitions': [400, 800, 1600],
@@ -26,13 +25,26 @@ _applicable_configs = {
 }
 
 _applicable_configs_no_sim_prior = {'use_sim_prior': [0],
-                                    'high_fidelity': [0]} | _applicable_configs
+                                    'use_grey_box': [0],
+                                    'high_fidelity': [0],
+                                    'predict_difference': [1],
+                                    } | _applicable_configs
 _applicable_configs_high_fidelity = {'use_sim_prior': [1],
+                                     'use_grey_box': [0],
                                      'high_fidelity': [1],
+                                     'predict_difference': [1],
                                      'num_measurement_points': [8]} | _applicable_configs
 _applicable_configs_low_fidelity = {'use_sim_prior': [1],
+                                    'use_grey_box': [0],
                                     'high_fidelity': [0],
+                                    'predict_difference': [1],
                                     'num_measurement_points': [8]} | _applicable_configs
+
+_applicable_configs_grey_box = {'use_sim_prior': [1],
+                                'high_fidelity': [0],
+                                'use_grey_box': [1],
+                                'predict_difference': [0],
+                                'num_measurement_points': [8]} | _applicable_configs
 
 all_flags_combinations = dict_permutations(_applicable_configs_no_sim_prior) + dict_permutations(
     _applicable_configs_high_fidelity) + dict_permutations(_applicable_configs_low_fidelity)

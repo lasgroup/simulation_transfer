@@ -4,10 +4,10 @@ import jax.random as jr
 import wandb
 
 from experiments.data_provider import provide_data_and_sim, _RACECAR_NOISE_STD_ENCODED
+from grey_box_car_model import GreyBoxSVGDCarModel
 from sim_transfer.models import BNN_FSVGD_SimPrior, BNN_SVGD
 from sim_transfer.rl.rl_on_offline_data import RLFromOfflineData
 from sim_transfer.sims.simulators import AdditiveSim, PredictStateChangeWrapper, GaussianProcessSim
-from grey_box_car_model import GreyBoxSVGDCarModel
 
 
 def experiment(horizon_len: int,
@@ -35,6 +35,7 @@ def experiment(horizon_len: int,
                test_data_ratio: float = 0.2,
                ):
     config_dict = dict(use_sim_prior=use_sim_prior,
+                       use_grey_box=use_grey_box,
                        high_fidelity=high_fidelity,
                        num_offline_data=num_offline_collected_transitions,
                        share_of_x0s=share_of_x0s_in_sac_buffer)
@@ -153,12 +154,13 @@ def experiment(horizon_len: int,
             num_measurement_points=num_measurement_points,
         )
     elif use_grey_box:
+        if predict_difference:
+            raise NotImplementedError("Predicting difference not implemented for grey box model")
         model = GreyBoxSVGDCarModel(
             **standard_params,
             high_fidelity=bool(high_fidelity),
             num_train_steps=bnn_train_steps,
         )
-        predict_difference = False
     else:
         # if predict_difference:
         #     sim = PredictStateChangeWrapper(sim)
