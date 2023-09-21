@@ -1,7 +1,7 @@
 import exp
 from experiments.util import generate_run_commands, generate_base_command, dict_permutations
 
-PROJECT_NAME = 'OfflineRLWithShare'
+PROJECT_NAME = 'OfflineRLWithGrayBox'
 
 _applicable_configs = {
     'horizon_len': [200],
@@ -47,7 +47,8 @@ _applicable_configs_grey_box = {'use_sim_prior': [1],
                                 'num_measurement_points': [8]} | _applicable_configs
 
 all_flags_combinations = dict_permutations(_applicable_configs_no_sim_prior) + dict_permutations(
-    _applicable_configs_high_fidelity) + dict_permutations(_applicable_configs_low_fidelity)
+    _applicable_configs_high_fidelity) + dict_permutations(_applicable_configs_low_fidelity) + dict_permutations(
+    _applicable_configs_grey_box)
 
 
 def main():
