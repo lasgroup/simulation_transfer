@@ -16,11 +16,11 @@ _applicable_configs = {
     'margin_factor': [20.0],
     'ctrl_cost_weight': [0.005],
     'ctrl_diff_weight': [1.0],
-    'num_offline_collected_transitions': [400, 800, 1600],
+    'num_offline_collected_transitions': [600, 1000, 1200, 1400],
     'test_data_ratio': [0.0],
     'eval_on_all_offline_data': [1],
     'eval_only_on_init_states': [0],
-    'share_of_x0s_in_sac_buffer': [0.3, 0.5, 0.7, 0.9],
+    'share_of_x0s_in_sac_buffer': [0.1, 0.3, 0.5, 0.7],
     'bnn_batch_size': [32]
 }
 
@@ -40,7 +40,7 @@ _applicable_configs_low_fidelity = {'use_sim_prior': [1],
                                     'predict_difference': [1],
                                     'num_measurement_points': [8]} | _applicable_configs
 
-_applicable_configs_grey_box = {'use_sim_prior': [1],
+_applicable_configs_grey_box = {'use_sim_prior': [0],
                                 'high_fidelity': [0],
                                 'use_grey_box': [1],
                                 'predict_difference': [0],
