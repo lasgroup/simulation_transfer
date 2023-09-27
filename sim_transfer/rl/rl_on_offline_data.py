@@ -375,7 +375,6 @@ class RLFromOfflineData:
         eval_horizon = 200
         # Now we simulate the policy on the learned model
 
-        # TODO: the following part needs to be vmapped:
         key_init_obs, key_generate_trajectories = jr.split(key)
         key_init_obs = jr.split(key_init_obs, num_evals)
         obs = vmap(sim.reset)(rng_key=key_init_obs)

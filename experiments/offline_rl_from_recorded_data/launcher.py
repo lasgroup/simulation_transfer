@@ -16,11 +16,11 @@ _applicable_configs = {
     'margin_factor': [20.0],
     'ctrl_cost_weight': [0.005],
     'ctrl_diff_weight': [1.0],
-    'num_offline_collected_transitions': [600, 1000, 1200, 1400],
+    'num_offline_collected_transitions': [3_000, 5_000, 10_000, 15_000, 20_000],
     'test_data_ratio': [0.0],
     'eval_on_all_offline_data': [1],
     'eval_only_on_init_states': [0],
-    'share_of_x0s_in_sac_buffer': [0.1, 0.3, 0.5, 0.7],
+    'share_of_x0s_in_sac_buffer': [0.5],
     'bnn_batch_size': [32]
 }
 
