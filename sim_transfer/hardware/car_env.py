@@ -22,6 +22,7 @@ class CarEnv(gym.Env):
     _angle_idx: int = 2
 
     def __init__(self,
+                 car_id: int = 2,
                  ctrl_cost_weight: float = 0.005,
                  margin_factor: float = 10.0,
                  control_time_ms: float = 24.,
@@ -30,14 +31,13 @@ class CarEnv(gym.Env):
                  num_frame_stacks: int = 3,
                  port_number: int = 8,  # leftmost usb port in the display has port number 8
                  encode_angle: bool = True,
-                 max_throttle: float = 0.5,
+                 max_throttle: float = 0.4,
                  ):
         super().__init__()
         sys.path.append("C:/Users/Panda/Desktop/rcCarInterface/rc-car-interface/build/src/libs/pyCarController")
 
         assert 0.0 <= max_throttle <= 1.0
         self.max_throttle = max_throttle
-
         import carl
         self.control_frequency = 1 / (0.001 * control_time_ms)
         self.max_wait_time = max_wait_time
@@ -45,8 +45,14 @@ class CarEnv(gym.Env):
         self.num_frame_stacks = num_frame_stacks
         self.port_number = port_number
         self.encode_angle = encode_angle
-        self.controller = carl.controller(w_size=window_size, p_number=port_number, wait_time=max_wait_time,
-                                          control_freq=self.control_frequency)
+        if car_id == 1:
+            mocap_id = 1003
+        elif car_id == 2:
+            mocap_id = 1034
+        else:
+            raise Exception("Only 2 cars have a mocap id")
+        self.controller = carl.controller(w_size=window_size, p_number=port_number, mocap_id=mocap_id,
+                                          wait_time=max_wait_time, control_freq=self.control_frequency)
         self.initial_reset = True
         self.controller_started = False
 

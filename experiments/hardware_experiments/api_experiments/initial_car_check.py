@@ -22,7 +22,7 @@ SIMULATION = False
 
 def main():
     # load recorded trajectory
-    RECORDING_NAME = f'recording_sep6_carcheck.pickle'
+    RECORDING_NAME = f'recording_check_car2_sep29.pickle'
     with open(RECORDING_NAME, 'rb') as f:
         rec_traj = pickle.load(f)
     rec_observations = rec_traj.observation
@@ -33,8 +33,8 @@ def main():
         env = RCCarSimEnv(encode_angle=ENCODE_ANGLE, use_tire_model=True)
         obs = env.reset()
     else:
-        env = CarEnv(encode_angle=ENCODE_ANGLE, max_throttle=0.5, control_time_ms=24.4,
-                     num_frame_stacks=0)
+        env = CarEnv(encode_angle=ENCODE_ANGLE, max_throttle=0.4, control_time_ms=30.68,
+                     num_frame_stacks=0, car_id=2)
         obs, _ = env.reset()
     env.step(np.zeros(2))
     t_prev = time.time()
