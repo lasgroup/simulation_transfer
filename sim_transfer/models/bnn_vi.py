@@ -93,7 +93,7 @@ class BNN_VI(AbstractVariationalBNN):
             log_posterior = jnp.mean(posterior_dist.log_prob(params_sample))
             log_prior = jnp.mean(self._prior_dist.log_prob(params_sample))
             kl = log_posterior - log_prior
-            loss = - num_train_points**self.likelihood_exponent * ll + self.kl_prefactor * kl
+            loss = - num_train_points * self.likelihood_exponent * ll + self.kl_prefactor * kl
             stats = OrderedDict(loss=loss, train_nll_loss=-ll, log_posterior=log_posterior,
                                 log_prior=log_prior, kl=kl)
         else:

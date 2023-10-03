@@ -93,7 +93,7 @@ class BNN_FSVGD_SimPrior(AbstractFSVGD_BNN):
     def _neg_log_posterior(self, pred_raw: jnp.ndarray, likelihood_std: jnp.array, x_stacked: jnp.ndarray,
                            y_batch: jnp.ndarray, train_data_till_idx: int,
                            num_train_points: Union[float, int], key: jax.random.PRNGKey):
-        nll = - num_train_points**self.likelihood_exponent \
+        nll = - num_train_points * self.likelihood_exponent \
               * self._ll(pred_raw, likelihood_std, y_batch, train_data_till_idx)
         if self.score_estimator in ['SSGE', 'ssge', 'nu_method', 'nu-method']:
             prior_score = self._estimate_prior_score(pred_raw, x_stacked, key)
