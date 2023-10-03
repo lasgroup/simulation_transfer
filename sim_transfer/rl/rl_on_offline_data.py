@@ -346,7 +346,7 @@ class RLFromOfflineData:
         directory = os.path.join(wandb.run.dir, 'models')
         if not os.path.exists(directory):
             os.makedirs(directory)
-        model_path = os.path.join('models', 'bnn_svgd_model_on_20_000_points.pkl')
+        model_path = os.path.join('models', 'bnn_model.pkl')
         with open(os.path.join(wandb.run.dir, model_path), 'wb') as handle:
             pickle.dump(bnn_model, handle)
         wandb.save(os.path.join(wandb.run.dir, model_path), wandb.run.dir)
