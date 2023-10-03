@@ -92,7 +92,7 @@ def run_with_learned_policy(policy_params,
     policy = rl_from_offline_data.prepare_policy(params=policy_params)
 
     # replay action sequence on car
-    env = CarEnv(encode_angle=True, num_frame_stacks=0, max_throttle=0.5,
+    env = CarEnv(encode_angle=True, num_frame_stacks=0, max_throttle=0.4,
                  control_time_ms=27.9)
     obs, _ = env.reset()
     print(obs)

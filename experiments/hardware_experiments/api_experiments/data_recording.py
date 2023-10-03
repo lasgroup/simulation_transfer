@@ -8,13 +8,14 @@ import pickle
 import time
 from matplotlib import pyplot as plt
 
-RECORDING_NAME = 'recording_sep8_carcheck_debug.pickle'
-AR1_param = 0.0
-ACT_NOISE_BOUND = 0.0
+RECORDING_NAME = 'recording_check_car2_sep29.pickle'
+CAR_NUM = 2
+AR1_param = 0.0  # 0.9
+ACT_NOISE_BOUND = 0.0  # 0.4
 
 if __name__ == '__main__':
     controller = CarXbox2D(base_speed=1.0)
-    env = CarEnv(encode_angle=False, max_throttle=0.5, control_time_ms=32.)
+    env = CarEnv(car_id=CAR_NUM, encode_angle=False, max_throttle=0.4, control_time_ms=32)
     obs, _ = env.reset()
     env.step(np.zeros(2))
 

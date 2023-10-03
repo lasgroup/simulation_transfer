@@ -28,7 +28,7 @@ def run_with_learned_policy(filename_policy: str,
     wandb.init(
         project="Race car test MBRL",
         group='400_points',
-        entity='trevenl'
+        # entity='trevenl'
     )
 
     with open(filename_bnn_model, 'rb') as handle:
@@ -45,7 +45,7 @@ def run_with_learned_policy(filename_policy: str,
     policy = rl_from_offline_data.prepare_policy(params=None, filename=filename_policy)
 
     # replay action sequence on car
-    env = CarEnv(encode_angle=True, num_frame_stacks=0, max_throttle=0.5,
+    env = CarEnv(encode_angle=True, num_frame_stacks=0, max_throttle=0.4,
                  control_time_ms=27.9)
     obs, _ = env.reset()
     print(obs)

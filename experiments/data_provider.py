@@ -132,20 +132,10 @@ def get_rccar_recorded_data(encode_angle: bool = True, skip_first_n_points: int 
 def get_rccar_recorded_data_new(encode_angle: bool = True, skip_first_n_points: int = 10,
                                 action_delay: int = 3, action_stacking: bool = False):
     from brax.training.types import Transition
-    recordings_dir = os.path.join(DATA_DIR, 'recordings_rc_car_v1')
+    recordings_dir = os.path.join(DATA_DIR, 'recordings_rc_car_v2')
 
-    file_name = ['recording_sep6_1.pickle',
-                 'recording_sep6_5.pickle',
-                 'recording_sep6_12.pickle',
-                 'recording_sep6_8.pickle',
-                 'recording_sep6_3.pickle',
-                 'recording_sep6_7.pickle',
-                 'recording_sep6_10.pickle',
-                 'recording_sep6_2.pickle',
-                 'recording_sep6_4.pickle',
-                 'recording_sep6_9.pickle',
-                 'recording_sep6_6.pickle',
-                 'recording_sep6_11.pickle',]
+    file_name = [f'recording_car2_sep29_{i:02d}.pickle' for i in
+                 [8, 1, 11, 4, 3, 13, 6, 12, 7, 14, 9,  5, 2, 10]]
     transitions = []
     for fn in file_name:
         with open(recordings_dir + '/' + fn, 'rb') as f:
@@ -187,7 +177,7 @@ def get_rccar_recorded_data_new(encode_angle: bool = True, skip_first_n_points: 
         assert x_data.shape[1] - (2 * (1 + int(action_stacking) * action_delay)) == y_data.shape[1]
         return x_data, y_data
 
-    num_train_traj = 8
+    num_train_traj = 10
     prep_fn = partial(prepare_rccar_data, encode_angles=encode_angle, skip_first_n=skip_first_n_points,
                       action_delay=action_delay, action_stacking=action_stacking)
     x_train, y_train = map(lambda x: jnp.concatenate(x, axis=0), zip(*map(prep_fn, transitions[:num_train_traj])))
