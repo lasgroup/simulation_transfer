@@ -1,7 +1,7 @@
 import exp
 from experiments.util import generate_run_commands, generate_base_command, dict_permutations
 
-PROJECT_NAME = 'OfflineRLWithGrayBox'
+PROJECT_NAME = 'OfflineRLLikelihood0_75'
 
 _applicable_configs = {
     'horizon_len': [200],
@@ -16,12 +16,13 @@ _applicable_configs = {
     'margin_factor': [20.0],
     'ctrl_cost_weight': [0.005],
     'ctrl_diff_weight': [1.0],
-    'num_offline_collected_transitions': [3_000, 5_000, 10_000, 15_000, 20_000],
+    'num_offline_collected_transitions': [400, 800, 1600, 3_000, 5_000, 10_000, 15_000, 20_000],
     'test_data_ratio': [0.0],
     'eval_on_all_offline_data': [1],
-    'eval_only_on_init_states': [0],
+    'eval_only_on_init_states': [1],
     'share_of_x0s_in_sac_buffer': [0.5],
-    'bnn_batch_size': [32]
+    'bnn_batch_size': [32],
+    'likelihood_exponent': [0.75],
 }
 
 _applicable_configs_no_sim_prior = {'use_sim_prior': [0],

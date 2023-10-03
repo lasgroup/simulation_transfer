@@ -33,6 +33,7 @@ def experiment(horizon_len: int,
                eval_only_on_init_states: int,
                eval_on_all_offline_data: int = 1,
                test_data_ratio: float = 0.2,
+               likelihood_exponent: float = 1.0,
                ):
     config_dict = dict(use_sim_prior=use_sim_prior,
                        use_grey_box=use_grey_box,
@@ -124,7 +125,7 @@ def experiment(horizon_len: int,
         'normalize_data': True,
         'normalize_likelihood_std': True,
         'learn_likelihood_std': bool(learnable_likelihood_std),
-        'likelihood_exponent': 0.5,
+        'likelihood_exponent': likelihood_exponent,
         'hidden_layer_sizes': [64, 64, 64],
         'data_batch_size': bnn_batch_size,
     }
@@ -223,7 +224,8 @@ def main(args):
         test_data_ratio=args.test_data_ratio,
         share_of_x0s_in_sac_buffer=args.share_of_x0s_in_sac_buffer,
         eval_only_on_init_states=args.eval_only_on_init_states,
-        eval_on_all_offline_data=args.eval_on_all_offline_data
+        eval_on_all_offline_data=args.eval_on_all_offline_data,
+        likelihood_exponent=args.likelihood_exponent,
     )
 
 
@@ -252,5 +254,6 @@ if __name__ == '__main__':
     parser.add_argument('--share_of_x0s_in_sac_buffer', type=float, default=0.5)
     parser.add_argument('--eval_only_on_init_states', type=int, default=1)
     parser.add_argument('--eval_on_all_offline_data', type=int, default=1)
+    parser.add_argument('--likelihood_exponent', type=float, default=1.0)
     args = parser.parse_args()
     main(args)
