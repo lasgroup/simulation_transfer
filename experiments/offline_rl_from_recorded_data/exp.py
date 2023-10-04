@@ -101,10 +101,11 @@ def experiment(horizon_len: int,
                        )
 
     total_config = SAC_KWARGS | config_dict
+    group = group_name + '_' + str(likelihood_exponent)
     wandb.init(
-        dir='/cluster/scratch/trevenl',
+        dir='/cluster/scratch/sukhijab',
         project=project_name,
-        group=group_name,
+        group=group,
         config=total_config,
     )
 
