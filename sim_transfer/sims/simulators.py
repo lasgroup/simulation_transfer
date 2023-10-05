@@ -12,6 +12,8 @@ from tensorflow_probability.substrates import jax as tfp
 from sim_transfer.sims.domain import Domain, HypercubeDomain, HypercubeDomainWithAngles
 from sim_transfer.sims.dynamics_models import Pendulum, PendulumParams, RaceCar, CarParams
 from sim_transfer.sims.util import encode_angles, decode_angles
+from sim_transfer.sims.car_sim_config import (DEFAULT_CAR_PARAMS_BICYCLE, DEFAULT_CAR_PARAMS_BLEND,
+                                              BOUNDS_CAR_PARAMS_BICYCLE, BOUNDS_CAR_PARAMS_BLEND)
 
 
 class FunctionSimulator:
@@ -680,89 +682,10 @@ class PendulumBiModalSim(PendulumSim):
 
 
 class RaceCarSim(FunctionSimulator):
-    _default_car_model_params_bicycle: Dict = {
-        'use_blend': 0.0,
-        'm': 1.65,
-        'l_f': 0.13,
-        'l_r': 0.17,
-        'angle_offset': 0.0156,
-        'b_f': 2.58,
-        'b_r': 3.39,
-        'blend_ratio_lb': 0.01,
-        'blend_ratio_ub': 0.01,
-        'c_d': 0.41464928,
-        'c_f': 1.2,
-        'c_m_1': 10.701814,
-        'c_m_2': 1.4208151,
-        'c_r': 1.27,
-        'd_f': 0.02,
-        'd_r': 0.017,
-        'i_com': 0.01,
-        'steering_limit': 0.3543
-    }
-
-    _bounds_car_model_params_bicycle: Dict = {
-        'use_blend': (0.0, 0.0),
-        'm': (1.6, 1.7),
-        'l_f': (0.11, 0.15),
-        'l_r': (0.15, 0.19),
-        'angle_offset': (0.001, 0.03),
-        'b_f': (2.2, 2.8),
-        'b_r': (2.0, 6.0),
-        'blend_ratio_lb': (0.4, 0.4),
-        'blend_ratio_ub': (0.5, 0.5),
-        'c_d': (0.3, 0.5),
-        'c_f': (1.2, 1.2),
-        'c_m_1': (8., 13.),
-        'c_m_2': (1.1, 1.7),
-        'c_r': (1.27, 1.27),
-        'd_f': (0.02, 0.02),
-        'd_r': (0.017, 0.017),
-        'i_com': (0.01, 0.1),
-        'steering_limit': (0.20, 0.5),
-    }
-
-    _default_car_model_params_blend: Dict = {
-        'use_blend': 1.0,
-        'm': 1.65,
-        'l_f': 0.13,
-        'l_r': 0.17,
-        'angle_offset': -0.0213,
-        'b_f': 1.8966477,
-        'b_r': 6.2884626,
-        'blend_ratio_lb': 0.06637411,
-        'blend_ratio_ub': 0.00554,
-        'c_d': 0.0,
-        'c_f': 1.5381637,
-        'c_m_1': 11.102413,
-        'c_m_2': 1.3169205,
-        'c_r': 1.186591,
-        'd_f': 0.5968191,
-        'd_r': 0.42716035,
-        'i_com': 0.0685434,
-        'steering_limit': 0.6337473,
-    }
-
-    _bounds_car_model_params_blend = {
-        'use_blend': (1.0, 1.0),
-        'm': (1.6, 1.7),
-        'l_f': (0.125, 0.135),
-        'l_r': (0.165, 0.175),
-        'angle_offset': (-0.025, 0.025),
-        'b_f': (1.3, 3.0),
-        'b_r': (4.0, 10.0),
-        'blend_ratio_lb': (0.01, 0.1),
-        'blend_ratio_ub': (0.000, 0.2),
-        'c_d': (0.0, 0.0),
-        'c_f': (1.2, 1.8),
-        'c_m_1': (10., 12.),
-        'c_m_2': (1.1, 1.5),
-        'c_r': (0.9, 1.5),
-        'd_f': (0.35, 0.65),
-        'd_r': (0.3, 0.6),
-        'i_com': (0.05, 0.09),
-        'steering_limit': (0.5, 0.9),
-    }
+    _default_car_model_params_bicycle: Dict = DEFAULT_CAR_PARAMS_BICYCLE
+    _bounds_car_model_params_bicycle: Dict = BOUNDS_CAR_PARAMS_BICYCLE
+    _default_car_model_params_blend: Dict = DEFAULT_CAR_PARAMS_BLEND
+    _bounds_car_model_params_blend: Dict = BOUNDS_CAR_PARAMS_BLEND
 
     _dt: float = 1 / 30.
     _angle_idx: int = 2

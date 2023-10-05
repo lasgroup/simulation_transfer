@@ -7,6 +7,7 @@ import pickle
 
 from sim_transfer.sims.util import encode_angles as encode_angles_fn
 from sim_transfer.sims.simulators import PredictStateChangeWrapper, StackedActionSimWrapper
+from sim_transfer.sims.car_sim_config import OBS_NOISE_STD_CAR_SIM
 from experiments.util import load_csv_recordings
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
@@ -26,7 +27,7 @@ DEFAULTS_PENDULUM = {
 }
 
 DEFAULTS_RACECAR = {
-    'obs_noise_std': 0.1 * jnp.exp(jnp.array([-4, -4, -3.5, -2.5, -2.5, -1.])),
+    'obs_noise_std': OBS_NOISE_STD_CAR_SIM,
     'x_support_mode_train': 'full',
     'param_mode': 'random',
     'pred_diff': False
