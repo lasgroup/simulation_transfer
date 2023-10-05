@@ -1,5 +1,7 @@
 from typing import Dict
+import jax.numpy as jnp
 
+OBS_NOISE_STD_CAR_SIM: jnp.array = 0.1 * jnp.exp(jnp.array([-4.5, -4.5, -4., -2.5, -2.5, -1.]))
 
 DEFAULT_CAR_PARAMS_BICYCLE: Dict = {
     'use_blend': 0.0,

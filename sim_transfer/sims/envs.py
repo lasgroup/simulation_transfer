@@ -8,7 +8,8 @@ import jax.numpy as jnp
 from sim_transfer.sims.dynamics_models import RaceCar, CarParams
 from sim_transfer.sims.tolerance_reward import ToleranceReward
 from sim_transfer.sims.util import encode_angles, decode_angles, plot_rc_trajectory
-from sim_transfer.sims.car_sim_config import DEFAULT_CAR_PARAMS_BICYCLE, DEFAULT_CAR_PARAMS_BLEND
+from sim_transfer.sims.car_sim_config import (DEFAULT_CAR_PARAMS_BICYCLE, DEFAULT_CAR_PARAMS_BLEND,
+                                              OBS_NOISE_STD_CAR_SIM)
 
 
 class RCCarEnvReward:
@@ -59,7 +60,7 @@ class RCCarSimEnv:
     _goal: jnp.array = jnp.array([0.0, 0.0, 0.0])
     _init_pose: jnp.array = jnp.array([1.42, -1.04, jnp.pi])
     _angle_idx: int = 2
-    _obs_noise_stds: jnp.array = 0.1 * jnp.exp(jnp.array([-4.5, -4.5, -4., -2.5, -2.5, -1.]))
+    _obs_noise_stds: jnp.array = OBS_NOISE_STD_CAR_SIM
     _default_car_model_params_bicycle: Dict = DEFAULT_CAR_PARAMS_BICYCLE
     _default_car_model_params_blend: Dict = DEFAULT_CAR_PARAMS_BLEND
 
