@@ -8,6 +8,7 @@ import jax.numpy as jnp
 from sim_transfer.sims.dynamics_models import RaceCar, CarParams
 from sim_transfer.sims.tolerance_reward import ToleranceReward
 from sim_transfer.sims.util import encode_angles, decode_angles, plot_rc_trajectory
+from sim_transfer.sims.car_sim_config import DEFAULT_CAR_PARAMS_BICYCLE, DEFAULT_CAR_PARAMS_BLEND
 
 
 class RCCarEnvReward:
@@ -58,48 +59,9 @@ class RCCarSimEnv:
     _goal: jnp.array = jnp.array([0.0, 0.0, 0.0])
     _init_pose: jnp.array = jnp.array([1.42, -1.04, jnp.pi])
     _angle_idx: int = 2
-    _obs_noise_stds: jnp.array = 0.1 * jnp.exp(jnp.array([-4, -4, -3.5, -2.5, -2.5, -1.]))
-    _default_car_model_params_bicycle: Dict = {
-        'use_blend': 0.0,
-        'm': 1.65,
-        'l_f': 0.13,
-        'l_r': 0.17,
-        'angle_offset': 0.0156,
-        'b_f': 2.58,
-        'b_r': 3.39,
-        'blend_ratio_lb': 0.01,
-        'blend_ratio_ub': 0.01,
-        'c_d': 0.41464928,
-        'c_f': 1.2,
-        'c_m_1': 10.701814,
-        'c_m_2': 1.4208151,
-        'c_r': 1.27,
-        'd_f': 0.02,
-        'd_r': 0.017,
-        'i_com': 0.01,
-        'steering_limit': 0.3543
-    }
-
-    _default_car_model_params_blend: Dict = {
-        'use_blend': 1.0,
-        'm': 1.65,
-        'l_f': 0.13,
-        'l_r': 0.17,
-        'angle_offset': -0.0213,
-        'b_f': 1.8966477,
-        'b_r': 6.2884626,
-        'blend_ratio_lb': 0.06637411,
-        'blend_ratio_ub': 0.00554,
-        'c_d': 0.0,
-        'c_f': 1.5381637,
-        'c_m_1': 11.102413,
-        'c_m_2': 1.3169205,
-        'c_r': 1.186591,
-        'd_f': 0.5968191,
-        'd_r': 0.42716035,
-        'i_com': 0.0685434,
-        'steering_limit': 0.6337473,
-    }
+    _obs_noise_stds: jnp.array = 0.1 * jnp.exp(jnp.array([-4.5, -4.5, -4., -2.5, -2.5, -1.]))
+    _default_car_model_params_bicycle: Dict = DEFAULT_CAR_PARAMS_BICYCLE
+    _default_car_model_params_blend: Dict = DEFAULT_CAR_PARAMS_BLEND
 
     def __init__(self, ctrl_cost_weight: float = 0.005, encode_angle: bool = False, use_obs_noise: bool = True,
                  use_tire_model: bool = False, action_delay: float = 0.0, car_model_params: Dict = None,
