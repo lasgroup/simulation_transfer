@@ -8,8 +8,7 @@ import jax.numpy as jnp
 from sim_transfer.sims.dynamics_models import RaceCar, CarParams
 from sim_transfer.sims.tolerance_reward import ToleranceReward
 from sim_transfer.sims.util import encode_angles, decode_angles, plot_rc_trajectory
-from sim_transfer.sims.car_sim_config import (DEFAULT_CAR_PARAMS_BICYCLE, DEFAULT_CAR_PARAMS_BLEND,
-                                              OBS_NOISE_STD_CAR_SIM)
+from sim_transfer.sims.car_sim_config import OBS_NOISE_STD_SIM_CAR
 
 
 class RCCarEnvReward:
@@ -60,13 +59,13 @@ class RCCarSimEnv:
     _goal: jnp.array = jnp.array([0.0, 0.0, 0.0])
     _init_pose: jnp.array = jnp.array([1.42, -1.04, jnp.pi])
     _angle_idx: int = 2
-    _obs_noise_stds: jnp.array = OBS_NOISE_STD_CAR_SIM
-    _default_car_model_params_bicycle: Dict = DEFAULT_CAR_PARAMS_BICYCLE
-    _default_car_model_params_blend: Dict = DEFAULT_CAR_PARAMS_BLEND
+    _obs_noise_stds: jnp.array = OBS_NOISE_STD_SIM_CAR
+
 
     def __init__(self, ctrl_cost_weight: float = 0.005, encode_angle: bool = False, use_obs_noise: bool = True,
                  use_tire_model: bool = False, action_delay: float = 0.0, car_model_params: Dict = None,
-                 margin_factor: float = 10.0, max_throttle: float = 1.0, seed: int = 230492394):
+                 margin_factor: float = 10.0, max_throttle: float = 1.0, car_id: int = 2,
+                 seed: int = 230492394):
         """
         Race car simulator environment
 
@@ -83,6 +82,11 @@ class RCCarSimEnv:
         self.encode_angle: bool = encode_angle
         self._rds_key = jax.random.PRNGKey(seed)
         self.max_throttle = jnp.clip(max_throttle, 0.0, 1.0)
+
+        # set car id and corresponding parameters
+        assert car_id in [1, 2]
+        self.car_id = car_id
+        self._set_car_params()
 
         # initialize dynamics and observation noise models
         self._dynamics_model = RaceCar(dt=self._dt, encode_angle=False)
@@ -211,6 +215,18 @@ class RCCarSimEnv:
     @property
     def time(self) -> float:
         return self._time
+
+    def _set_car_params(self):
+        from sim_transfer.sims.car_sim_config import (DEFAULT_PARAMS_BICYCLE_CAR1, DEFAULT_PARAMS_BLEND_CAR1,
+                                                      DEFAULT_PARAMS_BICYCLE_CAR2, DEFAULT_PARAMS_BLEND_CAR2)
+        if self.car_id == 1:
+            self._default_car_model_params_bicycle: Dict = DEFAULT_PARAMS_BICYCLE_CAR1
+            self._default_car_model_params_blend: Dict = DEFAULT_PARAMS_BLEND_CAR1
+        elif self.car_id == 2:
+            self._default_car_model_params_bicycle: Dict = DEFAULT_PARAMS_BICYCLE_CAR2
+            self._default_car_model_params_blend: Dict = DEFAULT_PARAMS_BLEND_CAR2
+        else:
+            raise NotImplementedError(f'Car idx {self.car_id} not supported')
 
 
 if __name__ == '__main__':
