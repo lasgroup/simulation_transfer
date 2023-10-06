@@ -302,8 +302,11 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
         sampling_scheme = data_spec.get('sampling', DEFAULTS_RACECAR_REAL['sampling'])
         if sampling_scheme == 'iid':
             # sample random subset (datapoints are not adjacent in time)
-            assert num_train <= num_train_available / 4., f'Not enough data for {num_train} iid samples.' \
-                                                f'Requires at lest 4 times as much data as requested iid samples.'
+            import warnings
+            if num_train > num_train_available / 4.:
+                warnings.warn(f'Not enough data for {num_train} iid samples.'
+                              f'Requires at lest 4 times as much data as requested '
+                              f'iid samples.')
             idx_train = jax.random.choice(key_train, jnp.arange(num_train_available), shape=(num_train,), replace=False)
             idx_test = jax.random.choice(key_test, jnp.arange(num_test_available), shape=(num_test,), replace=False)
         elif sampling_scheme == 'consecutive':
