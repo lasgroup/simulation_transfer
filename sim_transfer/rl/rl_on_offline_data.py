@@ -3,6 +3,7 @@ import pickle
 from typing import Callable, Any
 
 import chex
+import jax
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree_util as jtu
@@ -71,7 +72,7 @@ class RLFromOfflineData:
         self.car_reward_kwargs = car_reward_kwargs
         self.sac_kwargs = sac_kwargs
 
-        x_train, y_train, x_test, y_test, sim = self.load_data()
+        x_train, y_train, x_eval, y_eval, x_test, y_test, sim = self.load_data()
 
         # TODO: rn it is hardcoded
         state_dim = 7
@@ -123,29 +124,33 @@ class RLFromOfflineData:
         # Prepare data to train the model
         self.x_train = self.reshape_xs(x_train)
         self.y_train = y_train
+        self.x_eval = self.reshape_xs(x_eval)
+        self.y_eval = y_eval
         self.x_test = self.reshape_xs(x_test)
         self.y_test = y_test
 
         if self.predict_difference:
             self.y_train = self.y_train - self.x_train[..., :self.state_dim]
+            self.y_eval = self.y_eval - self.x_eval[..., :self.state_dim]
             self.y_test = self.y_test - self.x_test[..., :self.state_dim]
 
     def reshape_xs(self, xs):
-        states_obs = xs[:, :self.state_dim]
-        last_actions = xs[:, self.state_with_frame_stack_dim:]
-        framestacked_actions = xs[:, self.state_dim:self.state_with_frame_stack_dim]
-        framestacked_actions = self.revert_order_of_stacked_actions(framestacked_actions)
-        return jnp.concatenate([states_obs, framestacked_actions, last_actions], axis=-1)
+        # states_obs = xs[:, :self.state_dim]
+        # last_actions = xs[:, self.state_with_frame_stack_dim:]
+        # framestacked_actions = xs[:, self.state_dim:self.state_with_frame_stack_dim]
+        # framestacked_actions = self.revert_order_of_stacked_actions(framestacked_actions)
+        # return jnp.concatenate([states_obs, framestacked_actions, last_actions], axis=-1)
+        return xs
 
     def load_data(self):
         # y_train is the next state not the difference
-        x_data, y_data, _, _, sim = provide_data_and_sim(data_source=self.data_source,
-                                                         data_spec=self.data_spec)
+        x_data, y_data, x_test, y_test, sim = provide_data_and_sim(data_source=self.data_source,
+                                                                   data_spec=self.data_spec)
 
         # Now we split x_train_data into train and test
         self.key, key_split = jr.split(self.key)
-        x_train, y_train, x_test, y_test = self.shuffle_and_split_data(x_data, y_data, self.test_data_ratio, key_split)
-        return x_train, y_train, x_test, y_test, sim
+        x_train, y_train, x_eval, y_eval = self.shuffle_and_split_data(x_data, y_data, self.test_data_ratio, key_split)
+        return x_train, y_train, x_eval, y_eval, x_test, y_test, sim
 
     @staticmethod
     def shuffle_and_split_data(x_data, y_data, test_ratio, key: chex.PRNGKey):
@@ -177,17 +182,19 @@ class RLFromOfflineData:
                     return_best_bnn: bool = True
                     ) -> BNN_SVGD:
         # x_train, y_train, x_test, y_test, sim = self.load_data()
-        x_train, y_train, x_test, y_test, sim = self.x_train, self.y_train, self.x_test, self.y_test, None
+        x_train, y_train, x_eval, y_eval, sim = self.x_train, self.y_train, self.x_eval, self.y_eval, None
+        x_test, y_test = self.x_test, self.y_test
         print(x_train.shape, y_train.shape, x_test.shape, y_test.shape)
         bnn = self.bnn_model
         if self.test_data_ratio == 0.0:
             metrics_objective = 'train_nll_loss'
+            x_eval, y_eval = x_test, y_test
         else:
             metrics_objective = 'eval_nll'
-        # Train the bnn model
-        bnn.fit(x_train=x_train, y_train=y_train, x_eval=x_test, y_eval=y_test, log_to_wandb=True,
-                keep_the_best=return_best_bnn, metrics_objective=metrics_objective, num_steps=bnn_train_steps)
 
+        # Train the bnn model
+        bnn.fit(x_train=x_train, y_train=y_train, x_eval=x_eval, y_eval=y_eval, log_to_wandb=True,
+                keep_the_best=return_best_bnn, metrics_objective=metrics_objective, num_steps=bnn_train_steps)
         return bnn
 
     def prepare_init_transitions(self, key: chex.PRNGKey, number_of_samples: int):
@@ -272,7 +279,7 @@ class RLFromOfflineData:
             with open(filename, 'rb') as handle:
                 params = pickle.load(handle)
 
-        x_train, y_train, x_test, y_test, sim = self.x_train, self.y_train, self.x_test, self.y_test, None
+        x_train, y_train, x_test, y_test, sim = self.x_train, self.y_train, self.x_eval, self.y_eval, None
         # Create a bnn model
         standard_model_params = {
             'input_size': x_train.shape[-1],
@@ -324,6 +331,11 @@ class RLFromOfflineData:
             y_data = y_data - x_data[..., :self.state_dim]
         eval_stats = bnn_model.eval(x_data, y_data, per_dim_metrics=True, prefix='eval_on_all_offline_data/')
         wandb.log(eval_stats)
+
+    def eval_bnn_model_on_test_data(self, bnn_model: BatchedNeuralNetworkModel):
+        x_test, y_test = self.x_test, self.y_test
+        test_stats = bnn_model.eval(x_test, y_test, per_dim_metrics=True, prefix='test_data/')
+        wandb.log(test_stats)
 
     def prepare_policy_from_offline_data(self,
                                          bnn_train_steps: int = 10_000,

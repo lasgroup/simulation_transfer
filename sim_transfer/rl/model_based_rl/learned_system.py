@@ -52,14 +52,15 @@ class LearnedDynamics(Dynamics[DynamicsParams]):
             _x_next = x_next_dist.sample(seed=key_sample_x_next)
             _x_next = _x_next.reshape((self._x_dim,))
 
-        # Update last num_frame_stack actions
-        _us = x[self._x_dim:]
-        _us = jnp.roll(_us, shift=self._u_dim)
-        _us = _us.at[:self._u_dim].set(u)
+        if self.num_frame_stack > 0:
+            # Update last num_frame_stack actions
+            _us = x[self._x_dim:]
+            new_us = jnp.concatenate([_us[self._u_dim:], u])
+            x_next = jnp.concatenate([_x_next, new_us])
+        else:
+            x_next = _x_next
 
         # Concatenate state and last num_frame_stack actions
-        x_next = jnp.concatenate([_x_next, _us])
-
         new_dynamics_params = dynamics_params.replace(key=next_key)
         return Normal(loc=x_next, scale=jnp.zeros_like(x_next)), new_dynamics_params
 

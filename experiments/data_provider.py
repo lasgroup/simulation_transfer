@@ -12,7 +12,6 @@ from experiments.util import load_csv_recordings
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
 
-
 DEFAULTS_SINUSOIDS = {
     'obs_noise_std': 0.1,
     'x_support_mode_train': 'full',
@@ -100,7 +99,7 @@ DATASET_CONFIGS.update({
 
 
 def get_rccar_recorded_data(encode_angle: bool = True, skip_first_n_points: int = 30):
-    recordings_dir = os.path.join(DATA_DIR, 'recordings_rc_car_v0')
+    recordings_dir = os.path.join(DATA_DIR, 'recordings_rc_car_v2')
     recording_dfs = load_csv_recordings(recordings_dir)
 
     def prepare_rccar_data(df, encode_angles: bool = False, change_signs: bool = True,
@@ -131,16 +130,20 @@ def get_rccar_recorded_data(encode_angle: bool = True, skip_first_n_points: int 
 
 
 def get_rccar_recorded_data_new(encode_angle: bool = True, skip_first_n_points: int = 10,
-                                action_delay: int = 3, action_stacking: bool = False):
+                                action_delay: int = 3, action_stacking: bool = False,
+                                sampling_key: jax.random.PRNGKeyArray | None = None):
     from brax.training.types import Transition
     recordings_dir = os.path.join(DATA_DIR, 'recordings_rc_car_v2')
 
     file_name = [f'recording_car2_sep29_{i:02d}.pickle' for i in
-                 [8, 1, 11, 4, 3, 13, 6, 12, 7, 14, 9,  5, 2, 10]]
+                 [8, 1, 11, 4, 3, 13, 6, 12, 7, 14, 9, 5, 2, 10]]
     transitions = []
     for fn in file_name:
         with open(recordings_dir + '/' + fn, 'rb') as f:
             transitions.append(pickle.load(f))
+
+    if sampling_key:
+        [transitions[i] for i in jax.random.shuffle(sampling_key, jnp.arange(len(transitions)))]
 
     def prepare_rccar_data(transitions: Transition, encode_angles: bool = False, skip_first_n: int = 30,
                            action_delay: int = 3, action_stacking: bool = False):
@@ -289,8 +292,11 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
         sampling_scheme = data_spec.get('sampling', DEFAULTS_RACECAR_REAL['sampling'])
         if sampling_scheme == 'iid':
             # sample random subset (datapoints are not adjacent in time)
-            assert num_train <= num_train_available / 4., f'Not enough data for {num_train} iid samples.' \
-                                                f'Requires at lest 4 times as much data as requested iid samples.'
+            import warnings
+            if num_train > num_train_available / 4.:
+                warnings.warn(f'Not enough data for {num_train} iid samples.'
+                              f'Requires at lest 4 times as much data as requested '
+                              f'iid samples.')
             idx_train = jax.random.choice(key_train, jnp.arange(num_train_available), shape=(num_train,), replace=False)
             idx_test = jax.random.choice(key_test, jnp.arange(num_test_available), shape=(num_test,), replace=False)
         elif sampling_scheme == 'consecutive':
@@ -327,7 +333,7 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
 
 if __name__ == '__main__':
     x_train, y_train, x_test, y_test, sim = provide_data_and_sim(data_source='real_racecar_new',
-                                                            data_spec={'num_samples_train': 10000})
+                                                                 data_spec={'num_samples_train': 10000})
     print(x_train.shape, y_train.shape, x_test.shape, y_test.shape)
 
     print(jnp.max(x_train, axis=0))
