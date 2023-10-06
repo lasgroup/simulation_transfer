@@ -1070,3 +1070,8 @@ if __name__ == '__main__':
     # plt.xlim(-3, 1)
     # plt.ylim(-2, 3)
     # plt.show()
+
+
+# [a_1, a_2, a_3] , a_4
+
+# [a_3, a_2, a_1] , a_4
