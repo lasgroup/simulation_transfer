@@ -14,6 +14,7 @@ from sim_transfer.sims.dynamics_models import Pendulum, PendulumParams, RaceCar,
 from sim_transfer.sims.util import encode_angles, decode_angles
 
 
+
 class FunctionSimulator:
 
     def __init__(self, input_size: int, output_size: int):
@@ -680,89 +681,6 @@ class PendulumBiModalSim(PendulumSim):
 
 
 class RaceCarSim(FunctionSimulator):
-    _default_car_model_params_bicycle: Dict = {
-        'use_blend': 0.0,
-        'm': 1.65,
-        'l_f': 0.13,
-        'l_r': 0.17,
-        'angle_offset': 0.0156,
-        'b_f': 2.58,
-        'b_r': 3.39,
-        'blend_ratio_lb': 0.01,
-        'blend_ratio_ub': 0.01,
-        'c_d': 0.41464928,
-        'c_f': 1.2,
-        'c_m_1': 10.701814,
-        'c_m_2': 1.4208151,
-        'c_r': 1.27,
-        'd_f': 0.02,
-        'd_r': 0.017,
-        'i_com': 0.01,
-        'steering_limit': 0.3543
-    }
-
-    _bounds_car_model_params_bicycle: Dict = {
-        'use_blend': (0.0, 0.0),
-        'm': (1.6, 1.7),
-        'l_f': (0.11, 0.15),
-        'l_r': (0.15, 0.19),
-        'angle_offset': (0.001, 0.03),
-        'b_f': (2.2, 2.8),
-        'b_r': (2.0, 6.0),
-        'blend_ratio_lb': (0.4, 0.4),
-        'blend_ratio_ub': (0.5, 0.5),
-        'c_d': (0.3, 0.5),
-        'c_f': (1.2, 1.2),
-        'c_m_1': (8., 13.),
-        'c_m_2': (1.1, 1.7),
-        'c_r': (1.27, 1.27),
-        'd_f': (0.02, 0.02),
-        'd_r': (0.017, 0.017),
-        'i_com': (0.01, 0.1),
-        'steering_limit': (0.20, 0.5),
-    }
-
-    _default_car_model_params_blend: Dict = {
-        'use_blend': 1.0,
-        'm': 1.65,
-        'l_f': 0.13,
-        'l_r': 0.17,
-        'angle_offset': -0.0213,
-        'b_f': 1.8966477,
-        'b_r': 6.2884626,
-        'blend_ratio_lb': 0.06637411,
-        'blend_ratio_ub': 0.00554,
-        'c_d': 0.0,
-        'c_f': 1.5381637,
-        'c_m_1': 11.102413,
-        'c_m_2': 1.3169205,
-        'c_r': 1.186591,
-        'd_f': 0.5968191,
-        'd_r': 0.42716035,
-        'i_com': 0.0685434,
-        'steering_limit': 0.6337473,
-    }
-
-    _bounds_car_model_params_blend = {
-        'use_blend': (1.0, 1.0),
-        'm': (1.6, 1.7),
-        'l_f': (0.125, 0.135),
-        'l_r': (0.165, 0.175),
-        'angle_offset': (-0.025, 0.025),
-        'b_f': (1.3, 3.0),
-        'b_r': (4.0, 10.0),
-        'blend_ratio_lb': (0.01, 0.1),
-        'blend_ratio_ub': (0.000, 0.2),
-        'c_d': (0.0, 0.0),
-        'c_f': (1.2, 1.8),
-        'c_m_1': (10., 12.),
-        'c_m_2': (1.1, 1.5),
-        'c_r': (0.9, 1.5),
-        'd_f': (0.35, 0.65),
-        'd_r': (0.3, 0.6),
-        'i_com': (0.05, 0.09),
-        'steering_limit': (0.5, 0.9),
-    }
 
     _dt: float = 1 / 30.
     _angle_idx: int = 2
@@ -776,7 +694,7 @@ class RaceCarSim(FunctionSimulator):
     _domain_upper_dataset = jnp.array([2., 2., jnp.pi, 2., 2., 3., 1., 1.])
 
     def __init__(self, encode_angle: bool = True, use_blend: bool = False, only_pose: bool = False,
-                 no_angular_velocity: bool = False):
+                 no_angular_velocity: bool = False, car_id: int = 2):
         """ Race car simulator
 
         Args:
@@ -788,6 +706,11 @@ class RaceCarSim(FunctionSimulator):
         _output_size = (7 if encode_angle else 6) - (3 if only_pose else 0) - (1 if no_angular_velocity else 0)
         FunctionSimulator.__init__(self, input_size=9 if encode_angle else 8,
                                    output_size=_output_size)
+
+        # set car id
+        assert car_id in [1, 2]
+        self.car_id = car_id
+        self._set_default_params()
 
         # set up typical parameters
         self.use_blend = use_blend
@@ -918,6 +841,24 @@ class RaceCarSim(FunctionSimulator):
             return HypercubeDomainWithAngles(angle_indices=[self._angle_idx], lower=lower, upper=upper)
         else:
             return HypercubeDomain(lower=lower, upper=upper)
+
+    def _set_default_params(self):
+        from sim_transfer.sims.car_sim_config import (DEFAULT_PARAMS_BICYCLE_CAR1, DEFAULT_PARAMS_BLEND_CAR1,
+                                                      BOUNDS_PARAMS_BICYCLE_CAR1, BOUNDS_PARAMS_BLEND_CAR1,
+                                                      DEFAULT_PARAMS_BICYCLE_CAR2, DEFAULT_PARAMS_BLEND_CAR2,
+                                                      BOUNDS_PARAMS_BICYCLE_CAR2, BOUNDS_PARAMS_BLEND_CAR2)
+        if self.car_id == 1:
+            self._default_car_model_params_bicycle = DEFAULT_PARAMS_BICYCLE_CAR1
+            self._bounds_car_model_params_bicycle = BOUNDS_PARAMS_BICYCLE_CAR1
+            self._default_car_model_params_blend = DEFAULT_PARAMS_BLEND_CAR1
+            self._bounds_car_model_params_blend = BOUNDS_PARAMS_BLEND_CAR1
+        elif self.car_id == 2:
+            self._default_car_model_params_bicycle = DEFAULT_PARAMS_BICYCLE_CAR2
+            self._bounds_car_model_params_bicycle = BOUNDS_PARAMS_BICYCLE_CAR2
+            self._default_car_model_params_blend = DEFAULT_PARAMS_BLEND_CAR2
+            self._bounds_car_model_params_blend = BOUNDS_PARAMS_BLEND_CAR2
+        else:
+            raise ValueError(f'Car id {self.car_id} not supported.')
 
 
 class PredictStateChangeWrapper(FunctionSimulator):

@@ -18,19 +18,19 @@ from brax.training.types import Transition
 import tensorflow_probability.substrates.jax.distributions as tfd
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-                        'data/recordings_rc_car_v1')
+                        'data/recordings_rc_car_v2')
 
 arg_parser = argparse.ArgumentParser()
 arg_parser.add_argument('--batch_size', type=int, default=64)
 arg_parser.add_argument('--num_steps_ahead', type=int, default=3)
-arg_parser.add_argument('--action_delay', type=int, default=2)
+arg_parser.add_argument('--action_delay', type=int, default=3)
 arg_parser.add_argument('--real_data', type=bool, default=True)
-arg_parser.add_argument('--encode_angle', type=bool, default=False)
+arg_parser.add_argument('--encode_angle', type=bool, default=True)
 arg_parser.add_argument('--use_blend', type=float, default=1.0)
-arg_parser.add_argument('--seed', type=int, default=456456)
+arg_parser.add_argument('--seed', type=int, default=234234)
 args = arg_parser.parse_args()
 
-
+key_init, key_train, key_data = jax.random.split(jax.random.PRNGKey(args.seed), 3)
 
 def rotate_vector(v, theta):
     v_x, v_y = v[..., 0], v[..., 1]
@@ -65,7 +65,7 @@ def prepare_data(transitions: Transition, window_size=10, encode_angles: bool = 
 
 
 def load_transitions(file_dir):
-    file_name = ['train_1.pickle', 'train_2.pickle', 'test_1.pickle']
+    file_name = [f'recording_car2_sep29_{i:02d}.pickle' for i in [8, 1, 11, 4, 3, 13, 6, 12, 7, 14, 9,  5, 2, 10]]
     transitions = []
     for fn in file_name:
         with open(file_dir + '/' + fn, 'rb') as f:
@@ -73,21 +73,24 @@ def load_transitions(file_dir):
     return transitions
 
 
-num_train_traj = 2 if args.real_data else 7
+num_train_traj = 9 if args.real_data else 7
 transitions = load_transitions(DATA_DIR)
 datasets = list(map(partial(prepare_data, window_size=11, encode_angles=args.encode_angle, action_delay=args.action_delay),
                           transitions))
-datasets_test = [datasets[-1]]
+# shuffle data
+[datasets[i] for i in jax.random.shuffle(key_data, jnp.arange(len(datasets)))]
 
-# only take first 6000 transitions from the first dataset since the car hit an object later on
-datasets_train = [(datasets[0][0][:6000], datasets[0][1][:6000]), datasets[1]]
-
+# split into train and test
+datasets_train = datasets[:num_train_traj]
+datasets_test = datasets[num_train_traj:]
 x_train, u_train = map(lambda x: jnp.concatenate(x, axis=0), zip(*datasets_train))
 x_test, u_test = map(lambda x: jnp.concatenate(x, axis=0), zip(*datasets_test))
 
 dynamics = RaceCar(dt=1 / 30., encode_angle=args.encode_angle, rk_integrator=True)
 step_vmap = jax.vmap(dynamics.next_step, in_axes=(0, 0, None), out_axes=0)
 
+
+k1, k2, k3, k4 = jax.random.split(key_init, 4)
 params_car_model = {
     'i_com': jnp.array(27.8e-6),
     'd_f': jnp.array(0.02),
@@ -95,11 +98,11 @@ params_car_model = {
     'b_f': jnp.array(2.58),
     'd_r': jnp.array(0.017),
     'c_r': jnp.array(1.27),
-    'b_r': jnp.array(3.39),
-    'c_m_1': jnp.array(10.0),
-    'c_m_2': jnp.array(0.05),
+    'b_r': jax.random.uniform(k4, minval=2, maxval=8),
+    'c_m_1': jax.random.uniform(k1, minval=4, maxval=20),
+    'c_m_2': jax.random.uniform(k2, minval=0.5, maxval=2.),
     'c_d': jnp.array(0.52),
-    'steering_limit': jnp.array(0.35),
+    'steering_limit': jax.random.uniform(k3, minval=0.3, maxval=0.8),
     'blend_ratio_ub': jnp.array([0.5477225575]),
     'blend_ratio_lb': jnp.array([0.4472135955]),
     'angle_offset': jnp.array([0.0]),
@@ -219,17 +222,12 @@ def eval(params, x_eval, u_eval, log_plots: bool = False):
         'theta_diff_60': theta_diff[60],
     }
     if log_plots:
-        plots = {
-            'trajectory_comparison_1': plot_trajectory_comparison(x_eval[1000], traj_pred[1000]),
-            'trajectory_comparison_500': plot_trajectory_comparison(x_eval[2000], traj_pred[2000]),
-            'trajectory_comparison_2000': plot_trajectory_comparison(x_eval[3000], traj_pred[3000])
-        }
+        plots = {f'trajectory_comparison_{i}': plot_trajectory_comparison (x_eval[i], traj_pred[i])
+                 for i in [1, 200, 800, 1800, 2600, 3000, 4300, 5500]}
         return {**metrics, **plots}
     else:
         return metrics
 
-
-key = jax.random.PRNGKey(args.seed)
 
 import wandb
 from pprint import pprint
@@ -246,7 +244,7 @@ print('----------------')
 
 
 for i in range(40000):
-    key, subkey = jax.random.split(key)
+    key_train, subkey = jax.random.split(key_train)
     loss, params, opt_state = step(params, opt_state, subkey)
 
     if i % 1000 == 0:

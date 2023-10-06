@@ -101,17 +101,20 @@ def experiment(horizon_len: int,
                        )
 
     total_config = SAC_KWARGS | config_dict
+    group = group_name + '_' + str(likelihood_exponent)
     wandb.init(
-        dir='/cluster/scratch/trevenl',
+        dir='/cluster/scratch/sukhijab',
         project=project_name,
-        group=group_name,
+        group=group,
         config=total_config,
     )
 
     x_train, y_train, x_test, y_test, sim = provide_data_and_sim(
         data_source='real_racecar_new_actionstack',
         data_spec={'num_samples_train': num_offline_collected_transitions,
-                   'use_hf_sim': bool(high_fidelity), })
+                   'use_hf_sim': bool(high_fidelity),
+                   'sampling': 'iid',
+                   })
 
     # Deal with randomness
     key = jr.PRNGKey(seed)
@@ -127,12 +130,13 @@ def experiment(horizon_len: int,
         'learn_likelihood_std': bool(learnable_likelihood_std),
         'likelihood_exponent': likelihood_exponent,
         'hidden_layer_sizes': [64, 64, 64],
+        'normalization_stats': sim.normalization_stats,
         'data_batch_size': bnn_batch_size,
     }
 
     if use_sim_prior:
         if high_fidelity:
-            outputscales_racecar = [0.007, 0.007, 0.007, 0.007, 0.04, 0.04, 0.18]
+            outputscales_racecar = [0.008, 0.008, 0.009, 0.009, 0.05, 0.05, 0.20]
         else:
             outputscales_racecar = [0.008, 0.008, 0.01, 0.01, 0.08, 0.08, 0.5]
         sim = AdditiveSim(base_sims=[sim,
@@ -143,7 +147,7 @@ def experiment(horizon_len: int,
         if predict_difference:
             sim = PredictStateChangeWrapper(sim)
 
-        standard_params['normalization_stats'] = sim.normalization_stats
+
         model = BNN_FSVGD_SimPrior(
             **standard_params,
             domain=sim.domain,
@@ -193,6 +197,8 @@ def experiment(horizon_len: int,
     policy, params, metrics, bnn_model = rl_from_offline_data.prepare_policy_from_offline_data(
         bnn_train_steps=bnn_train_steps,
         return_best_bnn=bool(best_bnn_model))
+    rl_from_offline_data.eval_bnn_model_on_test_data(rl_from_offline_data.bnn_model)
+
 
     # We evaluate the policy on 100 different initial states and different seeds
     rl_from_offline_data.evaluate_policy(policy, key=key_evaluation_pretrained_bnn, num_evals=100)
@@ -244,7 +250,7 @@ if __name__ == '__main__':
     parser.add_argument('--predict_difference', type=int, default=0)
     parser.add_argument('--ctrl_cost_weight', type=float, default=0.005)
     parser.add_argument('--ctrl_diff_weight', type=float, default=0.01)
-    parser.add_argument('--num_offline_collected_transitions', type=int, default=1_000)
+    parser.add_argument('--num_offline_collected_transitions', type=int, default=20_000)
     parser.add_argument('--use_sim_prior', type=int, default=0)
     parser.add_argument('--use_grey_box', type=int, default=0)
     parser.add_argument('--high_fidelity', type=int, default=0)
