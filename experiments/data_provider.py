@@ -7,10 +7,11 @@ import pickle
 
 from sim_transfer.sims.util import encode_angles as encode_angles_fn
 from sim_transfer.sims.simulators import PredictStateChangeWrapper, StackedActionSimWrapper
-from sim_transfer.sims.car_sim_config import OBS_NOISE_STD_CAR_SIM
+from sim_transfer.sims.car_sim_config import OBS_NOISE_STD_SIM_CAR
 from experiments.util import load_csv_recordings
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
+
 
 DEFAULTS_SINUSOIDS = {
     'obs_noise_std': 0.1,
@@ -26,7 +27,7 @@ DEFAULTS_PENDULUM = {
 }
 
 DEFAULTS_RACECAR = {
-    'obs_noise_std': OBS_NOISE_STD_CAR_SIM,
+    'obs_noise_std': OBS_NOISE_STD_SIM_CAR,
     'x_support_mode_train': 'full',
     'param_mode': 'random',
     'pred_diff': False
@@ -99,7 +100,7 @@ DATASET_CONFIGS.update({
 
 
 def get_rccar_recorded_data(encode_angle: bool = True, skip_first_n_points: int = 30):
-    recordings_dir = os.path.join(DATA_DIR, 'recordings_rc_car_v2')
+    recordings_dir = os.path.join(DATA_DIR, 'recordings_rc_car_v0')
     recording_dfs = load_csv_recordings(recordings_dir)
 
     def prepare_rccar_data(df, encode_angles: bool = False, change_signs: bool = True,
@@ -131,19 +132,27 @@ def get_rccar_recorded_data(encode_angle: bool = True, skip_first_n_points: int 
 
 def get_rccar_recorded_data_new(encode_angle: bool = True, skip_first_n_points: int = 10,
                                 action_delay: int = 3, action_stacking: bool = False,
-                                sampling_key: jax.random.PRNGKeyArray | None = None):
+                                car_id: int = 2):
     from brax.training.types import Transition
-    recordings_dir = os.path.join(DATA_DIR, 'recordings_rc_car_v2')
 
-    file_name = [f'recording_car2_sep29_{i:02d}.pickle' for i in
-                 [8, 1, 11, 4, 3, 13, 6, 12, 7, 14, 9, 5, 2, 10]]
+    assert car_id in [1, 2]
+    if car_id == 1:
+        num_train_traj = 8
+        recordings_dir = os.path.join(DATA_DIR, 'recordings_rc_car_v1')
+        file_name = [f'recording_sep6_{i}.pickle' for i in
+                     [1, 5, 12, 8, 3, 7, 10, 2, 4, 9, 6, 11]]
+    elif car_id == 2:
+        num_train_traj = 10
+        recordings_dir = os.path.join(DATA_DIR, 'recordings_rc_car_v2')
+        file_name = [f'recording_car2_sep29_{i:02d}.pickle' for i in
+                     [8, 1, 11, 4, 3, 13, 6, 12, 7, 14, 9, 5, 2, 10]]
+    else:
+        raise ValueError(f"Unknown car id {car_id}")
+
     transitions = []
     for fn in file_name:
         with open(recordings_dir + '/' + fn, 'rb') as f:
             transitions.append(pickle.load(f))
-
-    if sampling_key:
-        [transitions[i] for i in jax.random.shuffle(sampling_key, jnp.arange(len(transitions)))]
 
     def prepare_rccar_data(transitions: Transition, encode_angles: bool = False, skip_first_n: int = 30,
                            action_delay: int = 3, action_stacking: bool = False):
@@ -181,7 +190,7 @@ def get_rccar_recorded_data_new(encode_angle: bool = True, skip_first_n_points: 
         assert x_data.shape[1] - (2 * (1 + int(action_stacking) * action_delay)) == y_data.shape[1]
         return x_data, y_data
 
-    num_train_traj = 10
+
     prep_fn = partial(prepare_rccar_data, encode_angles=encode_angle, skip_first_n=skip_first_n_points,
                       action_delay=action_delay, action_stacking=action_stacking)
     x_train, y_train = map(lambda x: jnp.concatenate(x, axis=0), zip(*map(prep_fn, transitions[:num_train_traj])))
@@ -254,14 +263,15 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
     elif data_source.startswith('real_racecar'):
         from sim_transfer.sims.simulators import RaceCarSim
         use_hf_sim = data_spec.get('use_hf_sim', True)
-        print('[data_provider] Use high-fidelity car sim:', use_hf_sim)
+        car_id = data_spec.get('car_id', 2)
+        print('[data_provider] Use high-fidelity car sim:', use_hf_sim, 'Car id:', car_id)
 
         if data_source.endswith('only_pose'):
-            sim_lf = RaceCarSim(encode_angle=True, use_blend=use_hf_sim, only_pose=True)
+            sim_lf = RaceCarSim(encode_angle=True, use_blend=use_hf_sim, only_pose=True, car_id=car_id)
         elif data_source.endswith('no_angvel'):
-            sim_lf = RaceCarSim(encode_angle=True, use_blend=use_hf_sim, no_angular_velocity=True)
+            sim_lf = RaceCarSim(encode_angle=True, use_blend=use_hf_sim, no_angular_velocity=True, car_id=car_id)
         else:
-            sim_lf = RaceCarSim(encode_angle=True, use_blend=use_hf_sim)
+            sim_lf = RaceCarSim(encode_angle=True, use_blend=use_hf_sim, car_id=car_id)
 
         if data_spec.get('pred_diff', DEFAULTS_PENDULUM['pred_diff']):
             # wrap sim in predict state change wrapper
@@ -270,11 +280,11 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
 
         if data_source.startswith('real_racecar_new_actionstack'):
             x_train, y_train, x_test, y_test = get_rccar_recorded_data_new(encode_angle=True, action_stacking=True,
-                                                                           action_delay=3)
+                                                                           action_delay=3, car_id=car_id)
             sim_lf = StackedActionSimWrapper(sim_lf, num_stacked_actions=3, action_size=2)
         elif data_source.startswith('real_racecar_new'):
             x_train, y_train, x_test, y_test = get_rccar_recorded_data_new(encode_angle=True, action_stacking=False,
-                                                                           action_delay=3)
+                                                                           action_delay=3, car_id=car_id)
         else:
             x_train, y_train, x_test, y_test = get_rccar_recorded_data(encode_angle=True)
 
@@ -292,11 +302,8 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
         sampling_scheme = data_spec.get('sampling', DEFAULTS_RACECAR_REAL['sampling'])
         if sampling_scheme == 'iid':
             # sample random subset (datapoints are not adjacent in time)
-            import warnings
-            if num_train > num_train_available / 4.:
-                warnings.warn(f'Not enough data for {num_train} iid samples.'
-                              f'Requires at lest 4 times as much data as requested '
-                              f'iid samples.')
+            assert num_train <= num_train_available / 4., f'Not enough data for {num_train} iid samples.' \
+                                                f'Requires at lest 4 times as much data as requested iid samples.'
             idx_train = jax.random.choice(key_train, jnp.arange(num_train_available), shape=(num_train,), replace=False)
             idx_test = jax.random.choice(key_test, jnp.arange(num_test_available), shape=(num_test,), replace=False)
         elif sampling_scheme == 'consecutive':
@@ -333,7 +340,7 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
 
 if __name__ == '__main__':
     x_train, y_train, x_test, y_test, sim = provide_data_and_sim(data_source='real_racecar_new',
-                                                                 data_spec={'num_samples_train': 10000})
+                                                            data_spec={'num_samples_train': 10000})
     print(x_train.shape, y_train.shape, x_test.shape, y_test.shape)
 
     print(jnp.max(x_train, axis=0))

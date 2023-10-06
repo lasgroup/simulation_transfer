@@ -12,8 +12,7 @@ from tensorflow_probability.substrates import jax as tfp
 from sim_transfer.sims.domain import Domain, HypercubeDomain, HypercubeDomainWithAngles
 from sim_transfer.sims.dynamics_models import Pendulum, PendulumParams, RaceCar, CarParams
 from sim_transfer.sims.util import encode_angles, decode_angles
-from sim_transfer.sims.car_sim_config import (DEFAULT_CAR_PARAMS_BICYCLE, DEFAULT_CAR_PARAMS_BLEND,
-                                              BOUNDS_CAR_PARAMS_BICYCLE, BOUNDS_CAR_PARAMS_BLEND)
+
 
 
 class FunctionSimulator:
@@ -682,10 +681,6 @@ class PendulumBiModalSim(PendulumSim):
 
 
 class RaceCarSim(FunctionSimulator):
-    _default_car_model_params_bicycle: Dict = DEFAULT_CAR_PARAMS_BICYCLE
-    _bounds_car_model_params_bicycle: Dict = BOUNDS_CAR_PARAMS_BICYCLE
-    _default_car_model_params_blend: Dict = DEFAULT_CAR_PARAMS_BLEND
-    _bounds_car_model_params_blend: Dict = BOUNDS_CAR_PARAMS_BLEND
 
     _dt: float = 1 / 30.
     _angle_idx: int = 2
@@ -699,7 +694,7 @@ class RaceCarSim(FunctionSimulator):
     _domain_upper_dataset = jnp.array([2., 2., jnp.pi, 2., 2., 3., 1., 1.])
 
     def __init__(self, encode_angle: bool = True, use_blend: bool = False, only_pose: bool = False,
-                 no_angular_velocity: bool = False):
+                 no_angular_velocity: bool = False, car_id: int = 2):
         """ Race car simulator
 
         Args:
@@ -711,6 +706,11 @@ class RaceCarSim(FunctionSimulator):
         _output_size = (7 if encode_angle else 6) - (3 if only_pose else 0) - (1 if no_angular_velocity else 0)
         FunctionSimulator.__init__(self, input_size=9 if encode_angle else 8,
                                    output_size=_output_size)
+
+        # set car id
+        assert car_id in [1, 2]
+        self.car_id = car_id
+        self._set_default_params()
 
         # set up typical parameters
         self.use_blend = use_blend
@@ -841,6 +841,24 @@ class RaceCarSim(FunctionSimulator):
             return HypercubeDomainWithAngles(angle_indices=[self._angle_idx], lower=lower, upper=upper)
         else:
             return HypercubeDomain(lower=lower, upper=upper)
+
+    def _set_default_params(self):
+        from sim_transfer.sims.car_sim_config import (DEFAULT_PARAMS_BICYCLE_CAR1, DEFAULT_PARAMS_BLEND_CAR1,
+                                                      BOUNDS_PARAMS_BICYCLE_CAR1, BOUNDS_PARAMS_BLEND_CAR1,
+                                                      DEFAULT_PARAMS_BICYCLE_CAR2, DEFAULT_PARAMS_BLEND_CAR2,
+                                                      BOUNDS_PARAMS_BICYCLE_CAR2, BOUNDS_PARAMS_BLEND_CAR2)
+        if self.car_id == 1:
+            self._default_car_model_params_bicycle = DEFAULT_PARAMS_BICYCLE_CAR1
+            self._bounds_car_model_params_bicycle = BOUNDS_PARAMS_BICYCLE_CAR1
+            self._default_car_model_params_blend = DEFAULT_PARAMS_BLEND_CAR1
+            self._bounds_car_model_params_blend = BOUNDS_PARAMS_BLEND_CAR1
+        elif self.car_id == 2:
+            self._default_car_model_params_bicycle = DEFAULT_PARAMS_BICYCLE_CAR2
+            self._bounds_car_model_params_bicycle = BOUNDS_PARAMS_BICYCLE_CAR2
+            self._default_car_model_params_blend = DEFAULT_PARAMS_BLEND_CAR2
+            self._bounds_car_model_params_blend = BOUNDS_PARAMS_BLEND_CAR2
+        else:
+            raise ValueError(f'Car id {self.car_id} not supported.')
 
 
 class PredictStateChangeWrapper(FunctionSimulator):
