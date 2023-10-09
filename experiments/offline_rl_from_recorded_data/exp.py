@@ -190,9 +190,9 @@ def experiment(horizon_len: int,
         return_best_policy=bool(best_policy),
         predict_difference=bool(predict_difference),
         test_data_ratio=test_data_ratio,
-        eval_on_all_offline_data=bool(eval_on_all_offline_data),
-        eval_only_on_init_states=bool(eval_only_on_init_states),
-        num_init_points_to_bs_for_learning=num_init_points_to_bs_for_learning,
+        eval_bnn_model_on_all_offline_data=bool(eval_on_all_offline_data),
+        eval_sac_only_from_init_states=bool(eval_only_on_init_states),
+        num_init_points_to_bs_for_sac_learning=num_init_points_to_bs_for_learning,
     )
     policy, params, metrics, bnn_model = rl_from_offline_data.prepare_policy_from_offline_data(
         bnn_train_steps=bnn_train_steps,
