@@ -37,27 +37,34 @@ class RLFromOfflineData:
                  return_best_policy: bool = True,
                  num_frame_stack: int = 3,
                  test_data_ratio: float = 0.1,
-                 num_init_points_to_bs_for_learning: int | None = 100,
-                 eval_only_on_init_states: bool = False,
-                 eval_on_all_offline_data: bool = True
+                 num_init_points_to_bs_for_sac_learning: int | None = 100,
+                 eval_sac_only_from_init_states: bool = False,
+                 eval_bnn_model_on_all_offline_data: bool = True,
+                 train_sac_only_from_init_states: bool = False,
+                 load_pretrained_bnn_model: bool = True,
                  ):
-        self.eval_on_all_offline_data = eval_on_all_offline_data
-        self.eval_only_on_init_states = eval_only_on_init_states
+        self.eval_bnn_model_on_all_offline_data = eval_bnn_model_on_all_offline_data
+        self.eval_sac_only_from_init_states = eval_sac_only_from_init_states
+        self.train_sac_only_from_init_states = train_sac_only_from_init_states
+        self.load_pretrained_bnn_model = load_pretrained_bnn_model
 
         # Prepare number of init points for learning
-        if num_init_points_to_bs_for_learning is None:
-            num_init_points_to_bs_for_learning = data_spec['num_samples_train']
-        self.num_init_points_to_bs_for_learning = num_init_points_to_bs_for_learning
+        if num_init_points_to_bs_for_sac_learning is None:
+            num_init_points_to_bs_for_sac_learning = data_spec['num_samples_train']
+        self.num_init_points_to_bs_for_learning = num_init_points_to_bs_for_sac_learning
 
         # We load the model trained on dataset of 20_000 points for evaluation
-        simulation_transfer_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        bnn_dir = os.path.join(simulation_transfer_dir, 'bnn_models_pretrained')
-        bnn_model_path = os.path.join(bnn_dir, 'bnn_svgd_model_on_20_000_points.pkl')
+        if self.load_pretrained_bnn_model:
+            simulation_transfer_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            bnn_dir = os.path.join(simulation_transfer_dir, 'bnn_models_pretrained')
+            bnn_model_path = os.path.join(bnn_dir, 'bnn_svgd_model_on_20_000_points.pkl')
 
-        with open(bnn_model_path, 'rb') as handle:
-            bnn_model_pretrained = pickle.load(handle)
+            with open(bnn_model_path, 'rb') as handle:
+                bnn_model_pretrained = pickle.load(handle)
 
-        self.bnn_model_pretrained = bnn_model_pretrained
+            self.bnn_model_pretrained = bnn_model_pretrained
+        else:
+            self.bnn_model_pretrained = None
         self.test_data_ratio = test_data_ratio
         self.key = key
 
@@ -71,7 +78,7 @@ class RLFromOfflineData:
         self.car_reward_kwargs = car_reward_kwargs
         self.sac_kwargs = sac_kwargs
 
-        x_train, y_train, x_test, y_test, sim = self.load_data()
+        x_train, y_train, x_eval, y_eval, x_test, y_test, sim = self.load_data()
 
         # TODO: rn it is hardcoded
         state_dim = 7
@@ -87,11 +94,11 @@ class RLFromOfflineData:
         next_state_obs = y_train
         last_actions = x_train[:, self.state_with_frame_stack_dim:]
         framestacked_actions = x_train[:, state_dim:self.state_with_frame_stack_dim]
-        framestacked_actions = self.revert_order_of_stacked_actions(framestacked_actions)
 
-        # Here we shift frame stacking
-        next_framestacked_actions = jnp.roll(framestacked_actions, shift=action_dim, axis=-1)
-        next_framestacked_actions = next_framestacked_actions.at[:, :action_dim].set(last_actions)
+        if self.num_frame_stack > 0:
+            next_framestacked_actions = x_train[:, state_dim + action_dim:]
+        else:
+            next_framestacked_actions = framestacked_actions
 
         rewards = jnp.zeros(shape=(x_train.shape[0],))
         discounts = 0.99 * jnp.ones(shape=(x_train.shape[0],))
@@ -121,31 +128,27 @@ class RLFromOfflineData:
         self.true_buffer_state = true_buffer_state
 
         # Prepare data to train the model
-        self.x_train = self.reshape_xs(x_train)
+        self.x_train = x_train
         self.y_train = y_train
-        self.x_test = self.reshape_xs(x_test)
+        self.x_eval = x_eval
+        self.y_eval = y_eval
+        self.x_test = x_test
         self.y_test = y_test
 
         if self.predict_difference:
             self.y_train = self.y_train - self.x_train[..., :self.state_dim]
+            self.y_eval = self.y_eval - self.x_eval[..., :self.state_dim]
             self.y_test = self.y_test - self.x_test[..., :self.state_dim]
-
-    def reshape_xs(self, xs):
-        states_obs = xs[:, :self.state_dim]
-        last_actions = xs[:, self.state_with_frame_stack_dim:]
-        framestacked_actions = xs[:, self.state_dim:self.state_with_frame_stack_dim]
-        framestacked_actions = self.revert_order_of_stacked_actions(framestacked_actions)
-        return jnp.concatenate([states_obs, framestacked_actions, last_actions], axis=-1)
 
     def load_data(self):
         # y_train is the next state not the difference
-        x_data, y_data, _, _, sim = provide_data_and_sim(data_source=self.data_source,
-                                                         data_spec=self.data_spec)
+        x_data, y_data, x_test, y_test, sim = provide_data_and_sim(data_source=self.data_source,
+                                                                   data_spec=self.data_spec)
 
         # Now we split x_train_data into train and test
         self.key, key_split = jr.split(self.key)
-        x_train, y_train, x_test, y_test = self.shuffle_and_split_data(x_data, y_data, self.test_data_ratio, key_split)
-        return x_train, y_train, x_test, y_test, sim
+        x_train, y_train, x_eval, y_eval = self.shuffle_and_split_data(x_data, y_data, self.test_data_ratio, key_split)
+        return x_train, y_train, x_eval, y_eval, x_test, y_test, sim
 
     @staticmethod
     def shuffle_and_split_data(x_data, y_data, test_ratio, key: chex.PRNGKey):
@@ -177,17 +180,19 @@ class RLFromOfflineData:
                     return_best_bnn: bool = True
                     ) -> BNN_SVGD:
         # x_train, y_train, x_test, y_test, sim = self.load_data()
-        x_train, y_train, x_test, y_test, sim = self.x_train, self.y_train, self.x_test, self.y_test, None
+        x_train, y_train, x_eval, y_eval, sim = self.x_train, self.y_train, self.x_eval, self.y_eval, None
+        x_test, y_test = self.x_test, self.y_test
         print(x_train.shape, y_train.shape, x_test.shape, y_test.shape)
         bnn = self.bnn_model
         if self.test_data_ratio == 0.0:
             metrics_objective = 'train_nll_loss'
+            x_eval, y_eval = x_test, y_test
         else:
             metrics_objective = 'eval_nll'
-        # Train the bnn model
-        bnn.fit(x_train=x_train, y_train=y_train, x_eval=x_test, y_eval=y_test, log_to_wandb=True,
-                keep_the_best=return_best_bnn, metrics_objective=metrics_objective, num_steps=bnn_train_steps)
 
+        # Train the bnn model
+        bnn.fit(x_train=x_train, y_train=y_train, x_eval=x_eval, y_eval=y_eval, log_to_wandb=True,
+                keep_the_best=return_best_bnn, metrics_objective=metrics_objective, num_steps=bnn_train_steps)
         return bnn
 
     def prepare_init_transitions(self, key: chex.PRNGKey, number_of_samples: int):
@@ -224,14 +229,18 @@ class RLFromOfflineData:
         key_init_state, key_init_buffer = jr.split(key_init_state)
         init_transitions = self.prepare_init_transitions(key_init_state, self.num_init_points_to_bs_for_learning)
 
-        extended_data_bs = self.true_data_buffer.insert(true_data_buffer_state, init_transitions)
+        if self.train_sac_only_from_init_states:
+            train_buffer_state = self.true_data_buffer.init(key_init_buffer)
+            train_buffer_state = self.true_data_buffer.insert(train_buffer_state, init_transitions)
+        else:
+            train_buffer_state = self.true_data_buffer.insert(true_data_buffer_state, init_transitions)
+
         env = BraxWrapper(system=system,
-                          sample_buffer_state=extended_data_bs,
+                          sample_buffer_state=train_buffer_state,
                           sample_buffer=self.true_data_buffer,
                           system_params=system.init_params(keys_sys_params[0]))
-
-        init_states_bs = extended_data_bs
-        if self.eval_only_on_init_states:
+        init_states_bs = train_buffer_state
+        if self.eval_sac_only_from_init_states:
             init_states_bs = self.true_data_buffer.init(key_init_buffer)
             init_states_bs = self.true_data_buffer.insert(init_states_bs, init_transitions)
 
@@ -257,22 +266,12 @@ class RLFromOfflineData:
 
         return policy, params, metrics
 
-    def revert_order_of_stacked_actions(self, stacked_actions: chex.Array):
-        assert self.action_dim * self.num_frame_stack == stacked_actions.shape[-1]
-        actions_list = []
-        # We split the actions into a list of actions
-        for i in range(self.num_frame_stack):
-            actions_list.append(stacked_actions[..., 2 * i:2 * i + 2])
-        # We revert list now
-        actions_list = actions_list[::-1]
-        return jnp.concatenate(actions_list, axis=-1)
-
     def prepare_policy(self, params: Any | None = None, filename: str = None):
         if params is None:
             with open(filename, 'rb') as handle:
                 params = pickle.load(handle)
 
-        x_train, y_train, x_test, y_test, sim = self.x_train, self.y_train, self.x_test, self.y_test, None
+        x_train, y_train, x_test, y_test, sim = self.x_train, self.y_train, self.x_eval, self.y_eval, None
         # Create a bnn model
         standard_model_params = {
             'input_size': x_train.shape[-1],
@@ -319,18 +318,22 @@ class RLFromOfflineData:
         data_spec: dict = {'num_samples_train': 20000}
         x_data, y_data, _, _, sim = provide_data_and_sim(data_source=data_source,
                                                          data_spec=data_spec)
-        x_data = self.reshape_xs(x_data)
         if self.predict_difference:
             y_data = y_data - x_data[..., :self.state_dim]
         eval_stats = bnn_model.eval(x_data, y_data, per_dim_metrics=True, prefix='eval_on_all_offline_data/')
         wandb.log(eval_stats)
+
+    def eval_bnn_model_on_test_data(self, bnn_model: BatchedNeuralNetworkModel):
+        x_test, y_test = self.x_test, self.y_test
+        test_stats = bnn_model.eval(x_test, y_test, per_dim_metrics=True, prefix='test_data/')
+        wandb.log(test_stats)
 
     def prepare_policy_from_offline_data(self,
                                          bnn_train_steps: int = 10_000,
                                          return_best_bnn: bool = True):
         bnn_model = self.train_model(bnn_train_steps=bnn_train_steps,
                                      return_best_bnn=return_best_bnn)
-        if self.eval_on_all_offline_data:
+        if self.eval_bnn_model_on_all_offline_data:
             self.evaluate_bnn_model_on_all_collected_data(bnn_model)
         policy, params, metrics = self.train_policy(bnn_model, self.true_buffer_state, self.key)
 
@@ -380,6 +383,8 @@ class RLFromOfflineData:
         obs = vmap(sim.reset)(rng_key=key_init_obs)
         if bnn_model is None:
             bnn_model = self.bnn_model_pretrained
+            if bnn_model is None:
+                raise ValueError('You have not loaded the pretrained model.')
         learned_car_system = LearnedCarSystem(model=bnn_model,
                                               include_noise=self.include_aleatoric_noise,
                                               predict_difference=self.predict_difference,
@@ -498,8 +503,8 @@ if __name__ == '__main__':
         car_reward_kwargs=car_reward_kwargs,
         bnn_model=model,
         test_data_ratio=0.1,
-        num_init_points_to_bs_for_learning=100,
-        eval_only_on_init_states=True,
+        num_init_points_to_bs_for_sac_learning=100,
+        eval_sac_only_from_init_states=True,
     )
     policy, params, metrics, bnn_model = rl_from_offline_data.prepare_policy_from_offline_data(bnn_train_steps=2_000)
     filename_params = os.path.join(wandb.run.dir, 'models/policy.pkl')
