@@ -1,17 +1,17 @@
-from typing import Dict, Any
-from functools import partial
-import jax.numpy as jnp
-import jax
 import os
 import pickle
+from functools import partial
+from typing import Dict, Any
 
-from sim_transfer.sims.util import encode_angles as encode_angles_fn
-from sim_transfer.sims.simulators import PredictStateChangeWrapper, StackedActionSimWrapper
-from sim_transfer.sims.car_sim_config import OBS_NOISE_STD_SIM_CAR
+import jax
+import jax.numpy as jnp
+
 from experiments.util import load_csv_recordings
+from sim_transfer.sims.car_sim_config import OBS_NOISE_STD_SIM_CAR
+from sim_transfer.sims.simulators import PredictStateChangeWrapper, StackedActionSimWrapper
+from sim_transfer.sims.util import encode_angles as encode_angles_fn
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
-
 
 DEFAULTS_SINUSOIDS = {
     'obs_noise_std': 0.1,
@@ -190,7 +190,6 @@ def get_rccar_recorded_data_new(encode_angle: bool = True, skip_first_n_points: 
         assert x_data.shape[1] - (2 * (1 + int(action_stacking) * action_delay)) == y_data.shape[1]
         return x_data, y_data
 
-
     prep_fn = partial(prepare_rccar_data, encode_angles=encode_angle, skip_first_n=skip_first_n_points,
                       action_delay=action_delay, action_stacking=action_stacking)
     x_train, y_train = map(lambda x: jnp.concatenate(x, axis=0), zip(*map(prep_fn, transitions[:num_train_traj])))
@@ -343,7 +342,7 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
 
 if __name__ == '__main__':
     x_train, y_train, x_test, y_test, sim = provide_data_and_sim(data_source='real_racecar_new',
-                                                            data_spec={'num_samples_train': 10000})
+                                                                 data_spec={'num_samples_train': 10000})
     print(x_train.shape, y_train.shape, x_test.shape, y_test.shape)
 
     print(jnp.max(x_train, axis=0))
