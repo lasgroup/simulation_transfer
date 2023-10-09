@@ -3,7 +3,6 @@ import pickle
 from typing import Callable, Any
 
 import chex
-import jax
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree_util as jtu
@@ -88,11 +87,11 @@ class RLFromOfflineData:
         next_state_obs = y_train
         last_actions = x_train[:, self.state_with_frame_stack_dim:]
         framestacked_actions = x_train[:, state_dim:self.state_with_frame_stack_dim]
-        framestacked_actions = self.revert_order_of_stacked_actions(framestacked_actions)
 
-        # Here we shift frame stacking
-        next_framestacked_actions = jnp.roll(framestacked_actions, shift=action_dim, axis=-1)
-        next_framestacked_actions = next_framestacked_actions.at[:, :action_dim].set(last_actions)
+        if self.num_frame_stack > 0:
+            next_framestacked_actions = x_train[:, state_dim + action_dim:]
+        else:
+            next_framestacked_actions = framestacked_actions
 
         rewards = jnp.zeros(shape=(x_train.shape[0],))
         discounts = 0.99 * jnp.ones(shape=(x_train.shape[0],))
@@ -264,16 +263,6 @@ class RLFromOfflineData:
 
         return policy, params, metrics
 
-    def revert_order_of_stacked_actions(self, stacked_actions: chex.Array):
-        assert self.action_dim * self.num_frame_stack == stacked_actions.shape[-1]
-        actions_list = []
-        # We split the actions into a list of actions
-        for i in range(self.num_frame_stack):
-            actions_list.append(stacked_actions[..., 2 * i:2 * i + 2])
-        # We revert list now
-        actions_list = actions_list[::-1]
-        return jnp.concatenate(actions_list, axis=-1)
-
     def prepare_policy(self, params: Any | None = None, filename: str = None):
         if params is None:
             with open(filename, 'rb') as handle:
@@ -392,6 +381,8 @@ class RLFromOfflineData:
         obs = vmap(sim.reset)(rng_key=key_init_obs)
         if bnn_model is None:
             bnn_model = self.bnn_model_pretrained
+            if bnn_model is None:
+                raise ValueError('You have not loaded the pretrained model.')
         learned_car_system = LearnedCarSystem(model=bnn_model,
                                               include_noise=self.include_aleatoric_noise,
                                               predict_difference=self.predict_difference,
