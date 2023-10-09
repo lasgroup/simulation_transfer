@@ -318,7 +318,6 @@ class RLFromOfflineData:
         data_spec: dict = {'num_samples_train': 20000}
         x_data, y_data, _, _, sim = provide_data_and_sim(data_source=data_source,
                                                          data_spec=data_spec)
-        x_data = self.reshape_xs(x_data)
         if self.predict_difference:
             y_data = y_data - x_data[..., :self.state_dim]
         eval_stats = bnn_model.eval(x_data, y_data, per_dim_metrics=True, prefix='eval_on_all_offline_data/')

@@ -9,6 +9,8 @@ from sim_transfer.models import BNN_FSVGD_SimPrior, BNN_SVGD
 from sim_transfer.rl.rl_on_offline_data import RLFromOfflineData
 from sim_transfer.sims.simulators import AdditiveSim, PredictStateChangeWrapper, GaussianProcessSim
 
+ENTITY = 'trevenl'
+
 
 def experiment(horizon_len: int,
                seed: int,
@@ -31,15 +33,18 @@ def experiment(horizon_len: int,
                bnn_batch_size: int,
                share_of_x0s_in_sac_buffer: float,
                eval_only_on_init_states: int,
+               train_sac_only_from_init_states: int,
                eval_on_all_offline_data: int = 1,
                test_data_ratio: float = 0.2,
                likelihood_exponent: float = 1.0,
+               default_num_init_points_to_bs_for_sac_learning=1000,
                ):
     config_dict = dict(use_sim_prior=use_sim_prior,
                        use_grey_box=use_grey_box,
                        high_fidelity=high_fidelity,
                        num_offline_data=num_offline_collected_transitions,
-                       share_of_x0s=share_of_x0s_in_sac_buffer)
+                       share_of_x0s=share_of_x0s_in_sac_buffer,
+                       train_sac_only_from_init_states=train_sac_only_from_init_states, )
     group_name = '_'.join(list(str(key) + '=' + str(value) for key, value in config_dict.items() if key != 'seed'))
 
     car_reward_kwargs = dict(encode_angle=True,
@@ -98,12 +103,13 @@ def experiment(horizon_len: int,
                        share_of_x0s_in_sac_buffer=share_of_x0s_in_sac_buffer,
                        eval_only_on_init_states=eval_only_on_init_states,
                        eval_on_all_offline_data=eval_on_all_offline_data,
+                       train_sac_only_from_init_states=train_sac_only_from_init_states,
                        )
 
     total_config = SAC_KWARGS | config_dict
     group = group_name + '_' + str(likelihood_exponent)
     wandb.init(
-        dir='/cluster/scratch/sukhijab',
+        dir='/cluster/scratch/' + ENTITY,
         project=project_name,
         group=group,
         config=total_config,
@@ -147,7 +153,6 @@ def experiment(horizon_len: int,
         if predict_difference:
             sim = PredictStateChangeWrapper(sim)
 
-
         model = BNN_FSVGD_SimPrior(
             **standard_params,
             domain=sim.domain,
@@ -178,7 +183,9 @@ def experiment(horizon_len: int,
         )
 
     s = share_of_x0s_in_sac_buffer
-    num_init_points_to_bs_for_learning = int(num_offline_collected_transitions * s / (1 - s))
+    num_init_points_to_bs_for_sac_learning = int(num_offline_collected_transitions * s / (1 - s))
+    if train_sac_only_from_init_states:
+        num_init_points_to_bs_for_sac_learning = default_num_init_points_to_bs_for_sac_learning
 
     rl_from_offline_data = RLFromOfflineData(
         data_spec={'num_samples_train': num_offline_collected_transitions},
@@ -192,13 +199,13 @@ def experiment(horizon_len: int,
         test_data_ratio=test_data_ratio,
         eval_bnn_model_on_all_offline_data=bool(eval_on_all_offline_data),
         eval_sac_only_from_init_states=bool(eval_only_on_init_states),
-        num_init_points_to_bs_for_sac_learning=num_init_points_to_bs_for_learning,
+        num_init_points_to_bs_for_sac_learning=num_init_points_to_bs_for_sac_learning,
+        train_sac_only_from_init_states=bool(train_sac_only_from_init_states),
     )
     policy, params, metrics, bnn_model = rl_from_offline_data.prepare_policy_from_offline_data(
         bnn_train_steps=bnn_train_steps,
         return_best_bnn=bool(best_bnn_model))
     rl_from_offline_data.eval_bnn_model_on_test_data(rl_from_offline_data.bnn_model)
-
 
     # We evaluate the policy on 100 different initial states and different seeds
     rl_from_offline_data.evaluate_policy(policy, key=key_evaluation_pretrained_bnn, num_evals=100)
@@ -232,6 +239,7 @@ def main(args):
         eval_only_on_init_states=args.eval_only_on_init_states,
         eval_on_all_offline_data=args.eval_on_all_offline_data,
         likelihood_exponent=args.likelihood_exponent,
+        train_sac_only_from_init_states=args.train_sac_only_from_init_states,
     )
 
 
@@ -260,6 +268,7 @@ if __name__ == '__main__':
     parser.add_argument('--share_of_x0s_in_sac_buffer', type=float, default=0.5)
     parser.add_argument('--eval_only_on_init_states', type=int, default=1)
     parser.add_argument('--eval_on_all_offline_data', type=int, default=1)
+    parser.add_argument('--train_sac_only_from_init_states', type=int, default=1)
     parser.add_argument('--likelihood_exponent', type=float, default=1.0)
     args = parser.parse_args()
     main(args)
