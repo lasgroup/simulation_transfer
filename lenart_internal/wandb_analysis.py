@@ -1,8 +1,10 @@
+import re
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import wandb
-import re
+
 
 def to_pretty_group_name(group_name: str):
     if 'use_grey_box=1' in group_name:
@@ -176,7 +178,7 @@ def download_runs(project_name: str, likelihood_exponent: float):
             nums = re.findall(r"[-+]?(?:\d*\.*\d+)", run.group)
             data = {
                 'Group': run.group,
-                'share_of_x0s_in_sac_buffer': float(nums[-2]),
+                'share_of_x0s_in_sac_buffer': float(nums[-3]),
                 'num_offline_collected_transitions': float(nums[3])
             }
             summary = run.summary
@@ -190,12 +192,21 @@ def download_runs(project_name: str, likelihood_exponent: float):
 
 
 if __name__ == '__main__':
-    exponents = [0.25, 0.5, 0.75, 1.0]
-    max_offline_data = 2000
-    download_data = False
+    # exp = 1.0
+    # data = pd.read_csv('wandb_runs.csv')
+    # max_offline_data = 2000
+    # plot_rewards_and_nll(data,
+    #                      share_of_x0s_in_sac_buffer=0.5,
+    #                      # max_offline_data=2000,
+    #                      title='Likelihood exponent ' + str(exp))
+
+    exponents = [1.0]
+    max_offline_data = 5000
+
+    download_data = True
     for exp in exponents:
         if download_data:
-            download_runs('sukhijab/OfflineRLLikelihood0_test', likelihood_exponent=exp)
+            download_runs('trevenl/OfflineRLTrainSACOnlyFromX0s', likelihood_exponent=exp)
         data = pd.read_csv('wandb_runs_' + str(exp) + '.csv')
         plot_rewards_and_nll(data, share_of_x0s_in_sac_buffer=0.5, max_offline_data=max_offline_data,
                              title='Likelihood exponent ' + str(exp) + ', Max offline data' + str(max_offline_data))
