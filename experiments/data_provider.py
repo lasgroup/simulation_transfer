@@ -237,14 +237,17 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
         from sim_transfer.sims.simulators import RaceCarSim
         defaults = DEFAULTS_RACECAR
         # TODO: Lenart ask Jonas why we always return low fidelity model here:
-        if data_source == 'racecar_hf':
+        if data_source == 'racecar_actionstack':
             use_hf_sim = data_spec.get('use_hf_sim', True)
             car_id = data_spec.get('car_id', 2)
+
+            sim_sample = RaceCarSim(encode_angle=True, use_blend=True, car_id=car_id)
+            sim_sample = StackedActionSimWrapper(sim_sample, num_stacked_actions=3, action_size=2)
 
             sim = RaceCarSim(encode_angle=True, use_blend=use_hf_sim, car_id=car_id)
             sim = StackedActionSimWrapper(sim, num_stacked_actions=3, action_size=2)
 
-            x_train, y_train, x_test, y_test = sim.sample_datasets(
+            x_train, y_train, x_test, y_test = sim_sample.sample_datasets(
                 rng_key=key_train,
                 num_samples_train=data_spec['num_samples_train'],
                 num_samples_test=1000,
@@ -254,12 +257,9 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
             )
 
             return x_train, y_train, x_test, y_test, sim
-
-
-
-        # if data_source == 'racecar_hf':
-        #     sim_hf = RaceCarSim(encode_angle=True, use_blend=True, only_pose=False)
-        #     sim_lf = RaceCarSim(encode_angle=True, use_blend=False, only_pose=False)
+        elif data_source == 'racecar_hf':
+            sim_hf = RaceCarSim(encode_angle=True, use_blend=True, only_pose=False)
+            sim_lf = RaceCarSim(encode_angle=True, use_blend=False, only_pose=False)
         elif data_source == 'racecar_hf_only_pose':
             sim_hf = RaceCarSim(encode_angle=True, use_blend=True, only_pose=True)
             sim_lf = RaceCarSim(encode_angle=True, use_blend=False, only_pose=True)
