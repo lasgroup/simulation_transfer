@@ -1,7 +1,7 @@
 import exp
 from experiments.util import generate_run_commands, generate_base_command, dict_permutations
 
-PROJECT_NAME = 'OfflineRLOnGoodModel'
+PROJECT_NAME = 'SimulatedOfflineRL'
 
 _applicable_configs = {
     'horizon_len': [200],
@@ -24,6 +24,7 @@ _applicable_configs = {
     'bnn_batch_size': [32],
     'likelihood_exponent': [1.0],
     'train_sac_only_from_init_states': [1],
+    'data_from_simulation': [1]
 }
 
 _applicable_configs_no_sim_prior = {'use_sim_prior': [0],
