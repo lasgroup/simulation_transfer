@@ -5,7 +5,7 @@ import wandb
 
 from experiments.data_provider import provide_data_and_sim, _RACECAR_NOISE_STD_ENCODED
 from grey_box_car_model import GreyBoxSVGDCarModel
-from sim_transfer.models import BNN_FSVGD_SimPrior, BNN_SVGD
+from sim_transfer.models import BNN_FSVGD_SimPrior, BNN_FSVGD
 from sim_transfer.rl.rl_on_offline_data import RLFromOfflineData
 from sim_transfer.sims.simulators import AdditiveSim, PredictStateChangeWrapper, GaussianProcessSim
 
@@ -172,14 +172,11 @@ def experiment(horizon_len: int,
             num_train_steps=bnn_train_steps,
         )
     else:
-        # if predict_difference:
-        #     sim = PredictStateChangeWrapper(sim)
-        # We don't use precomputed normalization stats for the BNNSVGD model, since it works better
-        # if use_sim_normalization_stats:
-        #     standard_params['normalization_stats'] = sim.normalization_stats
-        model = BNN_SVGD(
+        model = BNN_FSVGD(
             **standard_params,
             num_train_steps=bnn_train_steps,
+            domain=sim.domain,
+            bandwidth_svgd=1.0,
         )
 
     s = share_of_x0s_in_sac_buffer
