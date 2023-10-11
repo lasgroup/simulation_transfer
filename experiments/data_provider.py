@@ -240,6 +240,7 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
         if data_source == 'racecar_actionstack':
             use_hf_sim = data_spec.get('use_hf_sim', True)
             car_id = data_spec.get('car_id', 2)
+            num_test = data_spec.get('num_samples_test', DEFAULTS_RACECAR_REAL['num_samples_test'])
 
             sim_sample = RaceCarSim(encode_angle=True, use_blend=True, car_id=car_id)
             sim_sample = StackedActionSimWrapper(sim_sample, num_stacked_actions=3, action_size=2)
@@ -250,7 +251,7 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
             x_train, y_train, x_test, y_test = sim_sample.sample_datasets(
                 rng_key=key_train,
                 num_samples_train=data_spec['num_samples_train'],
-                num_samples_test=1000,
+                num_samples_test=num_test,
                 obs_noise_std=data_spec.get('obs_noise_std', defaults['obs_noise_std']),
                 x_support_mode_train=data_spec.get('x_support_mode_train', defaults['x_support_mode_train']),
                 param_mode=data_spec.get('param_mode', defaults['param_mode'])
