@@ -188,7 +188,10 @@ def experiment(horizon_len: int,
         num_init_points_to_bs_for_sac_learning = default_num_init_points_to_bs_for_sac_learning
 
     rl_from_offline_data = RLFromOfflineData(
-        data_spec={'num_samples_train': num_offline_collected_transitions},
+        x_train=x_train,
+        y_train=y_train,
+        x_test=x_test,
+        y_test=y_test,
         bnn_model=model,
         key=key_offline_rl,
         sac_kwargs=SAC_KWARGS,

@@ -25,8 +25,10 @@ from sim_transfer.sims.util import plot_rc_trajectory
 
 class RLFromOfflineData:
     def __init__(self,
-                 data_source: str = 'real_racecar_new_actionstack',
-                 data_spec: dict = {'num_samples_train': 20000},
+                 x_train: chex.Array,
+                 y_train: chex.Array,
+                 x_test: chex.Array,
+                 y_test: chex.Array,
                  bnn_model: BatchedNeuralNetworkModel = None,
                  include_aleatoric_noise: bool = True,
                  predict_difference: bool = True,
@@ -48,11 +50,6 @@ class RLFromOfflineData:
         self.train_sac_only_from_init_states = train_sac_only_from_init_states
         self.load_pretrained_bnn_model = load_pretrained_bnn_model
 
-        # Prepare number of init points for learning
-        if num_init_points_to_bs_for_sac_learning is None:
-            num_init_points_to_bs_for_sac_learning = data_spec['num_samples_train']
-        self.num_init_points_to_bs_for_learning = num_init_points_to_bs_for_sac_learning
-
         # We load the model trained on dataset of 20_000 points for evaluation
         if self.load_pretrained_bnn_model:
             simulation_transfer_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -70,17 +67,24 @@ class RLFromOfflineData:
 
         self.return_best_policy = return_best_policy
         self.include_aleatoric_noise = include_aleatoric_noise
-        self.data_source = data_source
-        self.data_spec = data_spec
         self.bnn_model = bnn_model
         self.predict_difference = predict_difference
 
         self.car_reward_kwargs = car_reward_kwargs
         self.sac_kwargs = sac_kwargs
 
-        x_train, y_train, x_eval, y_eval, x_test, y_test, sim = self.load_data()
+        # We split the train data into train and eval
+        self.key, key_split = jr.split(self.key)
+        x_train, y_train, x_eval, y_eval = self.shuffle_and_split_data(x_train,
+                                                                       y_train,
+                                                                       self.test_data_ratio,
+                                                                       key_split)
 
-        # TODO: rn it is hardcoded
+        # Prepare number of init points for learning
+        if num_init_points_to_bs_for_sac_learning is None:
+            num_init_points_to_bs_for_sac_learning = x_train.shape[0]
+        self.num_init_points_to_bs_for_learning = num_init_points_to_bs_for_sac_learning
+
         state_dim = 7
         action_dim = 2
         self.state_dim = state_dim
@@ -140,16 +144,6 @@ class RLFromOfflineData:
             self.y_eval = self.y_eval - self.x_eval[..., :self.state_dim]
             self.y_test = self.y_test - self.x_test[..., :self.state_dim]
 
-    def load_data(self):
-        # y_train is the next state not the difference
-        x_data, y_data, x_test, y_test, sim = provide_data_and_sim(data_source=self.data_source,
-                                                                   data_spec=self.data_spec)
-
-        # Now we split x_train_data into train and test
-        self.key, key_split = jr.split(self.key)
-        x_train, y_train, x_eval, y_eval = self.shuffle_and_split_data(x_data, y_data, self.test_data_ratio, key_split)
-        return x_train, y_train, x_eval, y_eval, x_test, y_test, sim
-
     @staticmethod
     def shuffle_and_split_data(x_data, y_data, test_ratio, key: chex.PRNGKey):
         # Get the size of the data
@@ -179,7 +173,6 @@ class RLFromOfflineData:
                     bnn_train_steps: int,
                     return_best_bnn: bool = True
                     ) -> BNN_SVGD:
-        # x_train, y_train, x_test, y_test, sim = self.load_data()
         x_train, y_train, x_eval, y_eval, sim = self.x_train, self.y_train, self.x_eval, self.y_eval, None
         x_test, y_test = self.x_test, self.y_test
         print(x_train.shape, y_train.shape, x_test.shape, y_test.shape)
@@ -498,7 +491,10 @@ if __name__ == '__main__':
     )
 
     rl_from_offline_data = RLFromOfflineData(
-        data_spec={'num_samples_train': 400},
+        x_train=x_train,
+        y_train=y_train,
+        x_test=x_test,
+        y_test=y_test,
         sac_kwargs=SAC_KWARGS,
         car_reward_kwargs=car_reward_kwargs,
         bnn_model=model,
