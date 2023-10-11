@@ -14,7 +14,6 @@ from sim_transfer.sims.dynamics_models import Pendulum, PendulumParams, RaceCar,
 from sim_transfer.sims.util import encode_angles, decode_angles
 
 
-
 class FunctionSimulator:
 
     def __init__(self, input_size: int, output_size: int):
@@ -339,12 +338,12 @@ class ShiftedSinusoidsSim(FunctionSimulator):
     def __init__(self):
         super().__init__(input_size=1, output_size=1)
 
-    def _f(self, phase: jnp.ndarray,  x: jnp.ndarray):
-        return jnp.sin(2 * jnp.pi * x**2 + phase[:, None, None])
+    def _f(self, phase: jnp.ndarray, x: jnp.ndarray):
+        return jnp.sin(2 * jnp.pi * x ** 2 + phase[:, None, None])
 
     def sample_function_vals(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
         assert x.ndim == 2 and x.shape[-1] == self.input_size
-        phase = jax.random.uniform(rng_key, shape=(num_samples,), minval=-jnp.pi/2, maxval=jnp.pi/2)
+        phase = jax.random.uniform(rng_key, shape=(num_samples,), minval=-jnp.pi / 2, maxval=jnp.pi / 2)
         f = self._f(phase, x)
         assert f.shape == (num_samples, x.shape[0], self.output_size)
         return f
@@ -681,7 +680,6 @@ class PendulumBiModalSim(PendulumSim):
 
 
 class RaceCarSim(FunctionSimulator):
-
     _dt: float = 1 / 30.
     _angle_idx: int = 2
 
@@ -916,7 +914,7 @@ class StackedActionSimWrapper(FunctionSimulator):
         self._function_simulator = function_simulator
         input_size_base = function_simulator.input_size
         output_size_base = function_simulator.output_size
-        new_input_size = input_size_base + action_size*num_stacked_actions
+        new_input_size = input_size_base + action_size * num_stacked_actions
         self.action_size = action_size
         self.num_stacked_actions = num_stacked_actions
         self.obs_size = input_size_base - action_size
@@ -966,7 +964,7 @@ class StackedActionSimWrapper(FunctionSimulator):
         return fun_vals
 
     def _add_observation_noise(self, *args, **kwargs) -> jnp.ndarray:
-        raise NotImplementedError
+        return self._function_simulator._add_observation_noise(*args, **kwargs)
 
 
 if __name__ == '__main__':
@@ -1011,7 +1009,6 @@ if __name__ == '__main__':
     # plt.xlim(-3, 1)
     # plt.ylim(-2, 3)
     # plt.show()
-
 
 # [a_1, a_2, a_3] , a_4
 
