@@ -38,6 +38,7 @@ def experiment(horizon_len: int,
                test_data_ratio: float = 0.2,
                likelihood_exponent: float = 1.0,
                default_num_init_points_to_bs_for_sac_learning=1000,
+               data_from_simulation: int = 0,
                ):
     config_dict = dict(use_sim_prior=use_sim_prior,
                        use_grey_box=use_grey_box,
@@ -115,12 +116,21 @@ def experiment(horizon_len: int,
         config=total_config,
     )
 
-    x_train, y_train, x_test, y_test, sim = provide_data_and_sim(
-        data_source='real_racecar_new_actionstack',
-        data_spec={'num_samples_train': num_offline_collected_transitions,
-                   'use_hf_sim': bool(high_fidelity),
-                   'sampling': 'iid',
-                   })
+    if data_from_simulation:
+        x_train, y_train, x_test, y_test, sim = provide_data_and_sim(
+            data_source='racecar_actionstack',
+            data_spec={'num_samples_train': num_offline_collected_transitions,
+                       'use_hf_sim': bool(high_fidelity), },
+            data_seed=seed
+        )
+
+    else:
+        x_train, y_train, x_test, y_test, sim = provide_data_and_sim(
+            data_source='real_racecar_new_actionstack',
+            data_spec={'num_samples_train': num_offline_collected_transitions,
+                       'use_hf_sim': bool(high_fidelity),
+                       'sampling': 'iid',
+                       })
 
     # Deal with randomness
     key = jr.PRNGKey(seed)
@@ -240,6 +250,7 @@ def main(args):
         eval_on_all_offline_data=args.eval_on_all_offline_data,
         likelihood_exponent=args.likelihood_exponent,
         train_sac_only_from_init_states=args.train_sac_only_from_init_states,
+        data_from_simulation=args.data_from_simulation,
     )
 
 
@@ -270,5 +281,6 @@ if __name__ == '__main__':
     parser.add_argument('--eval_on_all_offline_data', type=int, default=1)
     parser.add_argument('--train_sac_only_from_init_states', type=int, default=1)
     parser.add_argument('--likelihood_exponent', type=float, default=1.0)
+    parser.add_argument('--data_from_simulation', type=int, default=0)
     args = parser.parse_args()
     main(args)
