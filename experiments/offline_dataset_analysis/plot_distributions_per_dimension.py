@@ -15,13 +15,14 @@ def provide_names(state_dim: int):
     return state_vars + actions_vars
 
 
-def get_data(num_offline_collected_transitions: int):
+def get_data(num_offline_collected_transitions: int, iid: bool = True):
     x_train, y_train, x_test, y_test, sim = provide_data_and_sim(
         data_source='real_racecar_new_actionstack',
         data_spec={'num_samples_train': num_offline_collected_transitions,
-                   # 'use_hf_sim': True,
-                   # 'sampling': 'iid',
+                   'use_hf_sim': True,
+                   'sampling': 'iid' if iid else 'consecutive'
                    })
+
     return x_train, y_train
 
 
@@ -39,9 +40,8 @@ def plot_data(data: np.ndarray, normalize: bool = False, title: str = None):
     plt.tight_layout()
     plt.show()
 
-
 if __name__ == '__main__':
-    num_offline_collected_transitions = 2000
+    num_offline_collected_transitions = 20_000
     x_train, y_train = get_data(num_offline_collected_transitions)
-    plot_data(x_train, normalize=True, title='Intput data')
-    plot_data(y_train, normalize=True, title='Output data')
+    # plot_data(x_train, normalize=False, title='Intput data')
+    plot_data(y_train, normalize=False, title='Output data')
