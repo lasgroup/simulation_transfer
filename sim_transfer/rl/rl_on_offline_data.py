@@ -359,6 +359,57 @@ class RLFromOfflineData:
             # right = jnp.partition(a, r)[r]
             return jnp.where(a == left)[0][0]
 
+    def evaluate_policy_on_the_simulator(self,
+                                         policy: Callable,
+                                         key: chex.PRNGKey = jr.PRNGKey(0),
+                                         num_evals: int = 1, ):
+        def reward_on_simulator(key: chex.PRNGKey):
+            actions_buffer = jnp.zeros(shape=(self.action_dim * self.num_frame_stack))
+            sim = RCCarSimEnv(encode_angle=True, use_tire_model=True)
+            obs = sim.reset(key)
+            done = False
+            transitions_for_plotting = []
+            while not done:
+                policy_input = jnp.concatenate([obs, actions_buffer], axis=-1)
+                action = policy(policy_input)
+                next_obs, reward, done, info = sim.step(action)
+                # Prepare new actions buffer
+                if self.num_frame_stack > 0:
+                    next_actions_buffer = jnp.concatenate([actions_buffer[self.action_dim:], action])
+                else:
+                    next_actions_buffer = jnp.zeros(shape=(0,))
+
+                transitions_for_plotting.append(Transition(observation=obs,
+                                                           action=action,
+                                                           reward=jnp.array(reward),
+                                                           discount=jnp.array(0.99),
+                                                           next_observation=next_obs)
+                                                )
+                actions_buffer = next_actions_buffer
+                obs = next_obs
+
+            concatenated_transitions_for_plotting = jtu.tree_map(lambda *xs: jnp.stack(xs, axis=0),
+                                                                 *transitions_for_plotting)
+            reward_on_simulator = jnp.sum(concatenated_transitions_for_plotting.reward)
+            return reward_on_simulator, concatenated_transitions_for_plotting
+
+        rewards, trajectories = vmap(reward_on_simulator)(jr.split(key, num_evals))
+
+        reward_median = jnp.median(rewards)
+        reward_std = jnp.std(rewards)
+
+        reward_median_index = self.arg_median(rewards)
+
+        transitions_median = jtu.tree_map(lambda x: x[reward_median_index], trajectories)
+        fig, axes = plot_rc_trajectory(transitions_median.next_observation,
+                                       transitions_median.action, encode_angle=True,
+                                       show=False)
+        model_name = 'simulator'
+        wandb.log({f'Median_trajectory_on_{model_name}': wandb.Image(fig),
+                   f'reward_median_on_{model_name}': float(reward_median),
+                   f'reward_std_on_{model_name}': float(reward_std)})
+        plt.close('all')
+
     def evaluate_policy(self,
                         policy: Callable,
                         bnn_model: BatchedNeuralNetworkModel | None = None,
@@ -468,9 +519,11 @@ if __name__ == '__main__':
                       wandb_logging=True)
 
     x_train, y_train, x_test, y_test, sim = provide_data_and_sim(
-        data_source='real_racecar_new_actionstack',
+        data_source='racecar_actionstack',
         data_spec={'num_samples_train': 10_000,
-                   'use_hf_sim': True, })
+                   'use_hf_sim': True, },
+        data_seed=1234
+    )
 
     standard_params = {
         'input_size': sim.input_size,
@@ -503,13 +556,14 @@ if __name__ == '__main__':
         eval_sac_only_from_init_states=True,
     )
     policy, params, metrics, bnn_model = rl_from_offline_data.prepare_policy_from_offline_data(bnn_train_steps=2_000)
-    filename_params = os.path.join(wandb.run.dir, 'models/policy.pkl')
-    filename_bnn_model = os.path.join(wandb.run.dir, 'models/bnn_svgd_model_on_20_000_points.pkl')
+    rl_from_offline_data.evaluate_policy_on_the_simulator(policy, key=jr.PRNGKey(0), num_evals=100)
+    # filename_params = os.path.join(wandb.run.dir, 'models/policy.pkl')
+    # filename_bnn_model = os.path.join(wandb.run.dir, 'models/bnn_svgd_model_on_20_000_points.pkl')
+    #
+    # with open(filename_bnn_model, 'rb') as handle:
+    #     bnn_model = pickle.load(handle)
 
-    with open(filename_bnn_model, 'rb') as handle:
-        bnn_model = pickle.load(handle)
-
-    rl_from_offline_data.evaluate_policy(policy, key=jr.PRNGKey(0), num_evals=100)
-    rl_from_offline_data.evaluate_policy(policy, bnn_model=bnn_model, key=jr.PRNGKey(0), num_evals=100)
+    # rl_from_offline_data.evaluate_policy(policy, key=jr.PRNGKey(0), num_evals=100)
+    # rl_from_offline_data.evaluate_policy(policy, bnn_model=bnn_model, key=jr.PRNGKey(0), num_evals=100)
 
     wandb.finish()

@@ -218,8 +218,11 @@ def experiment(horizon_len: int,
     rl_from_offline_data.eval_bnn_model_on_test_data(rl_from_offline_data.bnn_model)
 
     # We evaluate the policy on 100 different initial states and different seeds
-    rl_from_offline_data.evaluate_policy(policy, key=key_evaluation_pretrained_bnn, num_evals=100)
     rl_from_offline_data.evaluate_policy(policy, bnn_model, key=key_evaluation_trained_bnn, num_evals=100)
+    if data_from_simulation:
+        rl_from_offline_data.evaluate_policy_on_the_simulator(policy, key=key_evaluation_pretrained_bnn, num_evals=100)
+    else:
+        rl_from_offline_data.evaluate_policy(policy, key=key_evaluation_pretrained_bnn, num_evals=100)
     wandb.finish()
 
 
