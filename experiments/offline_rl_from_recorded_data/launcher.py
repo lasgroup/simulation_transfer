@@ -1,14 +1,14 @@
 import exp
 from experiments.util import generate_run_commands, generate_base_command, dict_permutations
 
-PROJECT_NAME = 'SimulatedOfflineRL'
+PROJECT_NAME = 'SimulatedOfflineRLNoActionStacking'
 
 _applicable_configs = {
     'horizon_len': [200],
     'seed': list(range(5)),
     'project_name': [PROJECT_NAME],
     'sac_num_env_steps': [2_000_000],
-    'bnn_train_steps': [20_000],
+    'bnn_train_steps': [20_000, 100_000],
     'learnable_likelihood_std': ['yes'],
     'include_aleatoric_noise': [1],
     'best_bnn_model': [1],
@@ -24,7 +24,8 @@ _applicable_configs = {
     'bnn_batch_size': [32],
     'likelihood_exponent': [1.0],
     'train_sac_only_from_init_states': [1],
-    'data_from_simulation': [1]
+    'data_from_simulation': [1],
+    'num_frame_stack': [0],
 }
 
 _applicable_configs_no_sim_prior = {'use_sim_prior': [0],

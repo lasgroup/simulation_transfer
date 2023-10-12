@@ -108,6 +108,7 @@ def experiment(horizon_len: int,
                        eval_only_on_init_states=eval_only_on_init_states,
                        eval_on_all_offline_data=eval_on_all_offline_data,
                        train_sac_only_from_init_states=train_sac_only_from_init_states,
+                       num_frame_stack=num_frame_stack,
                        )
 
     total_config = SAC_KWARGS | config_dict
