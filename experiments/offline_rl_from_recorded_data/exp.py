@@ -39,7 +39,10 @@ def experiment(horizon_len: int,
                likelihood_exponent: float = 1.0,
                default_num_init_points_to_bs_for_sac_learning=1000,
                data_from_simulation: int = 0,
+               num_frame_stack: int = 3,
                ):
+    if not data_from_simulation:
+        assert num_frame_stack == 3, "Frame stacking has to be set to 3 if not using simulation data"
     config_dict = dict(use_sim_prior=use_sim_prior,
                        use_grey_box=use_grey_box,
                        high_fidelity=high_fidelity,
@@ -120,7 +123,8 @@ def experiment(horizon_len: int,
         x_train, y_train, x_test, y_test, sim = provide_data_and_sim(
             data_source='racecar_actionstack',
             data_spec={'num_samples_train': num_offline_collected_transitions,
-                       'use_hf_sim': bool(high_fidelity), },
+                       'use_hf_sim': bool(high_fidelity),
+                       'num_stacked_actions': num_frame_stack},
             data_seed=seed
         )
 
@@ -207,10 +211,11 @@ def experiment(horizon_len: int,
         return_best_policy=bool(best_policy),
         predict_difference=bool(predict_difference),
         test_data_ratio=test_data_ratio,
-        eval_bnn_model_on_all_offline_data=bool(eval_on_all_offline_data),
+        eval_bnn_model_on_all_offline_data=False if data_from_simulation else bool(eval_on_all_offline_data),
         eval_sac_only_from_init_states=bool(eval_only_on_init_states),
         num_init_points_to_bs_for_sac_learning=num_init_points_to_bs_for_sac_learning,
         train_sac_only_from_init_states=bool(train_sac_only_from_init_states),
+        num_frame_stack=num_frame_stack,
     )
     policy, params, metrics, bnn_model = rl_from_offline_data.prepare_policy_from_offline_data(
         bnn_train_steps=bnn_train_steps,
@@ -254,6 +259,7 @@ def main(args):
         likelihood_exponent=args.likelihood_exponent,
         train_sac_only_from_init_states=args.train_sac_only_from_init_states,
         data_from_simulation=args.data_from_simulation,
+        num_frame_stack=args.num_frame_stack,
     )
 
 
@@ -284,6 +290,7 @@ if __name__ == '__main__':
     parser.add_argument('--eval_on_all_offline_data', type=int, default=1)
     parser.add_argument('--train_sac_only_from_init_states', type=int, default=1)
     parser.add_argument('--likelihood_exponent', type=float, default=1.0)
-    parser.add_argument('--data_from_simulation', type=int, default=0)
+    parser.add_argument('--data_from_simulation', type=int, default=1)
+    parser.add_argument('--num_frame_stack', type=int, default=0)
     args = parser.parse_args()
     main(args)
