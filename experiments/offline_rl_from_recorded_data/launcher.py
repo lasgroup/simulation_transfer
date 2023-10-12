@@ -5,7 +5,7 @@ PROJECT_NAME = 'SimulatedOfflineRLNoActionStacking'
 
 _applicable_configs = {
     'horizon_len': [200],
-    'seed': list(range(5)),
+    'seed': list(range(3)),
     'project_name': [PROJECT_NAME],
     'sac_num_env_steps': [2_000_000],
     'bnn_train_steps': [20_000, 100_000],
