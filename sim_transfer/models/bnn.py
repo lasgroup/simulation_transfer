@@ -415,14 +415,14 @@ class AbstractSVGD_BNN(AbstractParticleBNN):
 
     def _neg_log_posterior(self, params: Dict, x_batch: jnp.ndarray, y_batch: jnp.ndarray,
                            num_train_points: Union[float, int]):
-        nll = - num_train_points**self.likelihood_exponent * self._ll(params, x_batch=x_batch, y_batch=y_batch)
+        nll = - num_train_points * self.likelihood_exponent * self._ll(params, x_batch=x_batch, y_batch=y_batch)
         if self.use_prior:
             log_prior = jnp.mean(self.prior_dist.log_prob(
                 self.batched_model.flatten_batch(params['nn_params_stacked'])))
             log_prior /= self.prior_dist.event_shape[0]
             if self.likelihood_reg > 0:
                 likelihood_penalty = self.likelihood_reg * self._likelihood_prior_logprob(params['likelihood_std_raw'])
-                log_prior += (num_train_points**self.likelihood_exponent) * likelihood_penalty
+                log_prior += (num_train_points * self.likelihood_exponent) * likelihood_penalty
             stats = OrderedDict(train_nll_loss=nll, neg_log_prior=-log_prior)
             neg_log_post = nll - log_prior
         else:

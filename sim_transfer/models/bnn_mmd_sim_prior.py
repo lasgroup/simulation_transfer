@@ -83,7 +83,7 @@ class BNN_MMD_SimPrior(AbstractParticleBNN, MeasurementSetMixin):
             else self.likelihood_std
 
         # negative log-likelihood
-        nll = - num_train_points**self.likelihood_exponent * self._ll(f_nn, likelihood_std, y_batch, train_batch_size)
+        nll = - num_train_points * self.likelihood_exponent * self._ll(f_nn, likelihood_std, y_batch, train_batch_size)
 
         # estimate mmd between posterior and prior
         f_sim_samples = self._fsim_samples(x_stacked, key=key2)

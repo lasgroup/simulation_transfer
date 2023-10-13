@@ -5,8 +5,8 @@ import wandb
 api = wandb.Api()
 
 # specify your project name
-project_name = "trevenl/OfflineTrainingSimVsNoSimComparisonN4"
-group_name = "horizon_len=100_diff_w=1.0_cost_w=0.005_num_offline_trans=1000_use_sim_prior=1_use_sim_norm_stats=1"
+project_name = "sukhijab/OfflineRLLikelihood0_test"
+group_name = "use_sim_prior=0_use_grey_box=0_high_fidelity=0_num_offline_data=2500_share_of_x0s=0.5_0.5"
 
 # Specify local directory to download the image
 # specify the directory to check/create
