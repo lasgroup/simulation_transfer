@@ -58,9 +58,6 @@ all_flags_combinations = dict_permutations(_applicable_configs_no_sim_prior) + d
     _applicable_configs_high_fidelity) + dict_permutations(_applicable_configs_low_fidelity)
 
 
-# all_flags_combinations = dict_permutations(_applicable_configs_no_sim_prior)
-
-
 def main():
     command_list = []
     for flags in all_flags_combinations:
