@@ -126,7 +126,7 @@ def experiment(horizon_len: int,
             data_spec={'num_samples_train': num_offline_collected_transitions,
                        'use_hf_sim': bool(high_fidelity),
                        'num_stacked_actions': num_frame_stack},
-            data_seed=seed
+            data_seed=12345,
         )
 
     else:
