@@ -1,7 +1,7 @@
 import exp
 from experiments.util import generate_run_commands, generate_base_command, dict_permutations
 
-PROJECT_NAME = 'OfflineRLSwishBandwidthSVGD'
+PROJECT_NAME = 'OfflineRLSwishBandwidthSVGDN2'
 
 _applicable_configs = {
     'horizon_len': [200],
@@ -26,7 +26,7 @@ _applicable_configs = {
     'train_sac_only_from_init_states': [0],
     'data_from_simulation': [1],
     'num_frame_stack': [0],
-    'bandwidth_svgd': [2.0, 5.0]
+    'bandwidth_svgd': [0.2, 0.5, 1.0]
 }
 
 _applicable_configs_no_sim_prior = {'use_sim_prior': [0],
