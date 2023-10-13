@@ -380,7 +380,7 @@ class RLFromOfflineData:
                                          num_evals: int = 1, ):
         def reward_on_simulator(key: chex.PRNGKey):
             actions_buffer = jnp.zeros(shape=(self.action_dim * self.num_frame_stack))
-            sim = RCCarSimEnv(encode_angle=True, use_tire_model=True)
+            sim = RCCarSimEnv(use_tire_model=True, **self.car_reward_kwargs)
             obs = sim.reset(key)
             done = False
             transitions_for_plotting = []
