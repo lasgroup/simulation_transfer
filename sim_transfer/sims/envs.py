@@ -5,10 +5,10 @@ from typing import Dict, Any, Tuple, Optional
 import jax
 import jax.numpy as jnp
 
-from sim_transfer.sims.car_sim_config import OBS_NOISE_STD_SIM_CAR
 from sim_transfer.sims.dynamics_models import RaceCar, CarParams
 from sim_transfer.sims.tolerance_reward import ToleranceReward
 from sim_transfer.sims.util import encode_angles, decode_angles, plot_rc_trajectory
+from sim_transfer.sims.car_sim_config import OBS_NOISE_STD_SIM_CAR
 
 
 class RCCarEnvReward:
@@ -60,6 +60,7 @@ class RCCarSimEnv:
     _init_pose: jnp.array = jnp.array([1.42, -1.04, jnp.pi])
     _angle_idx: int = 2
     _obs_noise_stds: jnp.array = OBS_NOISE_STD_SIM_CAR
+
 
     def __init__(self, ctrl_cost_weight: float = 0.005, encode_angle: bool = False, use_obs_noise: bool = True,
                  use_tire_model: bool = False, action_delay: float = 0.0, car_model_params: Dict = None,

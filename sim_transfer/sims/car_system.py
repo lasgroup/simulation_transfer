@@ -231,7 +231,7 @@ class CarReward(Reward[CarRewardParams]):
         reward = self._reward_model.forward(obs=None, action=u, next_obs=x_next_state)
         # Now we add cost for the control inputs change:
         if self.num_frame_stack > 0:
-            u_previous = us_stacked[:self.u_dim]
+            u_previous = us_stacked[-self.u_dim:]
             reward -= self.ctrl_diff_weight * jnp.sum((u_previous - u) ** 2)
         return Normal(reward, jnp.zeros_like(reward)), reward_params
 

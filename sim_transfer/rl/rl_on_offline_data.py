@@ -98,11 +98,11 @@ class RLFromOfflineData:
         next_state_obs = y_train
         last_actions = x_train[:, self.state_with_frame_stack_dim:]
         framestacked_actions = x_train[:, state_dim:self.state_with_frame_stack_dim]
-        framestacked_actions = self.revert_order_of_stacked_actions(framestacked_actions)
 
-        # Here we shift frame stacking
-        next_framestacked_actions = jnp.roll(framestacked_actions, shift=action_dim, axis=-1)
-        next_framestacked_actions = next_framestacked_actions.at[:, :action_dim].set(last_actions)
+        if self.num_frame_stack > 0:
+            next_framestacked_actions = x_train[:, state_dim + action_dim:]
+        else:
+            next_framestacked_actions = framestacked_actions
 
         rewards = jnp.zeros(shape=(x_train.shape[0],))
         discounts = 0.99 * jnp.ones(shape=(x_train.shape[0],))
@@ -132,24 +132,17 @@ class RLFromOfflineData:
         self.true_buffer_state = true_buffer_state
 
         # Prepare data to train the model
-        self.x_train = self.reshape_xs(x_train)
+        self.x_train = x_train
         self.y_train = y_train
-        self.x_test = self.reshape_xs(x_test)
-        self.y_test = y_test
-        self.x_eval = self.reshape_xs(x_eval)
+        self.x_eval = x_eval
         self.y_eval = y_eval
+        self.x_test = x_test
+        self.y_test = y_test
 
         if self.predict_difference:
             self.y_train = self.y_train - self.x_train[..., :self.state_dim]
             self.y_eval = self.y_eval - self.x_eval[..., :self.state_dim]
             self.y_test = self.y_test - self.x_test[..., :self.state_dim]
-
-    def reshape_xs(self, xs):
-        states_obs = xs[:, :self.state_dim]
-        last_actions = xs[:, self.state_with_frame_stack_dim:]
-        framestacked_actions = xs[:, self.state_dim:self.state_with_frame_stack_dim]
-        framestacked_actions = self.revert_order_of_stacked_actions(framestacked_actions)
-        return jnp.concatenate([states_obs, framestacked_actions, last_actions], axis=-1)
 
     @staticmethod
     def shuffle_and_split_data(x_data, y_data, test_ratio, key: chex.PRNGKey):
@@ -266,18 +259,6 @@ class RLFromOfflineData:
 
         return policy, params, metrics
 
-    def revert_order_of_stacked_actions(self, stacked_actions: chex.Array):
-        assert self.action_dim * self.num_frame_stack == stacked_actions.shape[-1]
-        if self.num_frame_stack == 0:
-            return stacked_actions
-        actions_list = []
-        # We split the actions into a list of actions
-        for i in range(self.num_frame_stack):
-            actions_list.append(stacked_actions[..., 2 * i:2 * i + 2])
-        # We revert list now
-        actions_list = actions_list[::-1]
-        return jnp.concatenate(actions_list, axis=-1)
-
     def prepare_policy(self, params: Any | None = None, filename: str = None):
         if params is None:
             with open(filename, 'rb') as handle:
@@ -330,7 +311,6 @@ class RLFromOfflineData:
         data_spec: dict = {'num_samples_train': 20000}
         x_data, y_data, _, _, sim = provide_data_and_sim(data_source=data_source,
                                                          data_spec=data_spec)
-        x_data = self.reshape_xs(x_data)
         if self.predict_difference:
             y_data = y_data - x_data[..., :self.state_dim]
         eval_stats = bnn_model.eval(x_data, y_data, per_dim_metrics=True, prefix='eval_on_all_offline_data/')
@@ -391,16 +371,10 @@ class RLFromOfflineData:
                 action = policy(policy_input)
                 next_obs, reward, done, info = sim.step(action)
                 # Prepare new actions buffer
-                # TODO: This is OLD version of action stacking!
                 if self.num_frame_stack > 0:
-                    next_actions_buffer = jnp.concatenate([action, actions_buffer[:-self.action_dim]])
+                    next_actions_buffer = jnp.concatenate([actions_buffer[self.action_dim:], action])
                 else:
                     next_actions_buffer = jnp.zeros(shape=(0,))
-
-                # if self.num_frame_stack > 0:
-                #     next_actions_buffer = jnp.concatenate([actions_buffer[self.action_dim:], action])
-                # else:
-                #     next_actions_buffer = jnp.zeros(shape=(0,))
 
                 transitions_for_plotting.append(Transition(observation=obs,
                                                            action=action,
