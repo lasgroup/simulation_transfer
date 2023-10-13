@@ -180,7 +180,7 @@ def experiment(horizon_len: int,
             score_estimator='gp',
             num_train_steps=bnn_train_steps,
             num_f_samples=256,
-            bandwidth_svgd=1.0,
+            bandwidth_svgd=2.0,
             num_measurement_points=num_measurement_points,
         )
     elif use_grey_box:
@@ -196,7 +196,7 @@ def experiment(horizon_len: int,
             **standard_params,
             num_train_steps=bnn_train_steps,
             domain=sim.domain,
-            bandwidth_svgd=1.0,
+            bandwidth_svgd=2.0,
         )
 
     s = share_of_x0s_in_sac_buffer
