@@ -41,6 +41,9 @@ def experiment(horizon_len: int,
                data_from_simulation: int = 0,
                num_frame_stack: int = 3,
                ):
+    # TODO: Not clear how many steps to train the BNN for. We should probably train it for a fixed number of steps
+    bnn_train_steps = min(50 * num_offline_collected_transitions, 100_000)
+
     if not data_from_simulation:
         assert num_frame_stack == 3, "Frame stacking has to be set to 3 if not using simulation data"
     config_dict = dict(use_sim_prior=use_sim_prior,
