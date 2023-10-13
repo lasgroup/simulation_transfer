@@ -24,8 +24,8 @@ _applicable_configs = {
     'bnn_batch_size': [32],
     'likelihood_exponent': [1.0],
     'train_sac_only_from_init_states': [0],
-    'data_from_simulation': [0],
-    'num_frame_stack': [3],
+    'data_from_simulation': [1],
+    'num_frame_stack': [0],
 }
 
 _applicable_configs_no_sim_prior = {'use_sim_prior': [0],
