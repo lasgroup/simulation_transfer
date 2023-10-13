@@ -243,8 +243,6 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
             num_stacked_actions = data_spec.get('num_stacked_actions', 3)
             num_test = data_spec.get('num_samples_test', DEFAULTS_RACECAR_REAL['num_samples_test'])
 
-            # Prepare simulator for sampling
-            # TODO: we need to sample dataset for default parameters only not also for the ones we want to train on
             sim_sample = RaceCarSim(encode_angle=True, use_blend=True, car_id=car_id)
             if num_stacked_actions > 0:
                 sim_sample = StackedActionSimWrapper(sim_sample, num_stacked_actions=num_stacked_actions, action_size=2)
