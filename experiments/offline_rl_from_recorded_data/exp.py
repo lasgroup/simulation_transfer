@@ -1,5 +1,6 @@
 import argparse
 
+import jax.nn
 import jax.random as jr
 import wandb
 
@@ -42,7 +43,7 @@ def experiment(horizon_len: int,
                num_frame_stack: int = 3,
                ):
     # TODO: Not clear how many steps to train the BNN for. We should probably train it for a fixed number of steps
-    bnn_train_steps = min(50 * num_offline_collected_transitions, 200_000)
+    bnn_train_steps = min(50 * num_offline_collected_transitions, 100_000)
 
     if not data_from_simulation:
         assert num_frame_stack == 3, "Frame stacking has to be set to 3 if not using simulation data"
@@ -156,6 +157,7 @@ def experiment(horizon_len: int,
         'hidden_layer_sizes': [64, 64, 64],
         'normalization_stats': sim.normalization_stats,
         'data_batch_size': bnn_batch_size,
+        'hidden_activation': jax.nn.swish
     }
 
     if use_sim_prior:
