@@ -1,7 +1,7 @@
 import exp
 from experiments.util import generate_run_commands, generate_base_command, dict_permutations
 
-PROJECT_NAME = 'OfflineRLLikelihood0_75'
+PROJECT_NAME = 'DebuggingExperiment'
 
 _applicable_configs = {
     'horizon_len': [200],
