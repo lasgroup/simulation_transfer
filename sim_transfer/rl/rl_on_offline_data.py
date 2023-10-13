@@ -136,7 +136,7 @@ class RLFromOfflineData:
         self.y_train = y_train
         self.x_test = self.reshape_xs(x_test)
         self.y_test = y_test
-        self.x_eval = self.reshape_xs(x_test)
+        self.x_eval = self.reshape_xs(x_eval)
         self.y_eval = y_eval
 
         if self.predict_difference:
@@ -268,6 +268,8 @@ class RLFromOfflineData:
 
     def revert_order_of_stacked_actions(self, stacked_actions: chex.Array):
         assert self.action_dim * self.num_frame_stack == stacked_actions.shape[-1]
+        if self.num_frame_stack == 0:
+            return stacked_actions
         actions_list = []
         # We split the actions into a list of actions
         for i in range(self.num_frame_stack):
