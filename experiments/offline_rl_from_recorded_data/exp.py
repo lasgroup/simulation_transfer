@@ -159,7 +159,7 @@ def experiment(horizon_len: int,
         'hidden_layer_sizes': [64, 64, 64],
         'normalization_stats': sim.normalization_stats,
         'data_batch_size': bnn_batch_size,
-        'hidden_activation': jax.nn.swish
+        'hidden_activation': jax.nn.leaky_relu
     }
 
     if use_sim_prior:
