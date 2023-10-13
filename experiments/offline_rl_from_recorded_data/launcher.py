@@ -1,7 +1,7 @@
 import exp
 from experiments.util import generate_run_commands, generate_base_command, dict_permutations
 
-PROJECT_NAME = 'DebuggingExperimentN2'
+PROJECT_NAME = 'DebuggingExperimentN3'
 
 _applicable_configs = {
     'horizon_len': [200],
@@ -23,7 +23,7 @@ _applicable_configs = {
     'share_of_x0s_in_sac_buffer': [0.5],
     'bnn_batch_size': [32],
     'likelihood_exponent': [1.0],
-    'train_sac_only_from_init_states': [1],
+    'train_sac_only_from_init_states': [0, 1],
     'data_from_simulation': [1],
     'num_frame_stack': [0],
 }
