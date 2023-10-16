@@ -407,57 +407,6 @@ class RLFromOfflineData:
                    f'reward_std_on_{model_name}': float(reward_std)})
         plt.close('all')
 
-    def evaluate_policy_on_the_simulator(self,
-                                         policy: Callable,
-                                         key: chex.PRNGKey = jr.PRNGKey(0),
-                                         num_evals: int = 1, ):
-        def reward_on_simulator(key: chex.PRNGKey):
-            actions_buffer = jnp.zeros(shape=(self.action_dim * self.num_frame_stack))
-            sim = RCCarSimEnv(encode_angle=True, use_tire_model=True)
-            obs = sim.reset(key)
-            done = False
-            transitions_for_plotting = []
-            while not done:
-                policy_input = jnp.concatenate([obs, actions_buffer], axis=-1)
-                action = policy(policy_input)
-                next_obs, reward, done, info = sim.step(action)
-                # Prepare new actions buffer
-                if self.num_frame_stack > 0:
-                    next_actions_buffer = jnp.concatenate([actions_buffer[self.action_dim:], action])
-                else:
-                    next_actions_buffer = jnp.zeros(shape=(0,))
-
-                transitions_for_plotting.append(Transition(observation=obs,
-                                                           action=action,
-                                                           reward=jnp.array(reward),
-                                                           discount=jnp.array(0.99),
-                                                           next_observation=next_obs)
-                                                )
-                actions_buffer = next_actions_buffer
-                obs = next_obs
-
-            concatenated_transitions_for_plotting = jtu.tree_map(lambda *xs: jnp.stack(xs, axis=0),
-                                                                 *transitions_for_plotting)
-            reward_on_simulator = jnp.sum(concatenated_transitions_for_plotting.reward)
-            return reward_on_simulator, concatenated_transitions_for_plotting
-
-        rewards, trajectories = vmap(reward_on_simulator)(jr.split(key, num_evals))
-
-        reward_median = jnp.median(rewards)
-        reward_std = jnp.std(rewards)
-
-        reward_median_index = self.arg_median(rewards)
-
-        transitions_median = jtu.tree_map(lambda x: x[reward_median_index], trajectories)
-        fig, axes = plot_rc_trajectory(transitions_median.next_observation,
-                                       transitions_median.action, encode_angle=True,
-                                       show=False)
-        model_name = 'simulator'
-        wandb.log({f'Median_trajectory_on_{model_name}': wandb.Image(fig),
-                   f'reward_median_on_{model_name}': float(reward_median),
-                   f'reward_std_on_{model_name}': float(reward_std)})
-        plt.close('all')
-
     def evaluate_policy(self,
                         policy: Callable,
                         bnn_model: BatchedNeuralNetworkModel | None = None,
