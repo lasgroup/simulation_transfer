@@ -324,10 +324,24 @@ class RLFromOfflineData:
     def prepare_policy_from_offline_data(self,
                                          bnn_train_steps: int = 10_000,
                                          return_best_bnn: bool = True):
+        # Train bnn model
         bnn_model = self.train_model(bnn_train_steps=bnn_train_steps,
                                      return_best_bnn=return_best_bnn)
+
+        # Save bnn model
+        directory = os.path.join(wandb.run.dir, 'models')
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+        model_path = os.path.join('models', 'bnn_model.pkl')
+        with open(os.path.join(wandb.run.dir, model_path), 'wb') as handle:
+            pickle.dump(bnn_model, handle)
+        wandb.save(os.path.join(wandb.run.dir, model_path), wandb.run.dir)
+
+        # Evaluate bnn model on test data
         if self.eval_bnn_model_on_all_offline_data:
             self.evaluate_bnn_model_on_all_collected_data(bnn_model)
+
+        # Train policy
         policy, params, metrics = self.train_policy(bnn_model, self.true_buffer_state, self.key)
 
         # Save policy parameters
@@ -337,14 +351,6 @@ class RLFromOfflineData:
         model_path = os.path.join('models', 'parameters.pkl')
         with open(os.path.join(wandb.run.dir, model_path), 'wb') as handle:
             pickle.dump(params, handle)
-        wandb.save(os.path.join(wandb.run.dir, model_path), wandb.run.dir)
-
-        directory = os.path.join(wandb.run.dir, 'models')
-        if not os.path.exists(directory):
-            os.makedirs(directory)
-        model_path = os.path.join('models', 'bnn_model.pkl')
-        with open(os.path.join(wandb.run.dir, model_path), 'wb') as handle:
-            pickle.dump(bnn_model, handle)
         wandb.save(os.path.join(wandb.run.dir, model_path), wandb.run.dir)
 
         return policy, params, metrics, bnn_model
