@@ -177,7 +177,7 @@ def experiment(horizon_len: int,
         sim = AdditiveSim(base_sims=[sim,
                                      GaussianProcessSim(sim.input_size, sim.output_size,
                                                         output_scale=outputscales_racecar,
-                                                        length_scale=10.0, consider_only_first_k_dims=None)
+                                                        length_scale=1.0, consider_only_first_k_dims=None)
                                      ])
         if predict_difference:
             sim = PredictStateChangeWrapper(sim)
