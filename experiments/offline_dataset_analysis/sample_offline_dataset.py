@@ -11,8 +11,9 @@ car_id = 2
 
 def sample_dataset_from_simulator(num_samples_train: int,
                                   data_seed: int) -> List[chex.PRNGKey]:
-    x_train, y_train, x_test, y_test, sim = provide_data_and_sim(data_source='racecar_hf',
-                                                                 data_spec={'num_samples_train': num_samples_train, },
+    x_train, y_train, x_test, y_test, sim = provide_data_and_sim(data_source='racecar_actionstack',
+                                                                 data_spec={'num_samples_train': num_samples_train,
+                                                                            'num_stacked_actions': 0},
                                                                  data_seed=data_seed)
     return x_train, y_train, x_test, y_test
 

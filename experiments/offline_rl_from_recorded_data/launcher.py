@@ -1,16 +1,16 @@
 import exp
 from experiments.util import generate_run_commands, generate_base_command, dict_permutations
 
-PROJECT_NAME = 'SimulatedOfflineRLNoActionStacking'
+PROJECT_NAME = 'OfflineRLLeakyReluBandwidthSVGDN1'
 
 _applicable_configs = {
     'horizon_len': [200],
-    'seed': list(range(3)),
+    'seed': list(range(5)),
     'project_name': [PROJECT_NAME],
     'sac_num_env_steps': [2_000_000],
-    'bnn_train_steps': [20_000, 100_000],
+    'bnn_train_steps': [100_000],
     'learnable_likelihood_std': ['yes'],
-    'include_aleatoric_noise': [1],
+    'include_aleatoric_noise': [0],
     'best_bnn_model': [1],
     'best_policy': [1],
     'margin_factor': [20.0],
@@ -23,15 +23,17 @@ _applicable_configs = {
     'share_of_x0s_in_sac_buffer': [0.5],
     'bnn_batch_size': [32],
     'likelihood_exponent': [1.0],
-    'train_sac_only_from_init_states': [1],
+    'train_sac_only_from_init_states': [0],
     'data_from_simulation': [1],
     'num_frame_stack': [0],
+    'bandwidth_svgd': [0.05, 0.1, 0.3]
 }
 
 _applicable_configs_no_sim_prior = {'use_sim_prior': [0],
                                     'use_grey_box': [0],
                                     'high_fidelity': [0],
                                     'predict_difference': [1],
+                                    'num_measurement_points': [8]
                                     } | _applicable_configs
 _applicable_configs_high_fidelity = {'use_sim_prior': [1],
                                      'use_grey_box': [0],
@@ -49,6 +51,10 @@ _applicable_configs_grey_box = {'use_sim_prior': [0],
                                 'use_grey_box': [1],
                                 'predict_difference': [0],
                                 'num_measurement_points': [8]} | _applicable_configs
+
+# all_flags_combinations = dict_permutations(_applicable_configs_no_sim_prior) + dict_permutations(
+#     _applicable_configs_high_fidelity) + dict_permutations(_applicable_configs_low_fidelity) + dict_permutations(
+#     _applicable_configs_grey_box)
 
 all_flags_combinations = dict_permutations(_applicable_configs_no_sim_prior) + dict_permutations(
     _applicable_configs_high_fidelity) + dict_permutations(_applicable_configs_low_fidelity)

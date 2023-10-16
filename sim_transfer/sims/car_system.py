@@ -303,14 +303,14 @@ class FrameStackWrapper(System):
              ) -> SystemState:
         # Decompose to x and last actions
         _x = x[:self._system.x_dim]
-        _us = x[self._system.x_dim:]
+        stacked_us = x[self._system.x_dim:]
 
         next_sys_step = self._system.step(_x, u, system_params)
-        # We roll last actions and append the new action
-        _us = jnp.roll(_us, shift=self._system.u_dim)
-        _us = _us.at[:self._system.u_dim].set(u)
+        if self._num_frame_stack > 0:
+            stacked_us = jnp.concatenate([stacked_us[self._system.u_dim:], u])
+
         # We add last actions to the state
-        x_next = jnp.concatenate([next_sys_step.x_next, _us], axis=0)
+        x_next = jnp.concatenate([next_sys_step.x_next, stacked_us], axis=0)
         next_sys_step = next_sys_step.replace(x_next=x_next)
         return next_sys_step
 

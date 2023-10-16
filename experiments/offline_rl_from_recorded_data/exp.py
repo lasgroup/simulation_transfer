@@ -1,5 +1,6 @@
 import argparse
 
+import jax.nn
 import jax.random as jr
 import wandb
 
@@ -40,7 +41,11 @@ def experiment(horizon_len: int,
                default_num_init_points_to_bs_for_sac_learning=1000,
                data_from_simulation: int = 0,
                num_frame_stack: int = 3,
+               bandwidth_svgd: float = 2.0,
                ):
+    # TODO: Not clear how many steps to train the BNN for. We should probably train it for a fixed number of steps
+    bnn_train_steps = min(50 * num_offline_collected_transitions, 100_000)
+
     if not data_from_simulation:
         assert num_frame_stack == 3, "Frame stacking has to be set to 3 if not using simulation data"
     config_dict = dict(use_sim_prior=use_sim_prior,
@@ -109,6 +114,7 @@ def experiment(horizon_len: int,
                        eval_on_all_offline_data=eval_on_all_offline_data,
                        train_sac_only_from_init_states=train_sac_only_from_init_states,
                        num_frame_stack=num_frame_stack,
+                       bandwidth_svgd=bandwidth_svgd,
                        )
 
     total_config = SAC_KWARGS | config_dict
@@ -126,7 +132,7 @@ def experiment(horizon_len: int,
             data_spec={'num_samples_train': num_offline_collected_transitions,
                        'use_hf_sim': bool(high_fidelity),
                        'num_stacked_actions': num_frame_stack},
-            data_seed=seed
+            data_seed=12345,
         )
 
     else:
@@ -153,6 +159,7 @@ def experiment(horizon_len: int,
         'hidden_layer_sizes': [64, 64, 64],
         'normalization_stats': sim.normalization_stats,
         'data_batch_size': bnn_batch_size,
+        'hidden_activation': jax.nn.leaky_relu
     }
 
     if use_sim_prior:
@@ -175,7 +182,7 @@ def experiment(horizon_len: int,
             score_estimator='gp',
             num_train_steps=bnn_train_steps,
             num_f_samples=256,
-            bandwidth_svgd=1.0,
+            bandwidth_svgd=bandwidth_svgd,
             num_measurement_points=num_measurement_points,
         )
     elif use_grey_box:
@@ -191,7 +198,7 @@ def experiment(horizon_len: int,
             **standard_params,
             num_train_steps=bnn_train_steps,
             domain=sim.domain,
-            bandwidth_svgd=1.0,
+            bandwidth_svgd=bandwidth_svgd,
         )
 
     s = share_of_x0s_in_sac_buffer
@@ -261,6 +268,7 @@ def main(args):
         train_sac_only_from_init_states=args.train_sac_only_from_init_states,
         data_from_simulation=args.data_from_simulation,
         num_frame_stack=args.num_frame_stack,
+        bandwidth_svgd=args.bandwidth_svgd,
     )
 
 
@@ -293,5 +301,6 @@ if __name__ == '__main__':
     parser.add_argument('--likelihood_exponent', type=float, default=1.0)
     parser.add_argument('--data_from_simulation', type=int, default=1)
     parser.add_argument('--num_frame_stack', type=int, default=0)
+    parser.add_argument('--bandwidth_svgd', type=float, default=2.0)
     args = parser.parse_args()
     main(args)

@@ -2,10 +2,21 @@ import os
 import pickle
 from functools import partial
 from typing import Dict, Any
+import os
+import pickle
+from functools import partial
+from typing import Dict, Any
 
 import jax
 import jax.numpy as jnp
 
+import jax
+import jax.numpy as jnp
+
+from experiments.util import load_csv_recordings
+from sim_transfer.sims.car_sim_config import OBS_NOISE_STD_SIM_CAR
+from sim_transfer.sims.simulators import PredictStateChangeWrapper, StackedActionSimWrapper
+from sim_transfer.sims.util import encode_angles as encode_angles_fn
 from experiments.util import load_csv_recordings
 from sim_transfer.sims.car_sim_config import OBS_NOISE_STD_SIM_CAR
 from sim_transfer.sims.simulators import PredictStateChangeWrapper, StackedActionSimWrapper
@@ -247,6 +258,7 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
             if num_stacked_actions > 0:
                 sim_sample = StackedActionSimWrapper(sim_sample, num_stacked_actions=num_stacked_actions, action_size=2)
 
+            # Prepare simulator for bnn_training (the only difference is that here we can have also low fidelity sim)
             sim = RaceCarSim(encode_angle=True, use_blend=use_hf_sim, car_id=car_id)
             if num_stacked_actions > 0:
                 sim = StackedActionSimWrapper(sim, num_stacked_actions=num_stacked_actions, action_size=2)
@@ -257,7 +269,9 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
                 num_samples_test=num_test,
                 obs_noise_std=data_spec.get('obs_noise_std', defaults['obs_noise_std']),
                 x_support_mode_train=data_spec.get('x_support_mode_train', defaults['x_support_mode_train']),
-                param_mode=data_spec.get('param_mode', defaults['param_mode'])
+                param_mode='typical'
+                # Used to be but then we don't sample the right model:
+                # param_mode=data_spec.get('param_mode', defaults['param_mode'])
             )
 
             return x_train, y_train, x_test, y_test, sim
