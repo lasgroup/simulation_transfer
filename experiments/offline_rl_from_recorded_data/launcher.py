@@ -8,7 +8,7 @@ _applicable_configs = {
     'seed': list(range(5)),
     'project_name': [PROJECT_NAME],
     'sac_num_env_steps': [2_000_000],
-    'num_epochs': [20, 50],
+    'num_epochs': [50],
     'max_train_steps': [100_000],
     'learnable_likelihood_std': ['yes'],
     'include_aleatoric_noise': [0],
@@ -27,7 +27,8 @@ _applicable_configs = {
     'train_sac_only_from_init_states': [0],
     'data_from_simulation': [0],
     'num_frame_stack': [3],
-    'bandwidth_svgd': [0.05, 0.1, 0.2]
+    'bandwidth_svgd': [0.05, 0.1, 0.2],
+    'length_scale_aditive_sim_gp': [0.2, 1.0, 5.0]
 }
 
 _applicable_configs_no_sim_prior = {'use_sim_prior': [0],

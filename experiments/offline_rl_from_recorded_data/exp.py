@@ -42,7 +42,8 @@ def experiment(horizon_len: int,
                num_frame_stack: int = 3,
                bandwidth_svgd: float = 2.0,
                num_epochs: int = 50,
-               max_train_steps: int = 100_000
+               max_train_steps: int = 100_000,
+               length_scale_aditive_sim_gp: float = 1.0,
                ):
     bnn_train_steps = min(num_epochs * num_offline_collected_transitions, max_train_steps)
 
@@ -117,6 +118,7 @@ def experiment(horizon_len: int,
                        bandwidth_svgd=bandwidth_svgd,
                        num_epochs=num_epochs,
                        max_train_steps=max_train_steps,
+                       length_scale_aditive_sim_gp=length_scale_aditive_sim_gp,
                        )
 
     total_config = SAC_KWARGS | config_dict
@@ -177,7 +179,8 @@ def experiment(horizon_len: int,
         sim = AdditiveSim(base_sims=[sim,
                                      GaussianProcessSim(sim.input_size, sim.output_size,
                                                         output_scale=outputscales_racecar,
-                                                        length_scale=1.0, consider_only_first_k_dims=None)
+                                                        length_scale=length_scale_aditive_sim_gp,
+                                                        consider_only_first_k_dims=None)
                                      ])
         if predict_difference:
             sim = PredictStateChangeWrapper(sim)
@@ -277,6 +280,7 @@ def main(args):
         bandwidth_svgd=args.bandwidth_svgd,
         num_epochs=args.num_epochs,
         max_train_steps=args.max_train_steps,
+        length_scale_aditive_sim_gp=args.length_scale_aditive_sim_gp
     )
 
 
@@ -300,7 +304,7 @@ if __name__ == '__main__':
     parser.add_argument('--high_fidelity', type=int, default=0)
     parser.add_argument('--num_measurement_points', type=int, default=8)
     parser.add_argument('--bnn_batch_size', type=int, default=32)
-    parser.add_argument('--test_data_ratio', type=float, default=0.0)
+    parser.add_argument('--test_data_ratio', type=float, default=0.1)
     parser.add_argument('--share_of_x0s_in_sac_buffer', type=float, default=0.5)
     parser.add_argument('--eval_only_on_init_states', type=int, default=1)
     parser.add_argument('--eval_on_all_offline_data', type=int, default=1)
@@ -311,5 +315,6 @@ if __name__ == '__main__':
     parser.add_argument('--bandwidth_svgd', type=float, default=0.2)
     parser.add_argument('--num_epochs', type=int, default=20)
     parser.add_argument('--max_train_steps', type=int, default=2_000)
+    parser.add_argument('--length_scale_aditive_sim_gp', type=float, default=1.0)
     args = parser.parse_args()
     main(args)
