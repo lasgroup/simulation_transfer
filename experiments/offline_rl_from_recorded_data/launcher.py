@@ -1,14 +1,15 @@
 import exp
 from experiments.util import generate_run_commands, generate_base_command, dict_permutations
 
-PROJECT_NAME = 'OfflineRLLeakyReluBandwidthSVGDN1'
+PROJECT_NAME = 'OfflineRLCarV2BigExp'
 
 _applicable_configs = {
     'horizon_len': [200],
     'seed': list(range(5)),
     'project_name': [PROJECT_NAME],
     'sac_num_env_steps': [2_000_000],
-    'bnn_train_steps': [100_000],
+    'num_epochs': [20, 50],
+    'max_train_steps': [100_000],
     'learnable_likelihood_std': ['yes'],
     'include_aleatoric_noise': [0],
     'best_bnn_model': [1],
@@ -16,7 +17,7 @@ _applicable_configs = {
     'margin_factor': [20.0],
     'ctrl_cost_weight': [0.005],
     'ctrl_diff_weight': [1.0],
-    'num_offline_collected_transitions': [200, 400, 800, 1600, 2_000, 2_500, 3_000, 5_000, 10_000, 15_000, 20_000],
+    'num_offline_collected_transitions': [200, 400, 800, 1600, 2_000, 2_500, 3_000, 4_000, 5_000, 7_500, 10_000],
     'test_data_ratio': [0.0],
     'eval_on_all_offline_data': [1],
     'eval_only_on_init_states': [1],
@@ -24,9 +25,9 @@ _applicable_configs = {
     'bnn_batch_size': [32],
     'likelihood_exponent': [1.0],
     'train_sac_only_from_init_states': [0],
-    'data_from_simulation': [1],
-    'num_frame_stack': [0],
-    'bandwidth_svgd': [0.05, 0.1, 0.3]
+    'data_from_simulation': [0],
+    'num_frame_stack': [3],
+    'bandwidth_svgd': [0.05, 0.1, 0.2]
 }
 
 _applicable_configs_no_sim_prior = {'use_sim_prior': [0],

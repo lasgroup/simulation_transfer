@@ -16,7 +16,6 @@ ENTITY = 'trevenl'
 def experiment(horizon_len: int,
                seed: int,
                project_name: str,
-               bnn_train_steps: int,
                sac_num_env_steps: int,
                learnable_likelihood_std: str,
                include_aleatoric_noise: int,
@@ -42,9 +41,10 @@ def experiment(horizon_len: int,
                data_from_simulation: int = 0,
                num_frame_stack: int = 3,
                bandwidth_svgd: float = 2.0,
+               num_epochs: int = 50,
+               max_train_steps: int = 100_000
                ):
-    # TODO: Not clear how many steps to train the BNN for. We should probably train it for a fixed number of steps
-    bnn_train_steps = min(50 * num_offline_collected_transitions, 100_000)
+    bnn_train_steps = min(num_epochs * num_offline_collected_transitions, max_train_steps)
 
     if not data_from_simulation:
         assert num_frame_stack == 3, "Frame stacking has to be set to 3 if not using simulation data"
@@ -115,6 +115,8 @@ def experiment(horizon_len: int,
                        train_sac_only_from_init_states=train_sac_only_from_init_states,
                        num_frame_stack=num_frame_stack,
                        bandwidth_svgd=bandwidth_svgd,
+                       num_epochs=num_epochs,
+                       max_train_steps=max_train_steps,
                        )
 
     total_config = SAC_KWARGS | config_dict
@@ -126,13 +128,17 @@ def experiment(horizon_len: int,
         config=total_config,
     )
 
+    # Deal with randomness
+    key = jr.PRNGKey(seed)
+    key, key_data_seed = jr.split(key, 2)
+    int_data_seed = jr.randint(key_data_seed, (), minval=0, maxval=2 ** 13 - 1)
     if data_from_simulation:
         x_train, y_train, x_test, y_test, sim = provide_data_and_sim(
             data_source='racecar_actionstack',
             data_spec={'num_samples_train': num_offline_collected_transitions,
                        'use_hf_sim': bool(high_fidelity),
                        'num_stacked_actions': num_frame_stack},
-            data_seed=12345,
+            data_seed=int(int_data_seed),
         )
 
     else:
@@ -141,7 +147,8 @@ def experiment(horizon_len: int,
             data_spec={'num_samples_train': num_offline_collected_transitions,
                        'use_hf_sim': bool(high_fidelity),
                        'sampling': 'iid',
-                       })
+                       },
+            data_seed=int(int_data_seed), )
 
     # Deal with randomness
     key = jr.PRNGKey(seed)
@@ -244,7 +251,6 @@ def main(args):
         seed=args.seed,
         project_name=args.project_name,
         horizon_len=args.horizon_len,
-        bnn_train_steps=args.bnn_train_steps,
         sac_num_env_steps=args.sac_num_env_steps,
         learnable_likelihood_std=args.learnable_likelihood_std,
         include_aleatoric_noise=args.include_aleatoric_noise,
@@ -269,6 +275,8 @@ def main(args):
         data_from_simulation=args.data_from_simulation,
         num_frame_stack=args.num_frame_stack,
         bandwidth_svgd=args.bandwidth_svgd,
+        num_epochs=args.num_epochs,
+        max_train_steps=args.max_train_steps,
     )
 
 
@@ -276,7 +284,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--horizon_len', type=int, default=200)
-    parser.add_argument('--bnn_train_steps', type=int, default=2_000)
     parser.add_argument('--sac_num_env_steps', type=int, default=10_000)
     parser.add_argument('--project_name', type=str, default='RaceCarPPO')
     parser.add_argument('--learnable_likelihood_std', type=str, default='yes')
@@ -293,14 +300,16 @@ if __name__ == '__main__':
     parser.add_argument('--high_fidelity', type=int, default=0)
     parser.add_argument('--num_measurement_points', type=int, default=8)
     parser.add_argument('--bnn_batch_size', type=int, default=32)
-    parser.add_argument('--test_data_ratio', type=float, default=0.1)
+    parser.add_argument('--test_data_ratio', type=float, default=0.0)
     parser.add_argument('--share_of_x0s_in_sac_buffer', type=float, default=0.5)
     parser.add_argument('--eval_only_on_init_states', type=int, default=1)
     parser.add_argument('--eval_on_all_offline_data', type=int, default=1)
-    parser.add_argument('--train_sac_only_from_init_states', type=int, default=1)
+    parser.add_argument('--train_sac_only_from_init_states', type=int, default=0)
     parser.add_argument('--likelihood_exponent', type=float, default=1.0)
-    parser.add_argument('--data_from_simulation', type=int, default=1)
-    parser.add_argument('--num_frame_stack', type=int, default=0)
+    parser.add_argument('--data_from_simulation', type=int, default=0)
+    parser.add_argument('--num_frame_stack', type=int, default=3)
     parser.add_argument('--bandwidth_svgd', type=float, default=0.2)
+    parser.add_argument('--num_epochs', type=int, default=20)
+    parser.add_argument('--max_train_steps', type=int, default=2_000)
     args = parser.parse_args()
     main(args)
