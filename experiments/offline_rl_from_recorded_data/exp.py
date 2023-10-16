@@ -301,6 +301,6 @@ if __name__ == '__main__':
     parser.add_argument('--likelihood_exponent', type=float, default=1.0)
     parser.add_argument('--data_from_simulation', type=int, default=1)
     parser.add_argument('--num_frame_stack', type=int, default=0)
-    parser.add_argument('--bandwidth_svgd', type=float, default=2.0)
+    parser.add_argument('--bandwidth_svgd', type=float, default=0.2)
     args = parser.parse_args()
     main(args)
