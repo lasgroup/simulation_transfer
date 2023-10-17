@@ -1,6 +1,18 @@
+import os
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+SIMULATION = False
+BEST_MODEL_FREE = 164.53915
+
+if SIMULATION:
+    reward_column = 'reward_mean_on_simulator'
+    folder = 'simulation'
+else:
+    reward_column = 'reward_mean_on_learned_model'
+    folder = 'real_data'
 
 
 def to_pretty_group_name(group_name: str):
@@ -16,7 +28,7 @@ def to_pretty_group_name(group_name: str):
 
 def join_group_names_and_prepare_statistics_mean(data: pd.DataFrame):
     # Summary of rewards
-    summary_rewards = data.groupby('Group')['reward_mean_on_simulator'].agg(['mean', 'std'])
+    summary_rewards = data.groupby('Group')[reward_column].agg(['mean', 'std'])
 
     summary = pd.concat([summary_rewards], axis=1)
     summary.reset_index(inplace=True)
@@ -25,19 +37,12 @@ def join_group_names_and_prepare_statistics_mean(data: pd.DataFrame):
 
 
 def join_group_names_and_prepare_statistics(data: pd.DataFrame):
-    # Summary of rewards
-    # summary_rewards = data.groupby('Group')['reward_mean_on_simulator'].agg(['mean', 'std'])
-    #
-    # summary = pd.concat([summary_rewards], axis=1)
-    # summary.reset_index(inplace=True)
-    # summary.columns = ['group_name', 'mean', 'std', ]
-    # Summary of rewards
-    summary_rewards = data.groupby('Group')['reward_mean_on_simulator'].agg(['median',
-                                                                             lambda x: x.quantile(0.2),
-                                                                             # 0.2 quantile
-                                                                             lambda x: x.quantile(0.8)
-                                                                             # 0.8 quantile
-                                                                             ])
+    summary_rewards = data.groupby('Group')[reward_column].agg(['median',
+                                                                lambda x: x.quantile(0.2),
+                                                                # 0.2 quantile
+                                                                lambda x: x.quantile(0.8)
+                                                                # 0.8 quantile
+                                                                ])
 
     summary = pd.concat([summary_rewards], axis=1)
     summary.reset_index(inplace=True)
@@ -46,7 +51,7 @@ def join_group_names_and_prepare_statistics(data: pd.DataFrame):
     return summary
 
 
-def plot_rewards_mean(data: pd.DataFrame, max_offline_data: int | None = None):
+def plot_rewards_mean(data: pd.DataFrame, max_offline_data: int | None = None, sup_title: str = None):
     offline_transitions = data['num_offline_collected_transitions'].unique()
     offline_transitions.sort()
 
@@ -75,17 +80,25 @@ def plot_rewards_mean(data: pd.DataFrame, max_offline_data: int | None = None):
     for index, group in enumerate(group_names):
         ax.plot(offline_transitions, means[:, index], label=group)
         ax.fill_between(offline_transitions,
-                        means[:, index] - stds[:, index],
-                        means[:, index] + stds[:, index], alpha=0.2)
-    ax.set_title(f'Mean +- std')
+                        means[:, index] - (stds[:, index]) / (5 ** 0.5),
+                        means[:, index] + stds[:, index] / (5 ** 0.5), alpha=0.2)
+    if max_offline_data is None:
+        max_offline_data = offline_transitions[-1]
+    ax.hlines(y=BEST_MODEL_FREE, xmin=0, xmax=max_offline_data, linewidth=2, linestyle='--', label='Best model free')
+    ax.set_title(r'Mean $\pm$ std error')
     ax.set_xlabel('Number of offline transitions')
     ax.set_ylabel('Reward')
-    ax.legend()
-    plt.savefig('offline_rl_simulated_data.pdf')
+    fig.suptitle(sup_title)
+    dir = folder
+    if not os.path.exists(dir):
+        os.makedirs(dir)
+    title = sup_title + 'offline_rl_simulated_data.pdf'
+    plt.legend()
+    plt.savefig(os.path.join(dir, title))
     plt.show()
 
 
-def plot_rewards(data: pd.DataFrame, max_offline_data: int | None = None):
+def plot_rewards(data: pd.DataFrame, max_offline_data: int | None = None, sup_title: str = None):
     offline_transitions = data['num_offline_collected_transitions'].unique()
     offline_transitions.sort()
 
@@ -119,15 +132,31 @@ def plot_rewards(data: pd.DataFrame, max_offline_data: int | None = None):
     for index, group in enumerate(group_names):
         ax.plot(offline_transitions, medians[:, index], label=group)
         ax.fill_between(offline_transitions, quantile_20[:, index], quantile_80[:, index], alpha=0.2)
+
+    if max_offline_data is None:
+        max_offline_data = offline_transitions[-1]
+
+    ax.hlines(y=BEST_MODEL_FREE, xmin=0, xmax=max_offline_data, linewidth=2, linestyle='--', label='Best model free')
     ax.set_title(f'Median and 0.2-0.8 confidence interval')
     ax.set_xlabel('Number of offline transitions')
     ax.set_ylabel('Reward')
-    ax.legend()
-    plt.savefig('offline_rl_simulated_data.pdf')
+    fig.suptitle(sup_title)
+    dir = folder
+    if not os.path.exists(dir):
+        os.makedirs(dir)
+    title = sup_title + 'offline_rl_simulated_data.pdf'
+    plt.legend()
+    plt.savefig(os.path.join(dir, title))
     plt.show()
 
 
 if __name__ == '__main__':
-    max_offline_data = 4_000
+    max_offline_data = None
     data = pd.read_csv('wandb_runs.csv')
-    plot_rewards_mean(data[data.bandwidth_svgd == 0.05], max_offline_data=max_offline_data)
+    bandwidth_svgd = data.bandwidth_svgd.unique()
+    length_scale_aditive_sim_gp = data.length_scale_aditive_sim_gp.unique()
+    for i in bandwidth_svgd:
+        for j in length_scale_aditive_sim_gp:
+            filtered_data = data[(data.bandwidth_svgd == i) & (data.length_scale_aditive_sim_gp == j)]
+            plot_rewards_mean(filtered_data, max_offline_data=max_offline_data,
+                              sup_title=f'bandwidth_svgd={i}, length_scale_aditive_sim_gp={j}')

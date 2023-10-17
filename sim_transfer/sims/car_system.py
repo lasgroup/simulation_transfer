@@ -76,7 +76,7 @@ class CarDynamics(Dynamics[CarDynamicsParams]):
     }
 
     def __init__(self, encode_angle: bool = False, use_tire_model: bool = False, action_delay: float = 0.0,
-                 car_model_params: Dict = None, use_obs_noise: bool = True, ):
+                 car_model_params: Dict = None, use_obs_noise: bool = True, car_id: int = 2):
         """
         Race car simulator environment
 
@@ -95,18 +95,16 @@ class CarDynamics(Dynamics[CarDynamicsParams]):
 
         # initialize dynamics and observation noise models
         self._dynamics_model = RaceCar(dt=self._dt, encode_angle=encode_angle)
-        self.use_tire_model = use_tire_model
-        if use_tire_model:
-            self._default_car_model_params = self._default_car_model_params_blend
-        else:
-            self._default_car_model_params = self._default_car_model_params_bicycle
 
-        if car_model_params is None:
-            _car_model_params = self._default_car_model_params
-        else:
-            _car_model_params = self._default_car_model_params
-            _car_model_params.update(car_model_params)
-        self._dynamics_params = CarParams(**_car_model_params)
+        assert car_id in [1, 2]
+        self.car_id = car_id
+        self._set_default_params()
+
+        _default_params = self._default_car_model_params_blend if use_tire_model else self._default_car_model_params_bicycle
+        self._typical_params = CarParams(**_default_params)
+
+        self.use_tire_model = use_tire_model
+        self._dynamics_params = self._typical_params
         self.use_obs_noise = use_obs_noise
 
         # set up action delay
@@ -129,6 +127,24 @@ class CarDynamics(Dynamics[CarDynamicsParams]):
         return CarDynamicsParams(car_params=self._dynamics_params,
                                  action_buffer=self._action_buffer,
                                  key=key)
+
+    def _set_default_params(self):
+        from sim_transfer.sims.car_sim_config import (DEFAULT_PARAMS_BICYCLE_CAR1, DEFAULT_PARAMS_BLEND_CAR1,
+                                                      BOUNDS_PARAMS_BICYCLE_CAR1, BOUNDS_PARAMS_BLEND_CAR1,
+                                                      DEFAULT_PARAMS_BICYCLE_CAR2, DEFAULT_PARAMS_BLEND_CAR2,
+                                                      BOUNDS_PARAMS_BICYCLE_CAR2, BOUNDS_PARAMS_BLEND_CAR2)
+        if self.car_id == 1:
+            self._default_car_model_params_bicycle = DEFAULT_PARAMS_BICYCLE_CAR1
+            self._bounds_car_model_params_bicycle = BOUNDS_PARAMS_BICYCLE_CAR1
+            self._default_car_model_params_blend = DEFAULT_PARAMS_BLEND_CAR1
+            self._bounds_car_model_params_blend = BOUNDS_PARAMS_BLEND_CAR1
+        elif self.car_id == 2:
+            self._default_car_model_params_bicycle = DEFAULT_PARAMS_BICYCLE_CAR2
+            self._bounds_car_model_params_bicycle = BOUNDS_PARAMS_BICYCLE_CAR2
+            self._default_car_model_params_blend = DEFAULT_PARAMS_BLEND_CAR2
+            self._bounds_car_model_params_blend = BOUNDS_PARAMS_BLEND_CAR2
+        else:
+            raise ValueError(f'Car id {self.car_id} not supported.')
 
     def _state_to_obs(self, state: jnp.array, rng_key: chex.PRNGKey) -> jnp.array:
         """ Adds observation noise to the state """

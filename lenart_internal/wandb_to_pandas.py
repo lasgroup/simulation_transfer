@@ -4,7 +4,7 @@ import pandas as pd
 api = wandb.Api()
 
 # Specify the username and project name
-runs = api.runs("trevenl/OfflineRLLeakyReluBandwidthSVGDN1")
+runs = api.runs("trevenl/OfflineRLCarV2BigExp")
 
 summary_list = []
 config_list = []

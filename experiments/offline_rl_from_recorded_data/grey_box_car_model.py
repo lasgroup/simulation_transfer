@@ -6,12 +6,16 @@ from sim_transfer.sims.dynamics_models import RaceCar, CarParams
 import tensorflow_probability.substrates.jax as tfp
 import tensorflow_probability.substrates.jax.distributions as tfd
 from sim_transfer.modules.distribution import AffineTransform
+from sim_transfer.sims.simulators import RaceCarSim
 
 
 class GreyBoxSVGDCarModel(BNN_SVGD):
 
     def __init__(self, encode_angle: bool = True, high_fidelity: bool = True, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self._rc_car_sim = RaceCarSim(encode_angle=encode_angle, use_blend=high_fidelity)
+        self.car_model_params = self._rc_car_sim._typical_params
+
         self.car_model_params = {
             'i_com': jnp.array(27.8e-6),
             'd_f': jnp.array(0.02),

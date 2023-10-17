@@ -310,7 +310,7 @@ if __name__ == '__main__':
     parser.add_argument('--eval_on_all_offline_data', type=int, default=1)
     parser.add_argument('--train_sac_only_from_init_states', type=int, default=0)
     parser.add_argument('--likelihood_exponent', type=float, default=1.0)
-    parser.add_argument('--data_from_simulation', type=int, default=0)
+    parser.add_argument('--data_from_simulation', type=int, default=1)
     parser.add_argument('--num_frame_stack', type=int, default=3)
     parser.add_argument('--bandwidth_svgd', type=float, default=0.2)
     parser.add_argument('--num_epochs', type=int, default=20)
