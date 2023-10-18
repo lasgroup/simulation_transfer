@@ -61,7 +61,6 @@ class RCCarSimEnv:
     _angle_idx: int = 2
     _obs_noise_stds: jnp.array = OBS_NOISE_STD_SIM_CAR
 
-
     def __init__(self, ctrl_cost_weight: float = 0.005, encode_angle: bool = False, use_obs_noise: bool = True,
                  use_tire_model: bool = False, action_delay: float = 0.0, car_model_params: Dict = None,
                  margin_factor: float = 10.0, max_throttle: float = 1.0, car_id: int = 2,
@@ -116,7 +115,7 @@ class RCCarSimEnv:
         # set up action delay
         assert action_delay >= 0.0, "Action delay must be non-negative"
         self.action_delay = action_delay
-        if action_delay % self._dt == 0.0:
+        if abs(action_delay % self._dt) < 1e-8:
             self._act_delay_interpolation_weights = jnp.array([1.0, 0.0])
         else:
             # if action delay is not a multiple of dt, compute weights to interpolate
@@ -232,7 +231,7 @@ class RCCarSimEnv:
 if __name__ == '__main__':
     ENCODE_ANGLE = True
     env = RCCarSimEnv(encode_angle=ENCODE_ANGLE,
-                      action_delay=0.00,
+                      action_delay=0.0,
                       use_tire_model=True,
                       use_obs_noise=True)
 
