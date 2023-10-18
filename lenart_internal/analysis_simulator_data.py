@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-SIMULATION = False
+SIMULATION = True
 BEST_MODEL_FREE = 164.53915
 
 if SIMULATION:
@@ -151,7 +151,7 @@ def plot_rewards(data: pd.DataFrame, max_offline_data: int | None = None, sup_ti
 
 
 if __name__ == '__main__':
-    max_offline_data = None
+    max_offline_data = 3000
     data = pd.read_csv('wandb_runs.csv')
     bandwidth_svgd = data.bandwidth_svgd.unique()
     length_scale_aditive_sim_gp = data.length_scale_aditive_sim_gp.unique()
