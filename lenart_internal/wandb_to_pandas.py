@@ -4,7 +4,7 @@ import pandas as pd
 api = wandb.Api()
 
 # Specify the username and project name
-runs = api.runs("trevenl/OfflineRLCarV2BigExp")
+runs = api.runs("trevenl/OfflineRLSimulationWithDelayBIGEXP")
 
 summary_list = []
 config_list = []

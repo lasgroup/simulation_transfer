@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-SIMULATION = False
+SIMULATION = True
 BEST_MODEL_FREE = 164.53915
 
 if SIMULATION:
@@ -80,8 +80,8 @@ def plot_rewards_mean(data: pd.DataFrame, max_offline_data: int | None = None, s
     for index, group in enumerate(group_names):
         ax.plot(offline_transitions, means[:, index], label=group)
         ax.fill_between(offline_transitions,
-                        means[:, index] - (stds[:, index]) / (5 ** 0.5),
-                        means[:, index] + stds[:, index] / (5 ** 0.5), alpha=0.2)
+                        means[:, index] - (stds[:, index]) / (1),
+                        means[:, index] + stds[:, index] / (1), alpha=0.2)
     if max_offline_data is None:
         max_offline_data = offline_transitions[-1]
     ax.hlines(y=BEST_MODEL_FREE, xmin=0, xmax=max_offline_data, linewidth=2, linestyle='--', label='Best model free')
@@ -151,7 +151,7 @@ def plot_rewards(data: pd.DataFrame, max_offline_data: int | None = None, sup_ti
 
 
 if __name__ == '__main__':
-    max_offline_data = None
+    max_offline_data = 3000
     data = pd.read_csv('wandb_runs.csv')
     bandwidth_svgd = data.bandwidth_svgd.unique()
     length_scale_aditive_sim_gp = data.length_scale_aditive_sim_gp.unique()

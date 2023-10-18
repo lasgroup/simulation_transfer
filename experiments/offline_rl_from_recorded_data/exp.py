@@ -44,6 +44,7 @@ def experiment(horizon_len: int,
                num_epochs: int = 50,
                max_train_steps: int = 100_000,
                length_scale_aditive_sim_gp: float = 1.0,
+               input_from_recorded_data: int = 1,
                ):
     bnn_train_steps = min(num_epochs * num_offline_collected_transitions, max_train_steps)
 
@@ -119,6 +120,7 @@ def experiment(horizon_len: int,
                        num_epochs=num_epochs,
                        max_train_steps=max_train_steps,
                        length_scale_aditive_sim_gp=length_scale_aditive_sim_gp,
+                       input_from_recorded_data=input_from_recorded_data
                        )
 
     total_config = SAC_KWARGS | config_dict
@@ -135,11 +137,13 @@ def experiment(horizon_len: int,
     key, key_data_seed = jr.split(key, 2)
     int_data_seed = jr.randint(key_data_seed, (), minval=0, maxval=2 ** 13 - 1)
     if data_from_simulation:
+        source = 'racecar_from_true_input_data' if input_from_recorded_data else 'racecar_actionstack'
         x_train, y_train, x_test, y_test, sim = provide_data_and_sim(
-            data_source='racecar_actionstack',
+            data_source=source,
             data_spec={'num_samples_train': num_offline_collected_transitions,
                        'use_hf_sim': bool(high_fidelity),
-                       'num_stacked_actions': num_frame_stack},
+                       'sampling': 'iid',
+                       'num_stacked_actions': 3},
             data_seed=int(int_data_seed),
         )
 
@@ -280,7 +284,8 @@ def main(args):
         bandwidth_svgd=args.bandwidth_svgd,
         num_epochs=args.num_epochs,
         max_train_steps=args.max_train_steps,
-        length_scale_aditive_sim_gp=args.length_scale_aditive_sim_gp
+        length_scale_aditive_sim_gp=args.length_scale_aditive_sim_gp,
+        input_from_recorded_data=args.input_from_recorded_data,
     )
 
 
@@ -316,5 +321,6 @@ if __name__ == '__main__':
     parser.add_argument('--num_epochs', type=int, default=20)
     parser.add_argument('--max_train_steps', type=int, default=2_000)
     parser.add_argument('--length_scale_aditive_sim_gp', type=float, default=1.0)
+    parser.add_argument('--input_from_recorded_data', type=int, default=1)
     args = parser.parse_args()
     main(args)
