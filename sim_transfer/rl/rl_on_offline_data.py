@@ -367,6 +367,7 @@ class RLFromOfflineData:
         def reward_on_simulator(key: chex.PRNGKey):
             actions_buffer = jnp.zeros(shape=(self.action_dim * self.num_frame_stack))
             sim = RCCarSimEnv(encode_angle=True, use_tire_model=True,
+                              action_delay=1/30 * self.num_frame_stack,
                               margin_factor=self.car_reward_kwargs['margin_factor'],
                               ctrl_cost_weight=self.car_reward_kwargs['ctrl_cost_weight'], )
             obs = sim.reset(key)

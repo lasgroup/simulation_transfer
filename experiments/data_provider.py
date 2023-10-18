@@ -269,7 +269,6 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
             car_id = data_spec.get('car_id', 2)
             num_stacked_actions = data_spec.get('num_stacked_actions', 3)
             assert num_stacked_actions == 3, "We only support 3 stacked actions for now"
-            num_test = data_spec.get('num_samples_test', DEFAULTS_RACECAR_REAL['num_samples_test'])
 
             # Prepare simulator for bnn_training (the only difference is that here we can have also low fidelity sim)
             sim = RaceCarSim(encode_angle=True, use_blend=use_hf_sim, car_id=car_id)
@@ -321,13 +320,9 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
                                                                 num_stacked_actions=3,
                                                                 action_size=2)
 
-
             y_train = sim_for_sampling_data._typical_f(x_train)
             y_test = sim_for_sampling_data._typical_f(x_test)
             return x_train, y_train, x_test, y_test, sim
-
-
-
         elif data_source == 'racecar_hf':
             sim_hf = RaceCarSim(encode_angle=True, use_blend=True, only_pose=False)
             sim_lf = RaceCarSim(encode_angle=True, use_blend=False, only_pose=False)

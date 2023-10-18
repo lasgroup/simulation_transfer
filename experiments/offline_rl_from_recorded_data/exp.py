@@ -139,6 +139,7 @@ def experiment(horizon_len: int,
             data_source='racecar_from_true_input_data',
             data_spec={'num_samples_train': num_offline_collected_transitions,
                        'use_hf_sim': bool(high_fidelity),
+                       'sampling': 'iid',
                        'num_stacked_actions': 3},
             data_seed=int(int_data_seed),
         )
