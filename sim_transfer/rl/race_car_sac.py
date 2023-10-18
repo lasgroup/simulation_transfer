@@ -19,7 +19,7 @@ from sim_transfer.sims.util import plot_rc_trajectory
 
 ENCODE_ANGLE = True
 system = CarSystem(encode_angle=ENCODE_ANGLE,
-                   action_delay=0.0,
+                   action_delay=0.1,
                    use_tire_model=True,
                    use_obs_noise=True,
                    ctrl_cost_weight=0.005,
