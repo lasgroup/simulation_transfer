@@ -2,21 +2,10 @@ import os
 import pickle
 from functools import partial
 from typing import Dict, Any
-import os
-import pickle
-from functools import partial
-from typing import Dict, Any
 
 import jax
 import jax.numpy as jnp
 
-import jax
-import jax.numpy as jnp
-
-from experiments.util import load_csv_recordings
-from sim_transfer.sims.car_sim_config import OBS_NOISE_STD_SIM_CAR
-from sim_transfer.sims.simulators import PredictStateChangeWrapper, StackedActionSimWrapper
-from sim_transfer.sims.util import encode_angles as encode_angles_fn
 from experiments.util import load_csv_recordings
 from sim_transfer.sims.car_sim_config import OBS_NOISE_STD_SIM_CAR
 from sim_transfer.sims.simulators import PredictStateChangeWrapper, StackedActionSimWrapper
@@ -275,6 +264,70 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
             )
 
             return x_train, y_train, x_test, y_test, sim
+        elif data_source == 'racecar_from_true_input_data':
+            use_hf_sim = data_spec.get('use_hf_sim', True)
+            car_id = data_spec.get('car_id', 2)
+            num_stacked_actions = data_spec.get('num_stacked_actions', 3)
+            assert num_stacked_actions == 3, "We only support 3 stacked actions for now"
+            num_test = data_spec.get('num_samples_test', DEFAULTS_RACECAR_REAL['num_samples_test'])
+
+            # Prepare simulator for bnn_training (the only difference is that here we can have also low fidelity sim)
+            sim = RaceCarSim(encode_angle=True, use_blend=use_hf_sim, car_id=car_id)
+            if num_stacked_actions > 0:
+                sim = StackedActionSimWrapper(sim, num_stacked_actions=num_stacked_actions, action_size=2)
+
+            # Now we prepare data
+            # 1.st load data from the real car
+            x_train, y_train, x_test, y_test = get_rccar_recorded_data_new(encode_angle=True, action_stacking=True,
+                                                                           action_delay=3, car_id=car_id)
+
+            # We delete y_train, y_test and replace it with the simulator output
+            del y_train, y_test
+
+            num_train_available = x_train.shape[0]
+            num_test_available = x_test.shape[0]
+            num_train = data_spec['num_samples_train']
+            num_test = data_spec.get('num_samples_test', DEFAULTS_RACECAR_REAL['num_samples_test'])
+            assert num_train <= num_train_available and num_test <= num_test_available
+
+            # Subsample input data
+            sampling_scheme = data_spec.get('sampling', DEFAULTS_RACECAR_REAL['sampling'])
+            if sampling_scheme == 'iid':
+                # sample random subset (datapoints are not adjacent in time)
+                import warnings
+                if num_train > num_train_available / 4.:
+                    warnings.warn(f'Not enough data for {num_train} iid samples.'
+                                  f'Requires at lest 4 times as much data as requested '
+                                  f'iid samples.')
+                idx_train = jax.random.choice(key_train, jnp.arange(num_train_available), shape=(num_train,),
+                                              replace=False)
+                idx_test = jax.random.choice(key_test, jnp.arange(num_test_available), shape=(num_test,), replace=False)
+            elif sampling_scheme == 'consecutive':
+                # sample random sub-trajectory (datapoints are adjacent in time -> highly correlated)
+                offset_train = jax.random.choice(key_train, jnp.arange(num_train_available - num_train))
+                offset_test = jax.random.choice(key_test, jnp.arange(num_test_available - num_test))
+                idx_train = jnp.arange(num_train) + offset_train
+                idx_test = jnp.arange(num_test) + offset_test
+            else:
+                raise ValueError(
+                    f'Unknown sampling scheme {sampling_scheme}. Needs to be one of ["iid", "consecutive"].')
+
+            x_train, x_test = x_train[idx_train], x_test[idx_test]
+
+            # 2. We obtain next step from the simulator
+            sim_for_sampling_data = RaceCarSim(encode_angle=True, use_blend=True, car_id=car_id)
+            if num_stacked_actions > 0:
+                sim_for_sampling_data = StackedActionSimWrapper(sim_for_sampling_data,
+                                                                num_stacked_actions=3,
+                                                                action_size=2)
+
+
+            y_train = sim_for_sampling_data._typical_f(x_train)
+            y_test = sim_for_sampling_data._typical_f(x_test)
+            return x_train, y_train, x_test, y_test, sim
+
+
+
         elif data_source == 'racecar_hf':
             sim_hf = RaceCarSim(encode_angle=True, use_blend=True, only_pose=False)
             sim_lf = RaceCarSim(encode_angle=True, use_blend=False, only_pose=False)

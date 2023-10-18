@@ -963,6 +963,11 @@ class StackedActionSimWrapper(FunctionSimulator):
         fun_vals = self._function_simulator.sample_function_vals(x=x, num_samples=num_samples, rng_key=rng_key)
         return fun_vals
 
+    def _typical_f(self, x: jnp.array) -> jnp.array:
+        x = x[..., :(self.obs_size + self.action_size)]  # take only the "oldest" action
+        fun_vals = self._function_simulator._typical_f(x)
+        return fun_vals
+
     def _add_observation_noise(self, *args, **kwargs) -> jnp.ndarray:
         return self._function_simulator._add_observation_noise(*args, **kwargs)
 

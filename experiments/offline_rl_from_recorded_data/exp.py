@@ -136,10 +136,10 @@ def experiment(horizon_len: int,
     int_data_seed = jr.randint(key_data_seed, (), minval=0, maxval=2 ** 13 - 1)
     if data_from_simulation:
         x_train, y_train, x_test, y_test, sim = provide_data_and_sim(
-            data_source='racecar_actionstack',
+            data_source='racecar_from_true_input_data',
             data_spec={'num_samples_train': num_offline_collected_transitions,
                        'use_hf_sim': bool(high_fidelity),
-                       'num_stacked_actions': num_frame_stack},
+                       'num_stacked_actions': 3},
             data_seed=int(int_data_seed),
         )
 
