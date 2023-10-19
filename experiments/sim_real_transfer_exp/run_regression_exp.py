@@ -28,7 +28,7 @@ ACTIVATION_DICT = {
     'swish': jax.nn.swish,
 }
 
-OUTPUTSCALES_RCCAR = [0.003, 0.003, 0.004, 0.004, 0.021, 0.021, 0.11]
+OUTPUTSCALES_RCCAR = [0.008, 0.008, 0.009, 0.009, 0.05, 0.05, 0.2]
 
 
 def regression_experiment(
@@ -36,6 +36,7 @@ def regression_experiment(
                           data_source: str,
                           num_samples_train: int,
                           data_seed: int = 981648,
+                          pred_diff: bool = False,
 
                           # logging parameters
                           use_wandb: bool = False,
@@ -53,6 +54,7 @@ def regression_experiment(
                           normalize_likelihood_std: bool = False,
                           learn_likelihood_std: bool = False,
                           likelihood_exponent: float = 1.0,
+                          likelihood_reg: float = 0.0,
 
                           # SVGD parameters
                           num_particles: int = 20,
@@ -79,7 +81,8 @@ def regression_experiment(
     # provide data and sim
     x_train, y_train, x_test, y_test, sim_lf = provide_data_and_sim(
         data_source=data_source,
-        data_spec={'num_samples_train': num_samples_train},
+        data_spec={'num_samples_train': num_samples_train,
+                   'pred_diff': bool(pred_diff)},
         data_seed=data_seed)
 
     if model.endswith('_no_add_gp'):
@@ -123,12 +126,14 @@ def regression_experiment(
                          bandwidth_svgd=bandwidth_svgd,
                          weight_prior_std=weight_prior_std,
                          bias_prior_std=bias_prior_std,
+                         likelihood_reg=likelihood_reg,
                          **standard_model_params)
     elif model == 'BNN_FSVGD':
         model = BNN_FSVGD(domain=sim.domain,
                           num_particles=num_particles,
                           bandwidth_svgd=bandwidth_svgd,
                           bandwidth_gp_prior=bandwidth_gp_prior,
+                          likelihood_reg=likelihood_reg,
                           num_measurement_points=num_measurement_points,
                           **standard_model_params)
     elif 'BNN_FSVGD_SimPrior' in model:
@@ -169,7 +174,7 @@ def regression_experiment(
     model.fit(x_train, y_train, x_test, y_test, log_to_wandb=use_wandb, log_period=1000)
 
     # eval model
-    eval_metrics = model.eval(x_test, y_test)
+    eval_metrics = model.eval(x_test, y_test, per_dim_metrics=True)
     return eval_metrics
 
 
@@ -267,15 +272,17 @@ if __name__ == '__main__':
     parser.add_argument('--use_wandb', type=bool, default=False)
 
     # data parameters
-    parser.add_argument('--data_source', type=str, default='real_racecar')
+    parser.add_argument('--data_source', type=str, default='real_racecar_new')
+    parser.add_argument('--pred_diff', type=int, default=1)
     parser.add_argument('--num_samples_train', type=int, default=200)
     parser.add_argument('--data_seed', type=int, default=77698)
 
     # standard BNN parameters
-    parser.add_argument('--model', type=str, default='BNN_FSVGD_SimPrior_gp')
+    parser.add_argument('--model', type=str, default='BNN_FSVGD')
     parser.add_argument('--model_seed', type=int, default=892616)
     parser.add_argument('--likelihood_std', type=float, default=None)
-    parser.add_argument('--learn_likelihood_std', type=int, default=0)
+    parser.add_argument('--learn_likelihood_std', type=int, default=1)
+    parser.add_argument('--likelihood_reg', type=float, default=0.0)
     parser.add_argument('--data_batch_size', type=int, default=8)
     parser.add_argument('--num_train_steps', type=int, default=20000)
     parser.add_argument('--lr', type=float, default=1e-3)
