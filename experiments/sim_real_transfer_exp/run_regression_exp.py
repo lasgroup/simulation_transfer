@@ -3,20 +3,20 @@ import json
 import os
 import argparse
 import jax
+import jax.numpy as jnp
 import sys
 import copy
-import jax.numpy as jnp
-
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, BASE_DIR)
-
 import datetime
 import wandb
-from typing import Dict, List, Tuple, Union
-from experiments.util import Logger, hash_dict, NumpyArrayEncoder
+
+from typing import List, Union
+from experiments.util import hash_dict, NumpyArrayEncoder
 from experiments.data_provider import provide_data_and_sim, DATASET_CONFIGS
 from sim_transfer.models import BNN_SVGD, BNN_FSVGD, BNN_FSVGD_SimPrior, BNN_MMD_SimPrior, BNN_SVGD_DistillPrior
 from sim_transfer.sims.simulators import AdditiveSim, GaussianProcessSim
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, BASE_DIR)
 
 ACTIVATION_DICT = {
     'relu': jax.nn.relu,
@@ -213,7 +213,6 @@ def main(args):
         print(f'For {exp_params["data_source"]}, multiplying likelihood_std by OUTPUTSCALES_RCCAR. '
               f'Resulting added_gp_outputscale parameter: {exp_params["added_gp_outputscale"]}')
 
-
     from pprint import pprint
     print('\nExperiment parameters:')
     pprint(exp_params)
@@ -253,10 +252,10 @@ def main(args):
         from pprint import pprint
         pprint(results_dict)
     else:
-        exp_result_file = os.path.join(exp_result_folder, '%s.json'%exp_hash)
+        exp_result_file = os.path.join(exp_result_folder, f'{exp_hash}.json')
         with open(exp_result_file, 'w') as f:
             json.dump(results_dict, f, indent=4, cls=NumpyArrayEncoder)
-        print('Dumped results to %s'%exp_result_file)
+        print(f'Dumped results to {exp_result_file}')
 
     if use_wandb:
         wandb.finish()
