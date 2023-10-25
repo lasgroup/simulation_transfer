@@ -12,8 +12,9 @@ from experiments.hardware_experiments.api_experiments._default_params import SAC
 from sim_transfer.hardware.car_env import CarEnv
 from sim_transfer.rl.rl_on_offline_data import RLFromOfflineData
 from sim_transfer.sims.util import plot_rc_trajectory
+import pickle
 
-ENTITY = 'trevenl'
+ENTITY = 'sukhijab'
 
 
 class RunSpec(NamedTuple):
@@ -22,7 +23,9 @@ class RunSpec(NamedTuple):
 
 
 def run_all_hardware_experiments(project_name_load: str,
-                                 project_name_save: str | None = None, ):
+                                 project_name_save: str | None = None,
+                                 desired_config: dict | None = None,
+                                 ):
     api = wandb.Api()
     project_name = ENTITY + '/' + project_name_load
     local_dir = "saved_data"
@@ -40,18 +43,28 @@ def run_all_hardware_experiments(project_name_load: str,
     # Download all models
     runs = api.runs(project_name)
     for run in runs:
+        config = {k: v for k, v in run.config.items() if not k.startswith('_')}
+        correct_config = 1
+        if desired_config:
+            for key in desired_config.keys():
+                if config[key] != desired_config[key]:
+                    correct_config = 0
+                    break
+        if not correct_config:
+            continue
         for file in run.files():
             if file.name.startswith(dir_to_save):
                 file.download(replace=True, root=os.path.join(local_dir, run.group, run.id))
                 runs_spec.append(RunSpec(group_name=run.group,
                                          run_id=run.id))
+        break
 
     # Run all models on hardware
     for run_spec in runs_spec:
         # We open the file with pickle
         pre_path = os.path.join(local_dir, run_spec.group_name, run_spec.run_id)
-        policy_name = 'parameters.pkl'
-        bnn_name = 'bnn_model.pkl'
+        policy_name = 'models/parameters.pkl'
+        bnn_name = 'models/bnn_model.pkl'
 
         with open(os.path.join(pre_path, bnn_name), 'rb') as handle:
             bnn_model = pickle.load(handle)
@@ -255,20 +268,26 @@ def plot_error_on_the_trajectory(data):
 
 
 if __name__ == '__main__':
-    import pickle
+    # import pickle
 
-    filename_policy = 'parameters.pkl'
-    filename_bnn_model = 'bnn_model.pkl'
+    # filename_policy = 'parameters.pkl'
+    # filename_bnn_model = 'bnn_model.pkl'
 
-    with open(filename_bnn_model, 'rb') as handle:
-        bnn_model = pickle.load(handle)
+    # with open(filename_bnn_model, 'rb') as handle:
+    #    bnn_model = pickle.load(handle)
 
-    with open(filename_policy, 'rb') as handle:
-        policy_params = pickle.load(handle)
+    # with open(filename_policy, 'rb') as handle:
+     #   policy_params = pickle.load(handle)
 
-    observations_for_plotting, actions_for_plotting = run_with_learned_policy(bnn_model=bnn_model,
-                                                                              policy_params=policy_params,
-                                                                              project_name='Test',
-                                                                              group_name='MyGroup',
-                                                                              run_name='Butterfly'
-                                                                              )
+    # observations_for_plotting, actions_for_plotting = run_with_learned_policy(bnn_model=bnn_model,
+    #                                                                          policy_params=policy_params,
+    #                                                                          project_name='Test',
+    #                                                                          group_name='MyGroup',
+    #                                                                          run_name='Butterfly'
+    #                                                                          )
+
+    run_all_hardware_experiments(
+        project_name_load='OfflineRLHW_without_frame_stack',
+        project_name_save='OfflineRLHW_without_frame_stack_evaluation',
+        desired_config={'bandwidth_svgd': 0.2}
+    )

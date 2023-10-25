@@ -268,7 +268,7 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
             use_hf_sim = data_spec.get('use_hf_sim', True)
             car_id = data_spec.get('car_id', 2)
             num_stacked_actions = data_spec.get('num_stacked_actions', 3)
-            assert num_stacked_actions == 3, "We only support 3 stacked actions for now"
+            # assert num_stacked_actions == 3, "We only support 3 stacked actions for now"
 
             # Prepare simulator for bnn_training (the only difference is that here we can have also low fidelity sim)
             sim = RaceCarSim(encode_angle=True, use_blend=use_hf_sim, car_id=car_id)
@@ -278,7 +278,8 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
             # Now we prepare data
             # 1.st load data from the real car
             x_train, y_train, x_test, y_test = get_rccar_recorded_data_new(encode_angle=True, action_stacking=True,
-                                                                           action_delay=3, car_id=car_id)
+                                                                           action_delay=num_stacked_actions,
+                                                                           car_id=car_id)
 
             # We delete y_train, y_test and replace it with the simulator output
             del y_train, y_test
@@ -317,7 +318,7 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
             sim_for_sampling_data = RaceCarSim(encode_angle=True, use_blend=True, car_id=car_id)
             if num_stacked_actions > 0:
                 sim_for_sampling_data = StackedActionSimWrapper(sim_for_sampling_data,
-                                                                num_stacked_actions=3,
+                                                                num_stacked_actions=num_stacked_actions,
                                                                 action_size=2)
 
             y_train = sim_for_sampling_data._typical_f(x_train)
