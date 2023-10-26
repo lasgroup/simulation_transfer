@@ -26,6 +26,7 @@ def run_all_hardware_experiments(project_name_load: str,
                                  project_name_save: str | None = None,
                                  desired_config: dict | None = None,
                                  control_time_ms: float = 32,
+                                 download_data: bool = True,
                                  ):
     api = wandb.Api()
     project_name = ENTITY + '/' + project_name_load
@@ -39,26 +40,31 @@ def run_all_hardware_experiments(project_name_load: str,
         # if directory does not exist, create it
         os.makedirs(local_dir)
 
-    runs_spec = []
+    if download_data:
+        runs_spec = []
 
-    # Download all models
-    runs = api.runs(project_name)
-    for run in runs:
-        config = {k: v for k, v in run.config.items() if not k.startswith('_')}
-        correct_config = 1
-        if desired_config:
-            for key in desired_config.keys():
-                if config[key] != desired_config[key]:
-                    correct_config = 0
-                    break
-        if not correct_config:
-            continue
-        for file in run.files():
-            if file.name.startswith(dir_to_save):
-                file.download(replace=True, root=os.path.join(local_dir, run.group, run.id))
-                runs_spec.append(RunSpec(group_name=run.group,
-                                         run_id=run.id))
+        # Download all models
+        runs = api.runs(project_name)
+        for run in runs:
+            config = {k: v for k, v in run.config.items() if not k.startswith('_')}
+            correct_config = 1
+            if desired_config:
+                for key in desired_config.keys():
+                    if config[key] != desired_config[key]:
+                        correct_config = 0
+                        break
+            if not correct_config:
+                continue
+            for file in run.files():
+                if file.name.startswith(dir_to_save):
+                    file.download(replace=True, root=os.path.join(local_dir, run.group, run.id))
+                    runs_spec.append(RunSpec(group_name=run.group,
+                                             run_id=run.id))
 
+        with open(os.path.join(local_dir, 'runs_spec.pkl'), 'wb') as handle:
+            pickle.dump(runs_spec, handle)
+    with open(os.path.join(local_dir, 'runs_spec.pkl'), 'rb') as handle:
+        runs_spec = pickle.load(handle)
     # Run all models on hardware
     for run_spec in runs_spec:
         # We open the file with pickle
@@ -95,8 +101,16 @@ def run_with_learned_policy(policy_params,
                              ctrl_cost_weight=0.005,
                              margin_factor=20)
 
+    num_frame_stack = 3
+    action_dim = 2
+    state_dim = 6 + int(encode_angle)
+
     rl_from_offline_data = RLFromOfflineData(
         sac_kwargs=SAC_KWARGS,
+        x_train=jnp.zeros((10, state_dim + (num_frame_stack + 1) * action_dim)),
+        y_train=jnp.zeros((10, state_dim)),
+        x_test=jnp.zeros((10, state_dim + (num_frame_stack + 1)* action_dim)),
+        y_test=jnp.zeros((10, state_dim)),
         car_reward_kwargs=car_reward_kwargs)
     wandb.init(
         project=project_name,
@@ -119,9 +133,7 @@ def run_with_learned_policy(policy_params,
     t_prev = time.time()
     actions = []
 
-    num_frame_stack = 3
-    action_dim = 2
-    state_dim = 6 + int(encode_angle)
+
 
     stacked_actions = jnp.zeros(shape=(num_frame_stack * action_dim,))
     time_diffs = []
@@ -290,13 +302,13 @@ if __name__ == '__main__':
     with open(filename_bnn_model, 'rb') as handle:
         bnn_model = pickle.load(handle)
 
-    observations_for_plotting, actions_for_plotting = run_with_learned_policy(bnn_model=bnn_model,
-                                                                              policy_params=policy_params,
-                                                                              project_name='Test',
-                                                                              group_name='MyGroup',
-                                                                              run_name='Butterfly',
-                                                                              control_time_ms=32,
-                                                                              )
+    # observations_for_plotting, actions_for_plotting = run_with_learned_policy(bnn_model=bnn_model,
+    #                                                                          policy_params=policy_params,
+    #                                                                          project_name='Test',
+    #                                                                          group_name='MyGroup',
+    #                                                                          run_id='Butterfly',
+    #                                                                          control_time_ms=32,
+    #                                                                          )
 
     run_all_hardware_experiments(
         project_name_load='OfflineRLHW_without_frame_stack',
