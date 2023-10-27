@@ -308,7 +308,7 @@ class RLFromOfflineData:
 
     def evaluate_bnn_model_on_all_collected_data(self, bnn_model: BatchedNeuralNetworkModel):
         data_source: str = 'real_racecar_new_actionstack'
-        data_spec: dict = {'num_samples_train': 20000}
+        data_spec: dict = {'num_samples_train': 10000}
         x_data, y_data, _, _, sim = provide_data_and_sim(data_source=data_source,
                                                          data_spec=data_spec)
         if self.predict_difference:
