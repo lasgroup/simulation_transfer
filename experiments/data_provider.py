@@ -35,7 +35,7 @@ DEFAULTS_RACECAR = {
 
 DEFAULTS_RACECAR_REAL = {
     'sampling': 'consecutive',
-    'num_samples_test': 4000
+    'num_samples_test': 10000
 }
 
 _RACECAR_NOISE_STD_ENCODED = 20 * jnp.concatenate([DEFAULTS_RACECAR['obs_noise_std'][:2],
@@ -142,11 +142,11 @@ def get_rccar_recorded_data_new(encode_angle: bool = True, skip_first_n_points: 
         file_name = [f'recording_sep6_{i}.pickle' for i in
                      [1, 5, 12, 8, 3, 7, 10, 2, 4, 9, 6, 11]]
     elif car_id == 2:
-        num_train_traj = -2
+        num_train_traj = 12
         recordings_dir = os.path.join(DATA_DIR, 'recordings_rc_car_v2')
-        files = f'recording_car2_{data_date}_'
         import glob
-        file_name = glob.glob(recordings_dir + '/' + files+'*.pickle')
+        file_name = glob.glob(recordings_dir + '/*.pickle')
+
     else:
         raise ValueError(f"Unknown car id {car_id}")
 
