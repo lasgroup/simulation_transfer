@@ -35,7 +35,7 @@ DEFAULTS_RACECAR = {
 
 DEFAULTS_RACECAR_REAL = {
     'sampling': 'consecutive',
-    'num_samples_test': 10000
+    'num_samples_test': 4000
 }
 
 _RACECAR_NOISE_STD_ENCODED = 20 * jnp.concatenate([DEFAULTS_RACECAR['obs_noise_std'][:2],
@@ -132,7 +132,7 @@ def get_rccar_recorded_data(encode_angle: bool = True, skip_first_n_points: int 
 
 def get_rccar_recorded_data_new(encode_angle: bool = True, skip_first_n_points: int = 10,
                                 action_delay: int = 3, action_stacking: bool = False,
-                                car_id: int = 2):
+                                car_id: int = 2, data_date: str = 'oct27'):
     from brax.training.types import Transition
 
     assert car_id in [1, 2]
@@ -142,16 +142,17 @@ def get_rccar_recorded_data_new(encode_angle: bool = True, skip_first_n_points: 
         file_name = [f'recording_sep6_{i}.pickle' for i in
                      [1, 5, 12, 8, 3, 7, 10, 2, 4, 9, 6, 11]]
     elif car_id == 2:
-        num_train_traj = 10
+        num_train_traj = -2
         recordings_dir = os.path.join(DATA_DIR, 'recordings_rc_car_v2')
-        file_name = [f'recording_car2_sep29_{i:02d}.pickle' for i in
-                     [8, 1, 11, 4, 3, 13, 6, 12, 7, 14, 9, 5, 2, 10]]
+        files = f'recording_car2_{data_date}_'
+        import glob
+        file_name = glob.glob(recordings_dir + '/' + files+'*.pickle')
     else:
         raise ValueError(f"Unknown car id {car_id}")
 
     transitions = []
     for fn in file_name:
-        with open(recordings_dir + '/' + fn, 'rb') as f:
+        with open(fn, 'rb') as f:
             transitions.append(pickle.load(f))
 
     def prepare_rccar_data(transitions: Transition, encode_angles: bool = False, skip_first_n: int = 30,
