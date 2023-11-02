@@ -34,12 +34,12 @@ class ModelBasedRL:
                  return_best_policy: bool = True,
                  predict_difference: bool = True,
                  bnn_training_test_ratio: float = 0.2,
-                 num_frame_stack: int = 3,
+                 num_stacked_actions: int = 3,
                  max_num_episodes: int = 100,
                  ):
-        # Input dimension of bnn_model is u_dim + x_dim * num_frame_stack
+        # Input dimension of bnn_model is u_dim + x_dim * num_stacked_actions
 
-        self.num_frame_stack = num_frame_stack
+        self.num_stacked_actions = num_stacked_actions
         self.bnn_training_test_ratio = bnn_training_test_ratio
         self.predict_difference = predict_difference
         self.return_best_policy = return_best_policy
@@ -56,7 +56,7 @@ class ModelBasedRL:
         self.x_dim = self.gym_env.dim_state[0]
         self.u_dim = self.gym_env.dim_action[0]
 
-        dummy_obs = jnp.zeros(shape=(self.x_dim + self.u_dim * self.num_frame_stack,))
+        dummy_obs = jnp.zeros(shape=(self.x_dim + self.u_dim * self.num_stacked_actions,))
         self.dummy_sample = Transition(observation=dummy_obs,
                                        action=jnp.zeros(shape=(self.u_dim,)),
                                        reward=jnp.array(0.0),
@@ -97,7 +97,7 @@ class ModelBasedRL:
         system = LearnedCarSystem(model=bnn_model,
                                   include_noise=self.include_aleatoric_noise,
                                   predict_difference=self.predict_difference,
-                                  num_frame_stack=self.num_frame_stack,
+                                  num_frame_stack=self.num_stacked_actions,
                                   **self.car_reward_kwargs)
 
         key_train, key_simulate, *keys_sys_params = jr.split(key, 4)
@@ -130,7 +130,7 @@ class ModelBasedRL:
             new_init_state_bs, init_trans = self.init_states_buffer.sample(init_states_buffer_state)
             init_trans = jtu.tree_map(lambda x: x[0], init_trans)
             obs = init_trans.observation
-            # Obs represents samples from the init_states_buffer which is of dim x_dim + u_dim * num_frame_stack
+            # Obs represents samples from the init_states_buffer which is of dim x_dim + u_dim * num_stacked_actions
 
             sys_params = system.init_params(keys_sys_params[1])
 
@@ -169,7 +169,7 @@ class ModelBasedRL:
 
         transitions = []
         transitions_for_plotting = []
-        actions_buffer = jnp.zeros(shape=(self.u_dim * self.num_frame_stack))
+        actions_buffer = jnp.zeros(shape=(self.u_dim * self.num_stacked_actions))
         obs = self.gym_env.reset(key)
         done = False
         while not done:
@@ -182,7 +182,7 @@ class ModelBasedRL:
                                                        discount=self.discounting,
                                                        next_observation=next_obs))
             # Prepare new actions buffer
-            if self.num_frame_stack > 0:
+            if self.num_stacked_actions > 0:
                 next_actions_buffer = jnp.concatenate([actions_buffer[self.u_dim:], action], axis=-1)
             else:
                 next_actions_buffer = jnp.zeros(shape=(0,))
@@ -353,7 +353,7 @@ if __name__ == '__main__':
     ENCODE_ANGLE = True
     ctrl_cost_weight = 0.005
     seed = 0
-    num_frame_stack = 3
+    num_stacked_actions = 3
     gym_env = RCCarSimEnv(encode_angle=ENCODE_ANGLE,
                           action_delay=0.07,
                           use_tire_model=True,
@@ -363,7 +363,7 @@ if __name__ == '__main__':
 
     x_dim = gym_env.dim_state[0]
     u_dim = gym_env.dim_action[0]
-    bnn = BNN_SVGD(x_dim + num_frame_stack * u_dim + u_dim,
+    bnn = BNN_SVGD(x_dim + num_stacked_actions * u_dim + u_dim,
                    x_dim,
                    rng_key=jr.PRNGKey(seed),
                    num_train_steps=20000,
@@ -390,7 +390,7 @@ if __name__ == '__main__':
                                   include_aleatoric_noise=include_aleatoric_noise,
                                   car_reward_kwargs=car_reward_kwargs,
                                   sac_kwargs=sac_kwargs,
-                                  num_frame_stack=num_frame_stack,
+                                  num_stacked_actions=num_stacked_actions,
                                   )
 
     model_based_rl.run_episodes(30, jr.PRNGKey(seed))

@@ -5,36 +5,30 @@ PROJECT_NAME = 'FirstExperimentDelay'
 
 applicable_configs = {
     'horizon_len': [2 ** 6],
-    'seed': [0, 1],
+    'seed': list(range(5)),
     'project_name': [PROJECT_NAME],
     'num_episodes': [40],
+    'bnn_train_steps': [40_000],
     'sac_num_env_steps': [1_000_000],
-    'bnn_train_steps': [20_000, 40_000],
-    'learnable_likelihood_std': ['yes', 'no'],
-    'reset_bnn': ['no', 'yes'],
-    'use_sim_prior': [0],
+    'learnable_likelihood_std': [1],
+    'reset_bnn': [0, 1],
+    'sim_prior': ['none', 'high_fidelity', 'low_fidelity'],
     'include_aleatoric_noise': [1],
     'best_bnn_model': [1],
     'best_policy': [1],
-    'margin_factor': [20.0],
     'predict_difference': [1],
-    'num_frame_stack': [2, 3],
-    'delay': [0.09],
+    'margin_factor': [20.0],
+    'ctrl_cost_weight': [0.005],
+    'num_stacked_actions': [3],
+    'delay': [3 / 30],
+    'max_replay_size_true_data_buffer': [10_000],
+    'likelihood_exponent': [0.5],
+    'data_batch_size': [32],
+    'bandwidth_svgd': [0.2],
+    'length_scale_aditive_sim_gp': [10.0],
+    'num_f_samples': [512],
+    'num_measurement_points': [16],
 }
-
-
-# applicable_configs = {
-#     'horizon_len': [8],
-#     'seed': [0],
-#     'project_name': ['TestModelBasedRLSimTransfer'],
-#     'num_episodes': [40],
-#     'sac_num_env_steps': [2000],
-#     'bnn_train_steps': [2000],
-#     'learnable_likelihood_std': ['no'],
-#     'reset_bnn': ['no'],
-#     'use_sim_prior': [0],
-#     'include_aleatoric_noise': [1],
-# }
 
 
 def main():
