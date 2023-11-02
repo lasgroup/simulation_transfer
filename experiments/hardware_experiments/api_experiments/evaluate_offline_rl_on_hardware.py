@@ -43,8 +43,8 @@ def run_all_hardware_experiments(project_name_load: str,
         for file in run.files():
             if file.name.startswith(dir_to_save):
                 file.download(replace=True, root=os.path.join(local_dir, run.group, run.id))
-                runs_spec.append(RunSpec(group_name=run.group,
-                                         run_id=run.id))
+        runs_spec.append(RunSpec(group_name=run.group,
+                                 run_id=run.id))
 
     # Run all models on hardware
     for run_spec in runs_spec:
