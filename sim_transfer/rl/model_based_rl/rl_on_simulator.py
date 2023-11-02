@@ -182,8 +182,10 @@ class ModelBasedRL:
                                                        discount=self.discounting,
                                                        next_observation=next_obs))
             # Prepare new actions buffer
-            next_actions_buffer = jnp.roll(actions_buffer, shift=self.u_dim)
-            next_actions_buffer = next_actions_buffer.at[:self.u_dim].set(action)
+            if self.num_frame_stack > 0:
+                next_actions_buffer = jnp.concatenate([actions_buffer[self.u_dim:], action], axis=-1)
+            else:
+                next_actions_buffer = jnp.zeros(shape=(0,))
 
             transitions.append(Transition(observation=jnp.concatenate([obs, actions_buffer], axis=-1),
                                           action=action,
