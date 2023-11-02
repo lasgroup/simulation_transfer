@@ -308,7 +308,7 @@ class RLFromOfflineData:
 
     def evaluate_bnn_model_on_all_collected_data(self, bnn_model: BatchedNeuralNetworkModel):
         data_source: str = 'real_racecar_new_actionstack'
-        data_spec: dict = {'num_samples_train': 10000}
+        data_spec: dict = {'num_samples_train': 20000}
         x_data, y_data, _, _, sim = provide_data_and_sim(data_source=data_source,
                                                          data_spec=data_spec)
         if self.predict_difference:
@@ -369,7 +369,8 @@ class RLFromOfflineData:
             sim = RCCarSimEnv(encode_angle=True, use_tire_model=True,
                               action_delay=1/30 * self.num_frame_stack,
                               margin_factor=self.car_reward_kwargs['margin_factor'],
-                              ctrl_cost_weight=self.car_reward_kwargs['ctrl_cost_weight'], )
+                              ctrl_cost_weight=self.car_reward_kwargs['ctrl_cost_weight'],
+                              ctrl_diff_weight=self.car_reward_kwargs['ctrl_diff_weight'])
             obs = sim.reset(key)
             done = False
             transitions_for_plotting = []

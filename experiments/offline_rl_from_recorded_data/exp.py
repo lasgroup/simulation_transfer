@@ -74,9 +74,9 @@ def experiment(horizon_len: int,
                       episode_length_eval=200,
                       action_repeat=1,
                       discounting=0.99,
-                      lr_policy=3e-4,
-                      lr_alpha=3e-4,
-                      lr_q=3e-4,
+                      lr_policy=1e-4,
+                      lr_alpha=1e-4,
+                      lr_q=1e-4,
                       num_envs=NUM_ENVS,
                       batch_size=64,
                       grad_updates_per_step=NUM_ENV_STEPS_BETWEEN_UPDATES * NUM_ENVS,
@@ -124,7 +124,7 @@ def experiment(horizon_len: int,
                        input_from_recorded_data=input_from_recorded_data
                        )
 
-    total_config = SAC_KWARGS | config_dict
+    total_config = SAC_KWARGS | config_dict | car_reward_kwargs
     group = group_name + '_' + str(likelihood_exponent)
     wandb.init(
         dir='/cluster/scratch/' + ENTITY,
@@ -197,7 +197,7 @@ def experiment(horizon_len: int,
             function_sim=sim,
             score_estimator='gp',
             num_train_steps=bnn_train_steps,
-            num_f_samples=256,
+            num_f_samples=512,
             bandwidth_svgd=bandwidth_svgd,
             num_measurement_points=num_measurement_points,
         )
@@ -306,7 +306,7 @@ if __name__ == '__main__':
     parser.add_argument('--predict_difference', type=int, default=0)
     parser.add_argument('--ctrl_cost_weight', type=float, default=0.005)
     parser.add_argument('--ctrl_diff_weight', type=float, default=0.01)
-    parser.add_argument('--num_offline_collected_transitions', type=int, default=10_000)
+    parser.add_argument('--num_offline_collected_transitions', type=int, default=20_000)
     parser.add_argument('--use_sim_prior', type=int, default=0)
     parser.add_argument('--use_grey_box', type=int, default=0)
     parser.add_argument('--high_fidelity', type=int, default=0)
