@@ -29,13 +29,13 @@ class ModelBasedRL:
                  include_aleatoric_noise: bool = True,
                  car_reward_kwargs: dict = None,
                  sac_kwargs: dict = None,
-                 discounting: chex.Array = jnp.array(0.99),
                  reset_bnn: bool = True,
                  return_best_bnn: bool = True,
                  return_best_policy: bool = True,
                  predict_difference: bool = True,
                  bnn_training_test_ratio: float = 0.2,
-                 num_frame_stack: int = 1,
+                 num_frame_stack: int = 3,
+                 max_num_episodes: int = 100,
                  ):
         # Input dimension of bnn_model is u_dim + x_dim * num_frame_stack
 
@@ -45,12 +45,13 @@ class ModelBasedRL:
         self.return_best_policy = return_best_policy
         self.return_best_bnn = return_best_bnn
         self.reset_bnn = reset_bnn
-        self.discounting = discounting
+        self.discounting = sac_kwargs['discounting']
         self.car_reward_kwargs = car_reward_kwargs
         self.sac_kwargs = sac_kwargs
         self.include_aleatoric_noise = include_aleatoric_noise
         self.gym_env = gym_env
         self.bnn_model = bnn_model
+        self.max_num_episodes = max_num_episodes
 
         self.x_dim = self.gym_env.dim_state[0]
         self.u_dim = self.gym_env.dim_action[0]
@@ -68,7 +69,7 @@ class ModelBasedRL:
             sample_batch_size=1)
 
         self.init_states_buffer = UniformSamplingQueue(
-            max_replay_size=100,  # Should be larger than the number of episodes we run
+            max_replay_size=max_num_episodes,
             dummy_data_sample=self.dummy_sample,
             sample_batch_size=1)
 
@@ -81,6 +82,14 @@ class ModelBasedRL:
                      init_states_buffer_state: ReplayBufferState,
                      key: chex.PRNGKey,
                      episode_idx: int) -> Callable[[chex.Array], chex.Array]:
+        """
+        We train SAC policy on the learned bnn_model, where initial states are sampled from the true_data_buffer.
+        If episode_idx == 0, we train the policy on the true system only for 10_000 steps.
+        If episode_idx > 0, we test the policy on the learned model for entire horizon.
+        TODO[Lenart]: Implement testing the policy on all initial conditions observed so far
+
+        """
+
         _sac_kwargs = self.sac_kwargs
         if episode_idx == 0:
             _sac_kwargs = copy.deepcopy(_sac_kwargs)
@@ -154,6 +163,10 @@ class ModelBasedRL:
                               episode_idx: int,
                               policy: Callable[[chex.Array], chex.Array],
                               key: chex.PRNGKey) -> Transition:
+        """
+        We simulate on the true system with the policy and collect data for the true_data_buffer.
+        """
+
         transitions = []
         transitions_for_plotting = []
         actions_buffer = jnp.zeros(shape=(self.u_dim * self.num_frame_stack))
@@ -201,6 +214,9 @@ class ModelBasedRL:
     def train_transition_model(self,
                                true_buffer_state: ReplayBufferState,
                                key: chex.PRNGKey, ) -> BatchedNeuralNetworkModel:
+        """
+        We train the transition model on the true data buffer.
+        """
         # Prepare data
         buffer_size = self.true_data_buffer.size(true_buffer_state)
         all_data = true_buffer_state.data[:buffer_size]
@@ -255,6 +271,7 @@ class ModelBasedRL:
         return new_bnn_model, new_true_buffer_state, init_states_buffer_state
 
     def run_episodes(self, num_episodes: int, key: chex.PRNGKey):
+        assert num_episodes <= self.max_num_episodes, f"num_episodes must be <= {self.max_num_episodes}"
         key, key_init_buffer, key_init_buffer_init_states = jr.split(key, 3)
         true_buffer_state = self.true_data_buffer.init(key_init_buffer)
         init_states_buffer_state = self.init_states_buffer.init(key_init_buffer_init_states)
