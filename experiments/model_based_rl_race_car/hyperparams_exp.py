@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import wandb
 
 from sim_transfer.models.bnn_svgd import BNN_SVGD
-from sim_transfer.rl.model_based_rl.main import ModelBasedRL
+from sim_transfer.rl.model_based_rl.rl_on_simulator import ModelBasedRL
 from sim_transfer.sims.envs import RCCarSimEnv
 
 

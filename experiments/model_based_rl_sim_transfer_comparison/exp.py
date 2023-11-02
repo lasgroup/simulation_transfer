@@ -7,7 +7,7 @@ import wandb
 
 from experiments.data_provider import _RACECAR_NOISE_STD_ENCODED
 from sim_transfer.models import BNN_SVGD, BNN_FSVGD_SimPrior
-from sim_transfer.rl.model_based_rl.main import ModelBasedRL
+from sim_transfer.rl.model_based_rl.rl_on_simulator import ModelBasedRL
 from sim_transfer.sims.envs import RCCarSimEnv
 from sim_transfer.sims.simulators import RaceCarSim, PredictStateChangeWrapper
 
