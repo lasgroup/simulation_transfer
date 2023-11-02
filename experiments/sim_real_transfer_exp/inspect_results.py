@@ -43,6 +43,10 @@ def different_method_plot(df_agg: pd.DataFrame, metric: str = 'nll', display: bo
 def main(args, drop_nan=False):
     df_full, param_names = collect_exp_results(exp_name=args.exp_name)
     df_full = df_full[df_full['data_source'] == args.data_source]
+    #df_full = df_full[df_full['lea'] == args.data_source]
+
+    df_full['mae_pose'] = (df_full['per_dim_metrics/mae_0'] + df_full['per_dim_metrics/mae_1'] +
+                           0.5 * (df_full['per_dim_metrics/mae_2'] + 0.5 * df_full['per_dim_metrics/mae_3'])) / 3
 
     for col in ['bandwidth_kde', 'bandwidth_ssge', 'bandwidth_score_estim']:
         if col in df_full.columns:
@@ -92,13 +96,13 @@ def main(args, drop_nan=False):
     print('Models:', set(df_agg['model']))
 
     different_method_plot(df_agg, metric='nll')
-    different_method_plot(df_agg, metric='rmse')
+    different_method_plot(df_agg, metric='mae_pose')
 
-    df_method = df_agg[(df_agg['model'] == 'BNN_FSVGD_SimPrior_gp')]
+    df_method = df_agg[(df_agg['model'] == 'BNN_FSVGD_SimPrior_gp_no_add_gp')]
 
     #df_method = df_method[df_method['bandwidth_score_estim'] > 0.1]
 
-    metric = 'rmse'
+    metric = 'nll'
     for param in ['num_measurement_points', 'added_gp_lengthscale', 'added_gp_outputscale']:# ['num_f_samples', 'bandwidth_score_estim', 'bandwidth_svgd', 'num_measurement_points']:
         plt.scatter(df_method[param], df_method[(metric, 'mean')])
         plt.xlabel(param)
@@ -166,7 +170,7 @@ def main(args, drop_nan=False):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Inspect results of a regression experiment.')
-    parser.add_argument('--exp_name', type=str, default='aug21_str')
-    parser.add_argument('--data_source', type=str, default='real_racecar')
+    parser.add_argument('--exp_name', type=str, default='sep12_str_std')
+    parser.add_argument('--data_source', type=str, default='real_racecar_new')
     args = parser.parse_args()
     main(args)

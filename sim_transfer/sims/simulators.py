@@ -1,5 +1,5 @@
 from functools import cached_property
-from typing import Callable, Tuple, Dict, Optional, List, Union
+from typing import Callable, Tuple, Dict, Optional, List, Union, NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -80,6 +80,12 @@ class FunctionSimulator:
     def _typical_f(self, x: jnp.array) -> jnp.array:
         raise NotImplementedError
 
+    def evaluate_sim(self, x: jnp.array, params: NamedTuple) -> jnp.array:
+        raise NotImplementedError
+
+    def init_params(self):
+        raise NotImplementedError
+
     def _add_observation_noise(self, f_vals: jnp.ndarray, obs_noise_std: Union[jnp.ndarray, float],
                                rng_key: jax.random.PRNGKey) -> jnp.ndarray:
         y = f_vals + obs_noise_std * jax.random.normal(rng_key, shape=f_vals.shape)
@@ -101,6 +107,10 @@ class AdditiveSim(FunctionSimulator):
         self.base_sims = base_sims
         assert take_domain_of_idx < len(base_sims), 'take_domain_of_idx must be a valid index of base_sims'
         self.take_domain_of_idx = take_domain_of_idx
+
+    def init_params(self):
+        params = {f'sim_{index}': sim.init_params() for index, sim in enumerate(self.base_sims)}
+        return params
 
     def sample_function_vals(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
         rng_keys = jax.random.split(rng_key, len(self.base_sims))
@@ -128,6 +138,12 @@ class AdditiveSim(FunctionSimulator):
 
     def _typical_f(self, x: jnp.array) -> jnp.array:
         raise NotImplementedError
+
+    def evaluate_sim(self, x: jnp.array, params: NamedTuple) -> jnp.array:
+        f_samples_per_sim = [sim.evaluate_sim(x=x, params=params[f'sim_{index}'])
+                             for index, sim in enumerate(self.base_sims)]
+        f_samples = jnp.sum(jnp.stack(f_samples_per_sim, axis=0), axis=0)
+        return f_samples
 
 
 class GaussianProcessSim(FunctionSimulator):
@@ -185,6 +201,9 @@ class GaussianProcessSim(FunctionSimulator):
         f_samples = gp_dist.sample(sample_shape=(num_samples,), seed=rng_key)
         return f_samples
 
+    def init_params(self):
+        return None
+
     def _gp_marginal_dist(self, x: jnp.ndarray, lengthscale: float, output_scale: float, jitter: float = 1e-5) \
             -> tfd.MultivariateNormalFullCovariance:
         """ Returns the marginal distribution of a GP with SE kernel """
@@ -223,6 +242,10 @@ class GaussianProcessSim(FunctionSimulator):
     def _typical_f(self, x: jnp.array) -> jnp.array:
         return jnp.repeat(self.mean_fn(x)[:, None], self.output_size, axis=-1)
 
+    def evaluate_sim(self, x: jnp.array, params: NamedTuple) -> jnp.array:
+        # params should be None
+        return self._typical_f(x)
+
     @staticmethod
     def _zero_mean(x: jnp.array) -> jnp.array:
         return jnp.zeros((x.shape[0],))
@@ -247,6 +270,9 @@ class EncodeAngleSimWrapper(FunctionSimulator):
         self.angle_idx = angle_idx
         super().__init__(input_size=base_sim.input_size, output_size=base_sim.output_size + 1)
 
+    def init_params(self):
+        return self.base_sim.init_params()
+
     def sample_function_vals(self, *args, **kwargs) -> jnp.ndarray:
         f_samples = self.base_sim.sample_function_vals(*args, **kwargs)
         f_samples = encode_angles(f_samples, angle_idx=self.angle_idx)
@@ -255,6 +281,11 @@ class EncodeAngleSimWrapper(FunctionSimulator):
 
     def _typical_f(self, x: jnp.array) -> jnp.array:
         f = self.base_sim._typical_f(x)
+        f = encode_angles(f, angle_idx=self.angle_idx)
+        return f
+
+    def evaluate_sim(self, x: jnp.array, params: NamedTuple) -> jnp.array:
+        f = self.base_sim.evaluate_sim(x, params)
         f = encode_angles(f, angle_idx=self.angle_idx)
         return f
 
@@ -575,6 +606,13 @@ class PendulumSim(FunctionSimulator):
         typical_params = self._typical_params_hf if self.high_fidelity else self._typical_params_lf
         return self.model.next_step(x=s, u=u, params=typical_params)
 
+    def evaluate_sim(self, x: jnp.array, params: NamedTuple) -> jnp.array:
+        s, u = self._split_state_action(x)
+        return self.model.next_step(x=s, u=u, params=params)
+
+    def init_params(self):
+        return self._typical_params_hf if self.high_fidelity else self._typical_params_lf
+
 
 class PendulumBiModalSim(PendulumSim):
 
@@ -737,6 +775,9 @@ class RaceCarSim(FunctionSimulator):
         # setup domain
         self._domain = self._create_domain(lower=self._domain_lower, upper=self._domain_upper)
 
+    def init_params(self):
+        return self._typical_params
+
     def sample_function_vals(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
         assert x.ndim == 2 and x.shape[-1] == self.input_size
         params = self.model.sample_params_uniform(rng_key, sample_shape=(num_samples,),
@@ -799,6 +840,15 @@ class RaceCarSim(FunctionSimulator):
     def _typical_f(self, x: jnp.array) -> jnp.array:
         s, u = self._split_state_action(x)
         f = jax.vmap(self.model.next_step, in_axes=(0, 0, None))(s, u, self._typical_params)
+        if self.only_pose:
+            f = f[..., :-3]
+        elif self.no_angular_velocity:
+            f = f[..., :-1]
+        return f
+
+    def evaluate_sim(self, x: jnp.array, params: NamedTuple) -> jnp.array:
+        s, u = self._split_state_action(x)
+        f = jax.vmap(self.model.next_step, in_axes=(0, 0, None))(s, u, params)
         if self.only_pose:
             f = f[..., :-3]
         elif self.no_angular_velocity:
@@ -888,6 +938,13 @@ class PredictStateChangeWrapper(FunctionSimulator):
         x_next = self._function_simulator._typical_f(x)
         return x_next - x[..., :self._x_dim]
 
+    def evaluate_sim(self, x: jnp.array, params: NamedTuple) -> jnp.array:
+        x_next = self._function_simulator.evaluate_sim(x, params)
+        return x_next - x[..., :self._x_dim]
+
+    def init_params(self):
+        return self._function_simulator.init_params()
+
     @property
     def normalization_stats(self) -> Dict[str, jnp.ndarray]:
         old_stats = self._function_simulator.normalization_stats
@@ -970,6 +1027,14 @@ class StackedActionSimWrapper(FunctionSimulator):
 
     def _add_observation_noise(self, *args, **kwargs) -> jnp.ndarray:
         return self._function_simulator._add_observation_noise(*args, **kwargs)
+
+    def init_params(self):
+        return self._function_simulator.init_params()
+
+    def evaluate_sim(self, x: jnp.array, params: NamedTuple) -> jnp.array:
+        x = x[..., :(self.obs_size + self.action_size)]
+        fun_vals = self._function_simulator.evaluate_sim(x, params)
+        return fun_vals
 
 
 if __name__ == '__main__':

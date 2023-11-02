@@ -10,6 +10,8 @@ from experiments.util import load_csv_recordings
 from sim_transfer.sims.car_sim_config import OBS_NOISE_STD_SIM_CAR
 from sim_transfer.sims.simulators import PredictStateChangeWrapper, StackedActionSimWrapper
 from sim_transfer.sims.util import encode_angles as encode_angles_fn
+from sim_transfer.sims.util import decode_angles_numpy as decode_angles_fn
+
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
 
@@ -132,7 +134,7 @@ def get_rccar_recorded_data(encode_angle: bool = True, skip_first_n_points: int 
 
 def get_rccar_recorded_data_new(encode_angle: bool = True, skip_first_n_points: int = 10,
                                 action_delay: int = 3, action_stacking: bool = False,
-                                car_id: int = 2):
+                                car_id: int = 2, key_data: jax.random.PRNGKeyArray = jax.random.PRNGKey(0)):
     from brax.training.types import Transition
 
     assert car_id in [1, 2]
@@ -142,17 +144,35 @@ def get_rccar_recorded_data_new(encode_angle: bool = True, skip_first_n_points: 
         file_name = [f'recording_sep6_{i}.pickle' for i in
                      [1, 5, 12, 8, 3, 7, 10, 2, 4, 9, 6, 11]]
     elif car_id == 2:
-        num_train_traj = 10
+        num_train_traj = 12
         recordings_dir = os.path.join(DATA_DIR, 'recordings_rc_car_v2')
-        file_name = [f'recording_car2_sep29_{i:02d}.pickle' for i in
-                     [8, 1, 11, 4, 3, 13, 6, 12, 7, 14, 9, 5, 2, 10]]
+        import glob
+        file_name = glob.glob(recordings_dir + '/*.pickle')
+
     else:
         raise ValueError(f"Unknown car id {car_id}")
 
     transitions = []
     for fn in file_name:
-        with open(recordings_dir + '/' + fn, 'rb') as f:
-            transitions.append(pickle.load(f))
+        with open(fn, 'rb') as f:
+            data = pickle.load(f)
+            assert (data.observation.shape[-1] == 13 or data.observation.shape[-1] == 12), "state must be 12D or 13D"
+            if data.observation.shape[-1] == 13:
+                x = decode_angles_fn(data.observation, angle_idx=2)
+                x_next = decode_angles_fn(data.next_observation, angle_idx=2)
+                data = Transition(
+                    observation=x,
+                    action=data.action,
+                    reward=data.reward,
+                    discount=data.discount,
+                    next_observation=x_next,
+                    extras=data.extras,
+                )
+            transitions.append(data)
+
+    indices = jnp.arange(0, len(transitions))
+    indices = jax.random.shuffle(key=key_data, x=indices)
+    transitions = [transitions[idx] for idx in indices]
 
     def prepare_rccar_data(transitions: Transition, encode_angles: bool = False, skip_first_n: int = 30,
                            action_delay: int = 3, action_stacking: bool = False):
@@ -175,20 +195,23 @@ def get_rccar_recorded_data_new(encode_angle: bool = True, skip_first_n_points: 
             assert u.shape[-1] == 2
 
         x = transitions.observation[:, :6]
+        y = transitions.next_observation[: , :6]
 
         # project theta into [-\pi, \pi]
         x[:, 2] = (x[:, 2] + jnp.pi) % (2 * jnp.pi) - jnp.pi
+        y[:, 2] = (y[:, 2] + jnp.pi) % (2 * jnp.pi) - jnp.pi
         if encode_angles:
             x = encode_angles_fn(x, angle_idx=2)
+            y = encode_angles_fn(y, angle_idx=2)
 
         # remove first n steps (since often not much is happening)
-        x, u = x[skip_first_n:], u[skip_first_n:]
-
-        x_data = jnp.concatenate([x[:-1], u[:-1]], axis=-1)  # current state + action
-        y_data = x[1:]  # next state
+        x, u, y = x[skip_first_n:], u[skip_first_n:], y[skip_first_n:]
+        x_data = jnp.concatenate([x, u], axis=-1)  # current state + action
+        y_data = y # next state
         assert x_data.shape[0] == y_data.shape[0]
         assert x_data.shape[1] - (2 * (1 + int(action_stacking) * action_delay)) == y_data.shape[1]
         return x_data, y_data
+
 
     prep_fn = partial(prepare_rccar_data, encode_angles=encode_angle, skip_first_n=skip_first_n_points,
                       action_delay=action_delay, action_stacking=action_stacking)
@@ -199,7 +222,7 @@ def get_rccar_recorded_data_new(encode_angle: bool = True, skip_first_n_points: 
 
 def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed: int = 845672):
     # load data
-    key_train, key_test = jax.random.split(jax.random.PRNGKey(data_seed), 2)
+    key_train, key_test, key_data = jax.random.split(jax.random.PRNGKey(data_seed), 3)
     if data_source == 'sinusoids1d' or data_source == 'sinusoids2d':
         from sim_transfer.sims.simulators import SinusoidsSim
         defaults = DEFAULTS_SINUSOIDS
@@ -268,7 +291,7 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
             use_hf_sim = data_spec.get('use_hf_sim', True)
             car_id = data_spec.get('car_id', 2)
             num_stacked_actions = data_spec.get('num_stacked_actions', 3)
-            assert num_stacked_actions == 3, "We only support 3 stacked actions for now"
+            # assert num_stacked_actions == 3, "We only support 3 stacked actions for now"
 
             # Prepare simulator for bnn_training (the only difference is that here we can have also low fidelity sim)
             sim = RaceCarSim(encode_angle=True, use_blend=use_hf_sim, car_id=car_id)
@@ -278,7 +301,8 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
             # Now we prepare data
             # 1.st load data from the real car
             x_train, y_train, x_test, y_test = get_rccar_recorded_data_new(encode_angle=True, action_stacking=True,
-                                                                           action_delay=3, car_id=car_id)
+                                                                           action_delay=num_stacked_actions,
+                                                                           car_id=car_id, key_data=key_data)
 
             # We delete y_train, y_test and replace it with the simulator output
             del y_train, y_test
@@ -317,7 +341,7 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
             sim_for_sampling_data = RaceCarSim(encode_angle=True, use_blend=True, car_id=car_id)
             if num_stacked_actions > 0:
                 sim_for_sampling_data = StackedActionSimWrapper(sim_for_sampling_data,
-                                                                num_stacked_actions=3,
+                                                                num_stacked_actions=num_stacked_actions,
                                                                 action_size=2)
 
             y_train = sim_for_sampling_data._typical_f(x_train)
@@ -366,11 +390,13 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
 
         if data_source.startswith('real_racecar_new_actionstack'):
             x_train, y_train, x_test, y_test = get_rccar_recorded_data_new(encode_angle=True, action_stacking=True,
-                                                                           action_delay=3, car_id=car_id)
+                                                                           action_delay=3, car_id=car_id,
+                                                                           key_data=key_data)
             sim_lf = StackedActionSimWrapper(sim_lf, num_stacked_actions=3, action_size=2)
         elif data_source.startswith('real_racecar_new'):
             x_train, y_train, x_test, y_test = get_rccar_recorded_data_new(encode_angle=True, action_stacking=False,
-                                                                           action_delay=3, car_id=car_id)
+                                                                           action_delay=3, car_id=car_id,
+                                                                           key_data=key_data)
         else:
             x_train, y_train, x_test, y_test = get_rccar_recorded_data(encode_angle=True)
 

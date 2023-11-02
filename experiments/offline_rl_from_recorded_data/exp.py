@@ -5,12 +5,11 @@ import jax.random as jr
 import wandb
 
 from experiments.data_provider import provide_data_and_sim, _RACECAR_NOISE_STD_ENCODED
-from grey_box_car_model import GreyBoxSVGDCarModel
-from sim_transfer.models import BNN_FSVGD_SimPrior, BNN_FSVGD
+from sim_transfer.models import BNN_FSVGD_SimPrior, BNN_FSVGD, BNN_FSVGD_GreyBox
 from sim_transfer.rl.rl_on_offline_data import RLFromOfflineData
 from sim_transfer.sims.simulators import AdditiveSim, PredictStateChangeWrapper, GaussianProcessSim
 
-ENTITY = 'trevenl'
+ENTITY = 'sukhijab'
 
 
 def experiment(horizon_len: int,
@@ -43,11 +42,12 @@ def experiment(horizon_len: int,
                bandwidth_svgd: float = 2.0,
                num_epochs: int = 50,
                max_train_steps: int = 100_000,
+               min_train_steps: int = 40_000,
                length_scale_aditive_sim_gp: float = 1.0,
                input_from_recorded_data: int = 1,
                ):
     bnn_train_steps = min(num_epochs * num_offline_collected_transitions, max_train_steps)
-
+    bnn_train_steps = max(bnn_train_steps, min_train_steps)
     if not data_from_simulation:
         assert num_frame_stack == 3, "Frame stacking has to be set to 3 if not using simulation data"
     config_dict = dict(use_sim_prior=use_sim_prior,
@@ -119,6 +119,7 @@ def experiment(horizon_len: int,
                        bandwidth_svgd=bandwidth_svgd,
                        num_epochs=num_epochs,
                        max_train_steps=max_train_steps,
+                       min_train_steps=min_train_steps,
                        length_scale_aditive_sim_gp=length_scale_aditive_sim_gp,
                        input_from_recorded_data=input_from_recorded_data
                        )
@@ -143,7 +144,7 @@ def experiment(horizon_len: int,
             data_spec={'num_samples_train': num_offline_collected_transitions,
                        'use_hf_sim': bool(high_fidelity),
                        'sampling': 'iid',
-                       'num_stacked_actions': 3},
+                       'num_stacked_actions': num_frame_stack},
             data_seed=int(int_data_seed),
         )
 
@@ -153,6 +154,7 @@ def experiment(horizon_len: int,
             data_spec={'num_samples_train': num_offline_collected_transitions,
                        'use_hf_sim': bool(high_fidelity),
                        'sampling': 'iid',
+                       'num_stacked_actions': num_frame_stack,
                        },
             data_seed=int(int_data_seed), )
 
@@ -201,11 +203,12 @@ def experiment(horizon_len: int,
         )
     elif use_grey_box:
         if predict_difference:
-            raise NotImplementedError("Predicting difference not implemented for grey box model")
-        model = GreyBoxSVGDCarModel(
+            sim = PredictStateChangeWrapper(sim)
+        model = BNN_FSVGD_GreyBox(
             **standard_params,
-            high_fidelity=bool(high_fidelity),
+            sim=sim,
             num_train_steps=bnn_train_steps,
+            bandwidth_svgd=bandwidth_svgd,
         )
     else:
         model = BNN_FSVGD(
@@ -303,7 +306,7 @@ if __name__ == '__main__':
     parser.add_argument('--predict_difference', type=int, default=0)
     parser.add_argument('--ctrl_cost_weight', type=float, default=0.005)
     parser.add_argument('--ctrl_diff_weight', type=float, default=0.01)
-    parser.add_argument('--num_offline_collected_transitions', type=int, default=20_000)
+    parser.add_argument('--num_offline_collected_transitions', type=int, default=10_000)
     parser.add_argument('--use_sim_prior', type=int, default=0)
     parser.add_argument('--use_grey_box', type=int, default=0)
     parser.add_argument('--high_fidelity', type=int, default=0)
@@ -315,11 +318,12 @@ if __name__ == '__main__':
     parser.add_argument('--eval_on_all_offline_data', type=int, default=1)
     parser.add_argument('--train_sac_only_from_init_states', type=int, default=0)
     parser.add_argument('--likelihood_exponent', type=float, default=1.0)
-    parser.add_argument('--data_from_simulation', type=int, default=1)
+    parser.add_argument('--data_from_simulation', type=int, default=0)
     parser.add_argument('--num_frame_stack', type=int, default=3)
     parser.add_argument('--bandwidth_svgd', type=float, default=0.2)
     parser.add_argument('--num_epochs', type=int, default=20)
-    parser.add_argument('--max_train_steps', type=int, default=2_000)
+    parser.add_argument('--max_train_steps', type=int, default=100_000)
+    parser.add_argument('--min_train_steps', type=int, default=40_000)
     parser.add_argument('--length_scale_aditive_sim_gp', type=float, default=1.0)
     parser.add_argument('--input_from_recorded_data', type=int, default=1)
     args = parser.parse_args()
