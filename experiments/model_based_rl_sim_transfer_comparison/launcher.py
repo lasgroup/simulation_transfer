@@ -1,15 +1,15 @@
 import exp
 from experiments.util import generate_run_commands, generate_base_command, dict_permutations
 
-PROJECT_NAME = 'FirstExperimentDelay'
+PROJECT_NAME = 'RLComparisonOnSimulatorN1'
 
 applicable_configs = {
-    'horizon_len': [2 ** 6],
+    'horizon_len': [2 ** 6, 2 ** 7],
     'seed': list(range(5)),
     'project_name': [PROJECT_NAME],
     'num_episodes': [40],
-    'bnn_train_steps': [40_000],
-    'sac_num_env_steps': [1_000_000],
+    'bnn_train_steps': [40_000, 80_000],
+    'sac_num_env_steps': [1_000_000, 2_000_000],
     'learnable_likelihood_std': [1],
     'reset_bnn': [0, 1],
     'sim_prior': ['none', 'high_fidelity', 'low_fidelity'],
