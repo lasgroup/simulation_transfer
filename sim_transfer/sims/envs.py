@@ -62,8 +62,8 @@ class RCCarSimEnv:
     _obs_noise_stds: jnp.array = OBS_NOISE_STD_SIM_CAR
 
     def __init__(self, ctrl_cost_weight: float = 0.005, encode_angle: bool = False, use_obs_noise: bool = True,
-                 use_tire_model: bool = False, action_delay: float = 0.0, car_model_params: Dict = None,
-                 margin_factor: float = 10.0, max_throttle: float = 1.0, car_id: int = 2,
+                 use_tire_model: bool = False, action_delay: float = 0.0, car_model_params: dict = None,
+                 margin_factor: float = 10.0, max_throttle: float = 1.0, car_id: int = 2, ctrl_diff_weight: float = 0.0,
                  seed: int = 230492394):
         """
         Race car simulator environment
@@ -128,6 +128,7 @@ class RCCarSimEnv:
         # initialize time and state
         self._time: int = 0
         self._state: jnp.array = jnp.zeros(self.dim_state)
+        self.ctrl_diff_weight = ctrl_diff_weight
 
     def reset(self, rng_key: Optional[jax.random.PRNGKey] = None) -> jnp.array:
         """ Resets the environment to a random initial state close to the initial pose """
@@ -160,10 +161,11 @@ class RCCarSimEnv:
         # assert jnp.all(-1 <= action) and jnp.all(action <= 1), "action must be in [-1, 1]"
         rng_key = self.rds_key if rng_key is None else rng_key
 
+        jitter_reward = jnp.zeros_like(action).sum(-1)
         if self.action_delay > 0.0:
             # pushes action to action buffer and pops the oldest action
             # computes delayed action as a linear interpolation between the relevant actions in the past
-            action = self._get_delayed_action(action)
+            action, jitter_reward = self._get_delayed_action(action)
 
         # compute next state
         self._state = self._next_step_fn(self._state, action)
@@ -171,7 +173,7 @@ class RCCarSimEnv:
         obs = self._state_to_obs(self._state, rng_key=rng_key)
 
         # compute reward
-        reward = self._reward_model.forward(obs=None, action=action, next_obs=obs)
+        reward = self._reward_model.forward(obs=None, action=action, next_obs=obs) + jitter_reward
 
         # check if done
         done = self._time >= self.max_steps
@@ -197,14 +199,16 @@ class RCCarSimEnv:
         assert (obs.shape[-1] == 7 and self.encode_angle) or (obs.shape[-1] == 6 and not self.encode_angle)
         return obs
 
-    def _get_delayed_action(self, action: jnp.array) -> jnp.array:
+    def _get_delayed_action(self, action: jnp.array) -> Tuple[jnp.array, jnp.array]:
         # push action to action buffer
+        last_action = self._action_buffer[-1]
+        reward = - self.ctrl_diff_weight * jnp.sum((action - last_action) ** 2)
         self._action_buffer = jnp.concatenate([self._action_buffer[1:], action[None, :]], axis=0)
 
         # get delayed action (interpolate between two actions if the delay is not a multiple of dt)
         delayed_action = jnp.sum(self._action_buffer[:2] * self._act_delay_interpolation_weights[:, None], axis=0)
         assert delayed_action.shape == self.dim_action
-        return delayed_action
+        return delayed_action, reward
 
     @property
     def rds_key(self) -> jax.random.PRNGKey:

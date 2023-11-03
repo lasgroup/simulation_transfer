@@ -2,13 +2,14 @@ import time
 
 import gym
 import sys
+
+import jax.random
 import numpy as np
 from gym.spaces import Box
 from typing import Optional
-from sim_transfer.sims.envs import RCCarEnvReward
 from sim_transfer.sims.util import encode_angles_numpy as encode_angles, decode_angles_numpy as decode_angles
 from typing import Dict, Tuple, Any
-
+from sim_transfer.sims.car_system import CarReward
 
 X_MIN_LIMIT = -1.4
 X_MAX_LIMIT = 2.8
@@ -23,8 +24,6 @@ class CarEnv(gym.Env):
 
     def __init__(self,
                  car_id: int = 2,
-                 ctrl_cost_weight: float = 0.005,
-                 margin_factor: float = 10.0,
                  control_time_ms: float = 24.,
                  max_wait_time: float = 1,
                  window_size: int = 6,
@@ -32,6 +31,7 @@ class CarEnv(gym.Env):
                  port_number: int = 8,  # leftmost usb port in the display has port number 8
                  encode_angle: bool = True,
                  max_throttle: float = 0.4,
+                 car_reward_kwargs: dict = None,
                  ):
         super().__init__()
         sys.path.append("C:/Users/Panda/Desktop/rcCarInterface/rc-car-interface/build/src/libs/pyCarController")
@@ -60,10 +60,9 @@ class CarEnv(gym.Env):
         self.env_steps = 0
 
         # initialize reward model
-        self._reward_model = RCCarEnvReward(goal=self._goal,
-                                            ctrl_cost_weight=ctrl_cost_weight,
-                                            encode_angle=self.encode_angle,
-                                            margin_factor=margin_factor)
+        self._reward_model = CarReward(**car_reward_kwargs, num_frame_stack=num_frame_stacks)
+        self._reward_model.set_goal(self._goal)
+        self.reward_params = self._reward_model.init_params(jax.random.PRNGKey(0))
 
         # setup observation and action space
         high = np.ones(6 + self.encode_angle + 2 * num_frame_stacks) * np.inf
@@ -114,7 +113,7 @@ class CarEnv(gym.Env):
         current_state = self.normalize_theta_in_state(current_state)
         return current_state
 
-    def reset(self):
+    def reset(self, *args, **kwargs):
         if not self.initial_reset:
             self.log_mocap_info()
         self.initial_reset = False
@@ -171,6 +170,7 @@ class CarEnv(gym.Env):
 
         # keep last state
         _last_state = self.state
+        _last_state_with_last_acts = np.concatenate([_last_state, self.stacked_last_actions], axis=-1)
 
         # get current state
         state = self.get_state_from_mocap()
@@ -190,7 +190,7 @@ class CarEnv(gym.Env):
         assert self.observation_space.shape == state_with_last_acts.shape
 
         # compute reward
-        reward = self.reward(_last_state, action, state)
+        reward = self.reward(_last_state_with_last_acts, action, state_with_last_acts)
 
         # check termination conditions
         terminate, terminal_reward = self.terminate(state)
@@ -198,7 +198,13 @@ class CarEnv(gym.Env):
                                                          'terminal_reward': terminal_reward}
 
     def reward(self, last_state, action, state):
-        return self._reward_model.forward(obs=None, action=action, next_obs=state)
+        dist, self.reward_params = self._reward_model(
+            x=last_state,
+            u=action,
+            reward_params=self.reward_params,
+            x_next=state,
+        )
+        return dist.mean()
 
     def terminate(self, state: np.array):
         reached_goal = self.reached_goal(state, self._goal)

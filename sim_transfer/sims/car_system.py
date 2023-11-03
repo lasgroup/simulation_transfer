@@ -235,6 +235,9 @@ class CarReward(Reward[CarRewardParams]):
     def init_params(self, key: chex.PRNGKey) -> CarRewardParams:
         return CarRewardParams(_goal=self._goal, key=key)
 
+    def set_goal(self, des_goal: chex.Array):
+        self._goal = des_goal
+
     def __call__(self,
                  x: chex.Array,
                  u: chex.Array,
