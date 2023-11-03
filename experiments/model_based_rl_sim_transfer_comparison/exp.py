@@ -99,6 +99,7 @@ def experiment(horizon_len: int,
                       lr_policy=3e-4,
                       lr_alpha=3e-4,
                       lr_q=3e-4,
+                      max_grad_norm=5.0,
                       num_envs=num_envs,
                       batch_size=64,
                       grad_updates_per_step=num_env_steps_between_updates * num_envs,
@@ -261,7 +262,7 @@ if __name__ == '__main__':
     parser.add_argument('--sac_num_env_steps', type=int, default=10_000)
     parser.add_argument('--learnable_likelihood_std', type=int, default=1)
     parser.add_argument('--reset_bnn', type=int, default=1)
-    parser.add_argument('--sim_prior', type=str, default='high_fidelity_no_aditive_GP')
+    parser.add_argument('--sim_prior', type=str, default='none_SVGD')
     parser.add_argument('--include_aleatoric_noise', type=int, default=1)
     parser.add_argument('--best_bnn_model', type=int, default=1)
     parser.add_argument('--best_policy', type=int, default=0)
