@@ -14,7 +14,12 @@ from sim_transfer.sims.simulators import RaceCarSim, StackedActionSimWrapper
 
 ENCODE_ANGLE = True
 ENTITY = 'trevenl'
-PRIORS = {'none', 'high_fidelity', 'low_fidelity'}
+PRIORS = {'none_FVSGD',
+          'none_SVGD',
+          'high_fidelity',
+          'low_fidelity',
+          'high_fidelity_no_aditive_GP',
+          }
 
 
 def experiment(horizon_len: int,
