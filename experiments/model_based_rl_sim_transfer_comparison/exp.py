@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import wandb
 
 from experiments.data_provider import _RACECAR_NOISE_STD_ENCODED
-from sim_transfer.models import BNN_FSVGD_SimPrior, BNN_FSVGD
+from sim_transfer.models import BNN_FSVGD_SimPrior, BNN_FSVGD, BNN_SVGD
 from sim_transfer.rl.model_based_rl.rl_on_simulator import ModelBasedRL
 from sim_transfer.sims.envs import RCCarSimEnv
 from sim_transfer.sims.simulators import AdditiveSim, PredictStateChangeWrapper, GaussianProcessSim
@@ -51,7 +51,7 @@ def experiment(horizon_len: int,
 
     """Setup key"""
     key = jr.PRNGKey(seed)
-    key_sim, *keys = jr.split(key, 2)
+    key_sim, key_run_episodes = jr.split(key, 2)
 
     """Setup group name"""
     group_name_config = dict(horizon_len=horizon_len,
@@ -152,15 +152,31 @@ def experiment(horizon_len: int,
         'hidden_layer_sizes': [64, 64, 64],
         'normalization_stats': sim.normalization_stats,
         'data_batch_size': data_batch_size,
-        'hidden_activation': jax.nn.leaky_relu
+        'hidden_activation': jax.nn.leaky_relu,
+        'num_train_steps': bnn_train_steps,
+
     }
 
-    if sim_prior == 'none':
+    if sim_prior == 'none_FVSGD':
         bnn = BNN_FSVGD(
             **standard_params,
-            num_train_steps=bnn_train_steps,
             domain=sim.domain,
             bandwidth_svgd=bandwidth_svgd,
+        )
+    elif sim_prior == 'none_SVGD':
+        bnn = BNN_SVGD(
+            **standard_params,
+            bandwidth_svgd=1.0,
+        )
+    elif sim_prior == 'high_fidelity_no_aditive_GP':
+        bnn = BNN_FSVGD_SimPrior(
+            **standard_params,
+            domain=sim.domain,
+            function_sim=sim,
+            score_estimator='gp',
+            num_f_samples=num_f_samples,
+            bandwidth_svgd=bandwidth_svgd,
+            num_measurement_points=num_measurement_points,
         )
     else:
         if sim_prior == 'high_fidelity':
@@ -182,7 +198,6 @@ def experiment(horizon_len: int,
             domain=sim.domain,
             function_sim=sim,
             score_estimator='gp',
-            num_train_steps=bnn_train_steps,
             num_f_samples=num_f_samples,
             bandwidth_svgd=bandwidth_svgd,
             num_measurement_points=num_measurement_points,
@@ -201,7 +216,7 @@ def experiment(horizon_len: int,
                                   num_stacked_actions=num_stacked_actions,
                                   )
 
-    model_based_rl.run_episodes(num_episodes, jr.PRNGKey(seed))
+    model_based_rl.run_episodes(num_episodes, key_run_episodes)
 
     plt.close('all')
     wandb.finish()
@@ -246,7 +261,7 @@ if __name__ == '__main__':
     parser.add_argument('--sac_num_env_steps', type=int, default=10_000)
     parser.add_argument('--learnable_likelihood_std', type=int, default=1)
     parser.add_argument('--reset_bnn', type=int, default=1)
-    parser.add_argument('--sim_prior', type=str, default='none')
+    parser.add_argument('--sim_prior', type=str, default='high_fidelity_no_aditive_GP')
     parser.add_argument('--include_aleatoric_noise', type=int, default=1)
     parser.add_argument('--best_bnn_model', type=int, default=1)
     parser.add_argument('--best_policy', type=int, default=0)

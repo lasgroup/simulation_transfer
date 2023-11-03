@@ -12,7 +12,7 @@ applicable_configs = {
     'sac_num_env_steps': [1_000_000, 2_000_000],
     'learnable_likelihood_std': [1],
     'reset_bnn': [0, 1],
-    'sim_prior': ['none', 'high_fidelity', 'low_fidelity'],
+    'sim_prior': ['none_SVGD', 'high_fidelity_no_aditive_GP'],
     'include_aleatoric_noise': [1],
     'best_bnn_model': [1],
     'best_policy': [1],
