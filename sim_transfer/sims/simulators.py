@@ -86,6 +86,9 @@ class FunctionSimulator:
     def init_params(self):
         raise NotImplementedError
 
+    def sample_params(self, rng_key: jax.random.PRNGKey):
+        raise NotImplementedError
+
     def _add_observation_noise(self, f_vals: jnp.ndarray, obs_noise_std: Union[jnp.ndarray, float],
                                rng_key: jax.random.PRNGKey) -> jnp.ndarray:
         y = f_vals + obs_noise_std * jax.random.normal(rng_key, shape=f_vals.shape)
@@ -272,6 +275,9 @@ class EncodeAngleSimWrapper(FunctionSimulator):
 
     def init_params(self):
         return self.base_sim.init_params()
+
+    def sample_params(self, rng_key: jax.random.PRNGKey):
+        return self.base_sim.sample_params(rng_key)
 
     def sample_function_vals(self, *args, **kwargs) -> jnp.ndarray:
         f_samples = self.base_sim.sample_function_vals(*args, **kwargs)
@@ -555,6 +561,14 @@ class PendulumSim(FunctionSimulator):
         assert z.shape[-1] == self.domain.num_dims
         return z[..., :self._state_action_spit_idx], z[..., self._state_action_spit_idx:]
 
+    def sample_params(self, rng_key: jax.random.PRNGKey):
+        params = self.model.sample_params_uniform(rng_key, sample_shape=(1, ),
+                                                  lower_bound=self._lower_bound_params,
+                                                  upper_bound=self._upper_bound_params)
+
+        params = jtu.tree_map(lambda x: x.item(), params)
+        return params
+
     def sample_function_vals(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
         assert x.ndim == 2 and x.shape[-1] == self.input_size
         params = self.model.sample_params_uniform(rng_key, sample_shape=(num_samples,),
@@ -778,6 +792,13 @@ class RaceCarSim(FunctionSimulator):
     def init_params(self):
         return self._typical_params
 
+    def sample_params(self, rng_key: jax.random.PRNGKey):
+        params = self.model.sample_params_uniform(rng_key, sample_shape=(1,),
+                                                  lower_bound=self._lower_bound_params,
+                                                  upper_bound=self._upper_bound_params)
+        params = jtu.tree_map(lambda x: x.item(), params)
+        return params
+
     def sample_function_vals(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
         assert x.ndim == 2 and x.shape[-1] == self.input_size
         params = self.model.sample_params_uniform(rng_key, sample_shape=(num_samples,),
@@ -945,6 +966,9 @@ class PredictStateChangeWrapper(FunctionSimulator):
     def init_params(self):
         return self._function_simulator.init_params()
 
+    def sample_params(self, rng_key: jax.random.PRNGKey):
+        return self._function_simulator.sample_params(rng_key)
+
     @property
     def normalization_stats(self) -> Dict[str, jnp.ndarray]:
         old_stats = self._function_simulator.normalization_stats
@@ -1030,6 +1054,9 @@ class StackedActionSimWrapper(FunctionSimulator):
 
     def init_params(self):
         return self._function_simulator.init_params()
+
+    def sample_params(self, rng_key: jax.random.PRNGKey):
+        return self._function_simulator.sample_params(rng_key)
 
     def evaluate_sim(self, x: jnp.array, params: NamedTuple) -> jnp.array:
         x = x[..., :(self.obs_size + self.action_size)]
