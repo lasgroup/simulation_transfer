@@ -117,8 +117,7 @@ class BNN_FSVGD_GreyBox(BNN_FSVGD):
                                                               normalized_y=True)
 
         # get likelihood std
-        likelihood_std = self._likelihood_std_transform(params_nn['likelihood_std_raw']) if self.learn_likelihood_std \
-            else self.likelihood_std
+        likelihood_std = self.likelihood_std
 
         def _ll(pred, y):
             return tfd.MultivariateNormalDiag(pred, likelihood_std).log_prob(y)
