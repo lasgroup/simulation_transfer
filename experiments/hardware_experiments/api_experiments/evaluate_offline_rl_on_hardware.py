@@ -12,7 +12,6 @@ from experiments.hardware_experiments.api_experiments._default_params import SAC
 from sim_transfer.hardware.car_env import CarEnv
 from sim_transfer.rl.rl_on_offline_data import RLFromOfflineData
 from sim_transfer.sims.util import plot_rc_trajectory
-import pickle
 
 ENTITY = 'sukhijab'
 
@@ -20,6 +19,7 @@ ENTITY = 'sukhijab'
 class RunSpec(NamedTuple):
     group_name: str
     run_id: str
+    reward_config: dict| None = None
 
 
 def run_all_hardware_experiments(project_name_load: str,
@@ -58,8 +58,15 @@ def run_all_hardware_experiments(project_name_load: str,
             for file in run.files():
                 if file.name.startswith(dir_to_save):
                     file.download(replace=True, root=os.path.join(local_dir, run.group, run.id))
-                    runs_spec.append(RunSpec(group_name=run.group,
-                                             run_id=run.id))
+
+            keys = ['encode_angle', 'ctrl_cost_weight', 'margin_factor', 'ctrl_diff_weight']
+            reward_config = {}
+            for key in keys:
+                reward_config[key] = run.config[key]
+            runs_spec.append(RunSpec(group_name=run.group,
+                                     run_id=run.id,
+                                     reward_config=reward_config,
+                                     ))
 
         with open(os.path.join(local_dir, 'runs_spec.pkl'), 'wb') as handle:
             pickle.dump(runs_spec, handle)
@@ -83,6 +90,7 @@ def run_all_hardware_experiments(project_name_load: str,
                                 project_name=project_name_save,
                                 group_name=run_spec.group_name,
                                 run_id=run_spec.run_id,
+                                reward_config=reward_config,
                                 control_time_ms=control_time_ms)
 
 
@@ -91,15 +99,14 @@ def run_with_learned_policy(policy_params,
                             project_name: str,
                             group_name: str,
                             run_id: str,
+                            reward_config: dict,
                             encode_angle: bool = True,
                             control_time_ms: float = 32,
                             ):
     """
     Num stacked frames: 3
     """
-    car_reward_kwargs = dict(encode_angle=encode_angle,
-                             ctrl_cost_weight=0.005,
-                             margin_factor=20)
+    car_reward_kwargs = reward_config
 
     num_frame_stack = 3
     action_dim = 2
@@ -109,9 +116,10 @@ def run_with_learned_policy(policy_params,
         sac_kwargs=SAC_KWARGS,
         x_train=jnp.zeros((10, state_dim + (num_frame_stack + 1) * action_dim)),
         y_train=jnp.zeros((10, state_dim)),
-        x_test=jnp.zeros((10, state_dim + (num_frame_stack + 1)* action_dim)),
+        x_test=jnp.zeros((10, state_dim + (num_frame_stack + 1) * action_dim)),
         y_test=jnp.zeros((10, state_dim)),
-        car_reward_kwargs=car_reward_kwargs)
+        car_reward_kwargs=car_reward_kwargs,
+        load_pretrained_bnn_model=False)
     wandb.init(
         project=project_name,
         group=group_name,
@@ -125,7 +133,7 @@ def run_with_learned_policy(policy_params,
     # env = CarEnv(encode_angle=True, num_frame_stacks=0, max_throttle=0.4,
     #             control_time_ms=27.9)
     env = CarEnv(car_id=2, encode_angle=encode_angle, max_throttle=0.4, control_time_ms=control_time_ms,
-                 num_frame_stacks=3)
+                 num_frame_stacks=3, car_reward_kwargs=car_reward_kwargs)
     obs, _ = env.reset()
     print(obs)
     observations = []
@@ -235,7 +243,7 @@ def run_with_learned_policy(policy_params,
     wandb.log({'Trajectory_on_true_model': wandb.Image(fig)})
     sim_obs = sim_obs[:state_dim]
     for i in range(200):
-        obs = jnp.stack([sim_obs, sim_stacked_actions], axis=0)
+        obs = jnp.concatenate([sim_obs, sim_stacked_actions], axis=0)
         sim_action = policy(obs)
         # sim_action = np.array(sim_action)
         z = jnp.concatenate([obs, sim_action], axis=-1)
@@ -296,11 +304,11 @@ if __name__ == '__main__':
     filename_bnn_model = 'saved_data/use_sim_prior=1_use_grey_box=0_high_fidelity=0_num_offline_data' \
                          '=2500_share_of_x0s=0.5_train_sac_only_from_init_states=0_0.5/tshlnhs0/models/bnn_model.pkl'
 
-    with open(filename_policy, 'rb') as handle:
-        policy_params = pickle.load(handle)
+    # with open(filename_policy, 'rb') as handle:
+    #    policy_params = pickle.load(handle)
 
-    with open(filename_bnn_model, 'rb') as handle:
-        bnn_model = pickle.load(handle)
+    #  with open(filename_bnn_model, 'rb') as handle:
+    #    bnn_model = pickle.load(handle)
 
     # observations_for_plotting, actions_for_plotting = run_with_learned_policy(bnn_model=bnn_model,
     #                                                                          policy_params=policy_params,
@@ -311,8 +319,8 @@ if __name__ == '__main__':
     #                                                                          )
 
     run_all_hardware_experiments(
-        project_name_load='OfflineRLHW_without_frame_stack',
-        project_name_save='OfflineRLHW_without_frame_stack_evaluation',
-        desired_config={'bandwidth_svgd': 0.2},
+        project_name_load='OfflineRLRunsWithGreyBox',
+        project_name_save='OfflineRLRunsWithGreyBox_evaluation',
+        desired_config={'bandwidth_svgd': 0.2, 'data_from_simulation': 0},
         control_time_ms=32,
     )
