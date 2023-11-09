@@ -25,7 +25,9 @@ class BNN_FSVGD_GreyBox(BNN_FSVGD):
         self.sim = sim
         param_key = self._next_rng_key()
         self.num_sim_model_train_steps = num_sim_model_train_steps
-        self.params_sim = self.sim.sample_params(param_key)
+        sim_params = self.sim.sample_params(param_key)
+        likelihood_std = -1. * jnp.ones(self.output_size)
+        self.params_sim = {'sim_params': sim_params, 'likelihood_std': likelihood_std}
         self.optim_sim = None
         if lr_sim:
             self.lr_sim = lr_sim
@@ -61,23 +63,23 @@ class BNN_FSVGD_GreyBox(BNN_FSVGD):
             self.optim_sim = optax.adam(learning_rate=self.lr_sim)
         self.opt_state_sim = self.optim_sim.init(self.params_sim)
 
-    def _sim_step(self, opt_state_sim: optax.OptState, params_sim: NamedTuple, params: Dict,
+    def _sim_step(self, opt_state_sim: optax.OptState, params_sim: Dict,
                   x_batch: jnp.array, y_batch: jnp.array, num_train_points: Union[float, int]):
         loss, grad = jax.value_and_grad(
             self._sim_loss)(
             params_sim,
-            params, x_batch, y_batch,
+            x_batch, y_batch,
             num_train_points)
         updates, new_opt_state_sim = self.optim_sim.update(grad, opt_state_sim, params_sim)
         new_params_sim = optax.apply_updates(params_sim, updates)
         stats = OrderedDict(sim_params_nll=loss)
         return new_opt_state_sim, new_params_sim, stats
 
-    def _step_grey_box(self, opt_state_sim: optax.OptState, params_sim: NamedTuple,
-                       params: Dict, x_batch: jnp.array, y_batch: jnp.array,
+    def _step_grey_box(self, opt_state_sim: optax.OptState, params_sim: Dict,
+                       x_batch: jnp.array, y_batch: jnp.array,
                        num_train_points: Union[float, int]):
         new_opt_state_sim, new_params_sim, stats = self._sim_step(
-            opt_state_sim, params_sim, params, x_batch, y_batch, num_train_points
+            opt_state_sim, params_sim, x_batch, y_batch, num_train_points
         )
         return new_opt_state_sim, new_params_sim, stats
 
@@ -94,7 +96,7 @@ class BNN_FSVGD_GreyBox(BNN_FSVGD):
 
     def predict_dist(self, x: jnp.ndarray, include_noise: bool = True):
         pred_dist_bnn = super().predict_dist(x, include_noise)
-        sim_model_prediction = self.sim_model_step(x, params_sim=self.params_sim)
+        sim_model_prediction = self.sim_model_step(x, params_sim=self.params_sim['sim_params'])
         affine_transform_y = AffineTransform(shift=sim_model_prediction, scale=1.0)
         pred_dist = affine_transform_y(pred_dist_bnn)
         assert pred_dist.batch_shape == x.shape[:-1]
@@ -102,7 +104,7 @@ class BNN_FSVGD_GreyBox(BNN_FSVGD):
         return pred_dist
 
     def predict_post_samples(self, x: jnp.ndarray) -> jnp.ndarray:
-        sim_model_prediction = self.sim_model_step(x, self.params_sim)
+        sim_model_prediction = self.sim_model_step(x, self.params_sim['sim_params'])
         x = self._normalize_data(x)
         y_pred_raw = self.batched_model(x)
         y_pred = y_pred_raw * self._y_std + self._y_mean
@@ -110,14 +112,14 @@ class BNN_FSVGD_GreyBox(BNN_FSVGD):
         assert y_pred.ndim == 3 and y_pred.shape[-2:] == (x.shape[0], self.output_size)
         return y_pred
 
-    def _sim_loss(self, params_sim: NamedTuple, params_nn: Dict, x_batch: jnp.array, y_batch: jnp.array,
+    def _sim_loss(self, params_sim: Dict, x_batch: jnp.array, y_batch: jnp.array,
                   num_train_points: Union[float, int]):
 
-        normalized_sim_model_prediction = self.sim_model_step(x_batch, params_sim, normalized_x=True,
+        normalized_sim_model_prediction = self.sim_model_step(x_batch, params_sim['sim_params'], normalized_x=True,
                                                               normalized_y=True)
 
         # get likelihood std
-        likelihood_std = self.likelihood_std
+        likelihood_std = jnp.exp(params_sim['likelihood_std']) if self.learn_likelihood_std else self.likelihood_std
 
         def _ll(pred, y):
             return tfd.MultivariateNormalDiag(pred, likelihood_std).log_prob(y)
@@ -133,7 +135,7 @@ class BNN_FSVGD_GreyBox(BNN_FSVGD):
 
     def step_grey_box(self, x_batch: jnp.ndarray, y_batch: jnp.ndarray, num_train_points: Union[float, int]):
         self.opt_state_sim, self.params_sim, stats = self._step_grey_box_jit(
-            opt_state_sim=self.opt_state_sim, params_sim=self.params_sim, params=self.params, x_batch=x_batch,
+            opt_state_sim=self.opt_state_sim, params_sim=self.params_sim, x_batch=x_batch,
             y_batch=y_batch, num_train_points=num_train_points)
         return stats
 
@@ -216,7 +218,8 @@ class BNN_FSVGD_GreyBox(BNN_FSVGD):
             if log_to_wandb:
                 wandb.log({metrics_objective: best_objective})
 
-        y_train_unnormalized = y_train_unnormalized - self.sim_model_step(x_train_unnormalized, self.params_sim)
+        y_train_unnormalized = y_train_unnormalized - self.sim_model_step(x_train_unnormalized,
+                                                                          self.params_sim['sim_params'])
         super().fit(
             x_train_unnormalized, y_train_unnormalized, x_eval, y_eval, num_steps, log_period, log_to_wandb, metrics_objective,
             keep_the_best, per_dim_metrics
@@ -235,7 +238,7 @@ class BNN_FSVGD_GreyBox(BNN_FSVGD):
         """
         # make predictions
         x, y = self._ensure_atleast_2d_float(x, y)
-        pred_y = self.sim_model_step(x, self.params_sim)
+        pred_y = self.sim_model_step(x, self.params_sim['sim_params'])
 
         rmse = jnp.sqrt(jnp.mean(jnp.sum((pred_y - y) ** 2, axis=-1)))
         eval_stats = {'rmse': rmse}
