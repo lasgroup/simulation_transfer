@@ -1,18 +1,18 @@
 import exp
 from experiments.util import generate_run_commands, generate_base_command, dict_permutations
 
-PROJECT_NAME = 'RLComparisonOnSimulatorN1'
+PROJECT_NAME = 'RLComparisonOnSimulatorN2'
 
 applicable_configs = {
-    'horizon_len': [2 ** 6, 2 ** 7],
-    'seed': list(range(5)),
+    'horizon_len': [2 ** 6],
+    'seed': list(range(10)),
     'project_name': [PROJECT_NAME],
-    'num_episodes': [40],
+    'num_episodes': [20],
     'bnn_train_steps': [40_000, 80_000],
     'sac_num_env_steps': [1_000_000, 2_000_000],
     'learnable_likelihood_std': [1],
     'reset_bnn': [0, 1],
-    'sim_prior': ['none_SVGD', 'high_fidelity_no_aditive_GP'],
+    'sim_prior': ['none_FVSGD', 'none_SVGD', 'high_fidelity', 'low_fidelity', 'high_fidelity_no_aditive_GP', ],
     'include_aleatoric_noise': [1],
     'best_bnn_model': [1],
     'best_policy': [1],

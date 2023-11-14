@@ -9,6 +9,7 @@ from brax.training.types import Transition
 from jax import jit, vmap
 from jax.lax import scan
 from mbpo.optimizers.policy_optimizers.sac.sac import SAC
+
 from mbpo.systems.brax_wrapper import BraxWrapper
 
 from sim_transfer.sims.car_system import CarSystem, FrameStackWrapper
@@ -19,7 +20,7 @@ from sim_transfer.sims.util import plot_rc_trajectory
 
 ENCODE_ANGLE = True
 _system = CarSystem(encode_angle=ENCODE_ANGLE,
-                    action_delay=0.09,
+                    action_delay=3/30,
                     use_tire_model=True,
                     use_obs_noise=True,
                     ctrl_cost_weight=0.005,
@@ -27,7 +28,7 @@ _system = CarSystem(encode_angle=ENCODE_ANGLE,
                     )
 
 # Here we create framestacking wrapper
-num_frame_stack = 0
+num_frame_stack = 3
 system = FrameStackWrapper(_system, num_frame_stack)
 
 # Create replay buffer
