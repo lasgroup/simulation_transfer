@@ -9,7 +9,7 @@ from sim_transfer.models import BNN_FSVGD_SimPrior, BNN_FSVGD, BNN_FSVGD_GreyBox
 from sim_transfer.rl.rl_on_offline_data import RLFromOfflineData
 from sim_transfer.sims.simulators import AdditiveSim, PredictStateChangeWrapper, GaussianProcessSim
 
-ENTITY = 'sukhijab'
+ENTITY = 'rojonas'
 
 
 def experiment(horizon_len: int,
@@ -45,6 +45,7 @@ def experiment(horizon_len: int,
                min_train_steps: int = 40_000,
                length_scale_aditive_sim_gp: float = 1.0,
                input_from_recorded_data: int = 1,
+               obtain_consecutive_data: int = 1,
                ):
     bnn_train_steps = min(num_epochs * num_offline_collected_transitions, max_train_steps)
     bnn_train_steps = max(bnn_train_steps, min_train_steps)
@@ -55,7 +56,8 @@ def experiment(horizon_len: int,
                        high_fidelity=high_fidelity,
                        num_offline_data=num_offline_collected_transitions,
                        share_of_x0s=share_of_x0s_in_sac_buffer,
-                       train_sac_only_from_init_states=train_sac_only_from_init_states, )
+                       train_sac_only_from_init_states=train_sac_only_from_init_states,
+                       )
     group_name = '_'.join(list(str(key) + '=' + str(value) for key, value in config_dict.items() if key != 'seed'))
 
     car_reward_kwargs = dict(encode_angle=True,
@@ -69,7 +71,7 @@ def experiment(horizon_len: int,
 
     SAC_KWARGS = dict(num_timesteps=sac_num_env_steps,
                       num_evals=20,
-                      reward_scaling=10,
+                      reward_scaling=1,
                       episode_length=horizon_len,
                       episode_length_eval=200,
                       action_repeat=1,
@@ -92,7 +94,9 @@ def experiment(horizon_len: int,
                       critic_hidden_layer_sizes=(64, 64),
                       normalize_observations=True,
                       deterministic_eval=True,
-                      wandb_logging=True)
+                      wandb_logging=True,
+                      max_grad_norm=100,
+                      )
 
     config_dict = dict(horizon_len=horizon_len,
                        seed=seed,
@@ -121,7 +125,9 @@ def experiment(horizon_len: int,
                        max_train_steps=max_train_steps,
                        min_train_steps=min_train_steps,
                        length_scale_aditive_sim_gp=length_scale_aditive_sim_gp,
-                       input_from_recorded_data=input_from_recorded_data
+                       input_from_recorded_data=input_from_recorded_data,
+                       data_from_simulation=data_from_simulation,
+                       likelihood_exponent=likelihood_exponent,
                        )
 
     total_config = SAC_KWARGS | config_dict | car_reward_kwargs
@@ -137,26 +143,53 @@ def experiment(horizon_len: int,
     key = jr.PRNGKey(seed)
     key, key_data_seed = jr.split(key, 2)
     int_data_seed = jr.randint(key_data_seed, (), minval=0, maxval=2 ** 13 - 1)
-    if data_from_simulation:
-        source = 'racecar_from_true_input_data' if input_from_recorded_data else 'racecar_actionstack'
-        x_train, y_train, x_test, y_test, sim = provide_data_and_sim(
-            data_source=source,
-            data_spec={'num_samples_train': num_offline_collected_transitions,
-                       'use_hf_sim': bool(high_fidelity),
-                       'sampling': 'iid',
-                       'num_stacked_actions': num_frame_stack},
-            data_seed=int(int_data_seed),
-        )
+    assert num_offline_collected_transitions <= 20_000, "Cannot have more than 20_000 points for training"
+    if bool(obtain_consecutive_data):
+        if bool(data_from_simulation):
+            source = 'racecar_from_true_input_data' if input_from_recorded_data else 'racecar_actionstack'
+            x_train, y_train, x_test, y_test, sim = provide_data_and_sim(
+                data_source=source,
+                data_spec={'num_samples_train': 20_000,
+                           'use_hf_sim': bool(high_fidelity),
+                           'sampling': 'iid',
+                           'num_stacked_actions': num_frame_stack},
+                data_seed=int(int_data_seed),
+            )
 
+        else:
+            x_train, y_train, x_test, y_test, sim = provide_data_and_sim(
+                data_source='real_racecar_new_actionstack',
+                data_spec={'num_samples_train': 20_000,
+                           'use_hf_sim': bool(high_fidelity),
+                           'sampling': 'iid',
+                           'num_stacked_actions': num_frame_stack,
+                           },
+                data_seed=int(int_data_seed), )
+
+        x_train, y_train = x_train[:int(num_offline_collected_transitions)], \
+            y_train[:int(num_offline_collected_transitions)]
     else:
-        x_train, y_train, x_test, y_test, sim = provide_data_and_sim(
-            data_source='real_racecar_new_actionstack',
-            data_spec={'num_samples_train': num_offline_collected_transitions,
-                       'use_hf_sim': bool(high_fidelity),
-                       'sampling': 'iid',
-                       'num_stacked_actions': num_frame_stack,
-                       },
-            data_seed=int(int_data_seed), )
+        if bool(data_from_simulation):
+            source = 'racecar_from_true_input_data' if input_from_recorded_data else 'racecar_actionstack'
+            x_train, y_train, x_test, y_test, sim = provide_data_and_sim(
+                data_source=source,
+                data_spec={'num_samples_train': int(num_offline_collected_transitions),
+                           'use_hf_sim': bool(high_fidelity),
+                           'sampling': 'iid',
+                           'num_stacked_actions': num_frame_stack},
+                data_seed=int(int_data_seed),
+            )
+
+        else:
+            x_train, y_train, x_test, y_test, sim = provide_data_and_sim(
+                data_source='real_racecar_new_actionstack',
+                data_spec={'num_samples_train': int(num_offline_collected_transitions),
+                           'use_hf_sim': bool(high_fidelity),
+                           'sampling': 'iid',
+                           'num_stacked_actions': num_frame_stack,
+                           },
+                data_seed=int(int_data_seed), )
+
 
     # Deal with randomness
     key = jr.PRNGKey(seed)
@@ -197,7 +230,8 @@ def experiment(horizon_len: int,
             function_sim=sim,
             score_estimator='gp',
             num_train_steps=bnn_train_steps,
-            num_f_samples=512,
+            num_f_samples=256,
+            lr=3e-4,
             bandwidth_svgd=bandwidth_svgd,
             num_measurement_points=num_measurement_points,
         )
@@ -207,6 +241,7 @@ def experiment(horizon_len: int,
         model = BNN_FSVGD_GreyBox(
             **standard_params,
             sim=sim,
+            lr=3e-4,
             num_train_steps=bnn_train_steps,
             bandwidth_svgd=bandwidth_svgd,
         )
@@ -215,6 +250,7 @@ def experiment(horizon_len: int,
             **standard_params,
             num_train_steps=bnn_train_steps,
             domain=sim.domain,
+            lr=3e-4,
             bandwidth_svgd=bandwidth_svgd,
         )
 
@@ -287,8 +323,10 @@ def main(args):
         bandwidth_svgd=args.bandwidth_svgd,
         num_epochs=args.num_epochs,
         max_train_steps=args.max_train_steps,
+        min_train_steps=args.min_train_steps,
         length_scale_aditive_sim_gp=args.length_scale_aditive_sim_gp,
         input_from_recorded_data=args.input_from_recorded_data,
+        obtain_consecutive_data=args.obtain_consecutive_data,
     )
 
 
@@ -308,8 +346,8 @@ if __name__ == '__main__':
     parser.add_argument('--ctrl_diff_weight', type=float, default=0.01)
     parser.add_argument('--num_offline_collected_transitions', type=int, default=20_000)
     parser.add_argument('--use_sim_prior', type=int, default=0)
-    parser.add_argument('--use_grey_box', type=int, default=0)
-    parser.add_argument('--high_fidelity', type=int, default=0)
+    parser.add_argument('--use_grey_box', type=int, default=1)
+    parser.add_argument('--high_fidelity', type=int, default=1)
     parser.add_argument('--num_measurement_points', type=int, default=8)
     parser.add_argument('--bnn_batch_size', type=int, default=32)
     parser.add_argument('--test_data_ratio', type=float, default=0.1)
@@ -318,7 +356,7 @@ if __name__ == '__main__':
     parser.add_argument('--eval_on_all_offline_data', type=int, default=1)
     parser.add_argument('--train_sac_only_from_init_states', type=int, default=0)
     parser.add_argument('--likelihood_exponent', type=float, default=1.0)
-    parser.add_argument('--data_from_simulation', type=int, default=0)
+    parser.add_argument('--data_from_simulation', type=int, default=1)
     parser.add_argument('--num_frame_stack', type=int, default=3)
     parser.add_argument('--bandwidth_svgd', type=float, default=0.2)
     parser.add_argument('--num_epochs', type=int, default=20)
@@ -326,5 +364,6 @@ if __name__ == '__main__':
     parser.add_argument('--min_train_steps', type=int, default=40_000)
     parser.add_argument('--length_scale_aditive_sim_gp', type=float, default=1.0)
     parser.add_argument('--input_from_recorded_data', type=int, default=1)
+    parser.add_argument('--obtain_consecutive_data', type=int, default=1)
     args = parser.parse_args()
     main(args)
