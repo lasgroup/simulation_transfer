@@ -95,10 +95,13 @@ class BNN_FSVGD_GreyBox(BNN_FSVGD):
         return y
 
     def predict_dist(self, x: jnp.ndarray, include_noise: bool = True):
-        pred_dist_bnn = super().predict_dist(x, include_noise)
-        sim_model_prediction = self.sim_model_step(x, params_sim=self.params_sim['sim_params'])
-        affine_transform_y = AffineTransform(shift=sim_model_prediction, scale=1.0)
-        pred_dist = affine_transform_y(pred_dist_bnn)
+        self.batched_model.param_vectors_stacked = self.params['nn_params_stacked']
+        sim_model_prediction = self.sim_model_step(x, params_sim=self.params_sim['sim_params'], normalized_x=False,
+                                                   normalized_y=True)
+        x = self._normalize_data(x)
+        y_pred_raw = self.batched_model(x)
+        y_pred_raw = jax.vmap(lambda z: z + sim_model_prediction)(y_pred_raw)
+        pred_dist = self._to_pred_dist(y_pred_raw, likelihood_std=self.likelihood_std, include_noise=include_noise)
         assert pred_dist.batch_shape == x.shape[:-1]
         assert pred_dist.event_shape == (self.output_size,)
         return pred_dist

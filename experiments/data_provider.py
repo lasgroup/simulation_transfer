@@ -141,8 +141,8 @@ def get_rccar_recorded_data_new(encode_angle: bool = True, skip_first_n_points: 
     if car_id == 1:
         num_train_traj = 8
         recordings_dir = os.path.join(DATA_DIR, 'recordings_rc_car_v1')
-        file_name = [f'recording_sep6_{i}.pickle' for i in
-                     [1, 5, 12, 8, 3, 7, 10, 2, 4, 9, 6, 11]]
+        import glob
+        file_name = glob.glob(recordings_dir + '/*.pickle')
     elif car_id == 2:
         num_train_traj = 12
         recordings_dir = os.path.join(DATA_DIR, 'recordings_rc_car_v2')
@@ -222,7 +222,7 @@ def get_rccar_recorded_data_new(encode_angle: bool = True, skip_first_n_points: 
 
 def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed: int = 845672):
     # load data
-    key_train, key_test, key_data = jax.random.split(jax.random.PRNGKey(data_seed), 3)
+    key_train, key_test = jax.random.split(jax.random.PRNGKey(data_seed), 2)
     if data_source == 'sinusoids1d' or data_source == 'sinusoids2d':
         from sim_transfer.sims.simulators import SinusoidsSim
         defaults = DEFAULTS_SINUSOIDS
@@ -302,7 +302,7 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
             # 1.st load data from the real car
             x_train, y_train, x_test, y_test = get_rccar_recorded_data_new(encode_angle=True, action_stacking=True,
                                                                            action_delay=num_stacked_actions,
-                                                                           car_id=car_id, key_data=key_data)
+                                                                           car_id=car_id)
 
             # We delete y_train, y_test and replace it with the simulator output
             del y_train, y_test
@@ -390,13 +390,11 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
 
         if data_source.startswith('real_racecar_new_actionstack'):
             x_train, y_train, x_test, y_test = get_rccar_recorded_data_new(encode_angle=True, action_stacking=True,
-                                                                           action_delay=3, car_id=car_id,
-                                                                           key_data=key_data)
+                                                                           action_delay=3, car_id=car_id)
             sim_lf = StackedActionSimWrapper(sim_lf, num_stacked_actions=3, action_size=2)
         elif data_source.startswith('real_racecar_new'):
             x_train, y_train, x_test, y_test = get_rccar_recorded_data_new(encode_angle=True, action_stacking=False,
-                                                                           action_delay=3, car_id=car_id,
-                                                                           key_data=key_data)
+                                                                           action_delay=3, car_id=car_id)
         else:
             x_train, y_train, x_test, y_test = get_rccar_recorded_data(encode_angle=True)
 
