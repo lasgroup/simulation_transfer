@@ -171,7 +171,7 @@ def get_rccar_recorded_data_new(encode_angle: bool = True, skip_first_n_points: 
             transitions.append(data)
 
     indices = jnp.arange(0, len(transitions))
-    indices = jax.random.shuffle(key=key_data, x=indices)
+    indices = jax.random.permutation(key=key_data, x=indices)
     transitions = [transitions[idx] for idx in indices]
 
     def prepare_rccar_data(transitions: Transition, encode_angles: bool = False, skip_first_n: int = 30,

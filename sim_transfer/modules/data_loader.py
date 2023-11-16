@@ -42,7 +42,7 @@ class DataLoader(RngKeyMixin):
     def __iter__(self) -> Iterable:
         _indices = jnp.arange(self.num_data_points)
         if self.shuffle:
-            _indices = jax.random.shuffle(self.rng_key, _indices)
+            _indices = jax.random.permutation(self.rng_key, _indices)
         _indices_batches = self._split_indices(_indices)
 
         def data_iter():
