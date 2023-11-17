@@ -50,7 +50,7 @@ def train_model_based_policy_remote(train_data: Dict, run_remote: bool = True, v
     if verbosity:
         print('[Local] Saved function input to', train_data_path_local)
 
-    # transfer train_data to remote
+    # transfer train_data + kwargs to remote
     train_data_path_remote = os.path.join(remote_config['remote_dir'], f'train_data_{run_hash}.pkl')
     os.system(f'scp {train_data_path_local} {remote_config["remote_machine"]}:{train_data_path_remote}')
     if verbosity:
