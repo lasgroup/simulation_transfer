@@ -11,13 +11,13 @@ import os
 MODEL_SPECIFIC_CONFIG = {
     'BNN_SVGD': {
         'bandwidth_svgd': {'distribution': 'log_uniform', 'min': -1., 'max': 4.},
-        'num_train_steps': {'values': [20000, 40000]}
+        'num_train_steps': {'values': [5000, 10000, 20000]},
     },
     'BNN_FSVGD': {
         'bandwidth_svgd': {'distribution': 'log_uniform_10', 'min': -1.0, 'max': 0.0},
         'bandwidth_gp_prior': {'distribution': 'log_uniform', 'min': -2., 'max': 0.},
-        'num_train_steps': {'values': [20000, 40000]},
-        'num_measurement_points': {'values': [16, 32, 64, 128]},
+        'num_train_steps': {'values': [5000, 10000, 20000]},
+        'num_measurement_points': {'values': [32, 64, 128]},
     },
     'BNN_FSVGD_SimPrior_gp': {
         'bandwidth_svgd': {'distribution': 'log_uniform_10', 'min': -1.0, 'max': 0.0},
@@ -26,22 +26,23 @@ MODEL_SPECIFIC_CONFIG = {
         'num_f_samples': {'values': [512, 1024]},
     },
     'BNN_FSVGD_SimPrior_ssge': {
-        'bandwidth_svgd': {'distribution': 'log_uniform_10', 'min': -1.0, 'max': 0.0},
-        'num_train_steps': {'values': [20000]},
+        'bandwidth_svgd': {'distribution': 'log_uniform_10', 'min': -1.0, 'max': 1.0},
+        'num_train_steps': {'values': [10000, 20000, 40000]},
         'num_measurement_points': {'values': [8, 16, 32]},
         'num_f_samples': {'values': [512]},
         'bandwidth_score_estim': {'distribution': 'log_uniform_10', 'min': -0.5, 'max': 1.},
     },
     'BNN_FSVGD_SimPrior_nu-method': {
         'bandwidth_svgd': {'distribution': 'log_uniform_10', 'min': -1.0, 'max': 0.0},
-        'num_train_steps': {'values': [40000]},
-        'num_measurement_points': {'values': [16, 32]},
+        'num_train_steps': {'values': [30000, 40000, 50000]},
+        'num_measurement_points': {'values': [32]},
         'num_f_samples': {'values': [512]},
-        'bandwidth_score_estim': {'distribution': 'log_uniform_10', 'min': 0.0, 'max': 0.5},
+        #'bandwidth_score_estim': {'distribution': 'log_uniform_10', 'min': -0.5, 'max': 0.5},
+        'bandwidth_score_estim': {'distribution': 'uniform', 'min': 0.8, 'max': 2.0},
     },
     'BNN_FSVGD_SimPrior_gp+nu-method': {
         'bandwidth_svgd': {'distribution': 'log_uniform_10', 'min': -1.0, 'max': 0.0},
-        'num_train_steps': {'values': [40000]},
+        'num_train_steps': {'values': [80000]},
         'num_measurement_points': {'values': [16, 32]},
         'num_f_samples': {'values': [512]},
         'switch_score_estimator_frac': {'values': [0.6667]},
@@ -49,7 +50,7 @@ MODEL_SPECIFIC_CONFIG = {
     },
     'BNN_FSVGD_SimPrior_kde': {
         'bandwidth_svgd': {'distribution': 'log_uniform', 'min': -2., 'max': 2.},
-        'num_train_steps': {'values': [20000]},
+        'num_train_steps': {'values': [40000]},
         'num_measurement_points': {'values': [16, 32]},
         'num_f_samples': {'values': [512, 1024, 2056]},
     },
@@ -132,7 +133,7 @@ if __name__ == '__main__':
 
     # # standard BNN parameters
     parser.add_argument('--model', type=str, default='BNN_SVGD')
-    parser.add_argument('--learn_likelihood_std', type=int, default=1)
+    parser.add_argument('--learn_likelihood_std', type=int, default=0)
 
     args = parser.parse_args()
     main(args)
