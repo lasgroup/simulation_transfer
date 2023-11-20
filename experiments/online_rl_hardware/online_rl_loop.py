@@ -1,15 +1,35 @@
-import os
-
-from experiments.online_rl_hardware.train_policy import train_model_based_policy
-from sim_transfer.sims.envs import RCCarSimEnv
-from typing import Any, Dict
-
 import json
-import jax
+import os
 import pickle
 import random
 from pprint import pprint
+from typing import Any, Dict, NamedTuple
+
+import jax
 import jax.numpy as jnp
+import jax.random as jr
+import matplotlib.pyplot as plt
+import wandb
+
+from experiments.data_provider import _RACECAR_NOISE_STD_ENCODED
+from experiments.online_rl_hardware.train_policy import ModelBasedRLConfig
+from experiments.online_rl_hardware.train_policy import train_model_based_policy
+from sim_transfer.models import BNN_FSVGD_SimPrior, BNN_FSVGD, BNN_SVGD
+from sim_transfer.models.abstract_model import BatchedNeuralNetworkModel
+from sim_transfer.sims.envs import RCCarSimEnv
+from sim_transfer.sims.simulators import AdditiveSim, PredictStateChangeWrapper, GaussianProcessSim
+from sim_transfer.sims.simulators import RaceCarSim, StackedActionSimWrapper
+from sim_transfer.sims.util import plot_rc_trajectory
+
+ENCODE_ANGLE = True
+RUN_REMOTE = False
+ENTITY = 'trevenl'
+PRIORS = {'none_FVSGD',
+          'none_SVGD',
+          'high_fidelity',
+          'low_fidelity',
+          'high_fidelity_no_aditive_GP',
+          }
 
 """ LOAD REMOTE CONFIG """
 with open('remote_config.json', 'r') as f:
@@ -17,17 +37,28 @@ with open('remote_config.json', 'r') as f:
 print('Remote config:')
 pprint(remote_config)
 
+
 def _get_random_hash() -> str:
-    return "%032x"%random.getrandbits(128)
+    return "%032x" % random.getrandbits(128)
+
 
 os.makedirs(remote_config['local_dir'], exist_ok=True)
 
 
-
-def train_model_based_policy_remote(train_data: Dict, run_remote: bool = True, verbosity: int = 1, **kwargs) -> Any:
+def train_model_based_policy_remote(train_data: Dict,
+                                    bnn_model: BatchedNeuralNetworkModel,
+                                    run_remote: bool = True,
+                                    verbosity: int = 1,
+                                    **kwargs) -> Any:
     """ Trains a model-based policy on the remote machine and returns the trained model.
     Args:
         train_data: Dictionary containing the training data and potentially eval data
+        It looks like: train_data = {
+                                        'x_train': jnp.empty((0, state_dim + (1 + num_framestacks) * action_dim)),
+                                        'y_train': jnp.empty((0, state_dim)),
+                                    }
+        Here y_train is the next state (not the difference)!
+
         run_remote: (bool) Whether to run the training on the remote machine or locally
         verbosity: (int) Verbosity level
         **kwargs: additional kwargs to pass to the train_model_based_policy function in train_policy.py
@@ -36,7 +67,7 @@ def train_model_based_policy_remote(train_data: Dict, run_remote: bool = True, v
     """
     if not run_remote:
         # if not running remotely, just run the function locally and return the result
-        return train_model_based_policy(train_data, **kwargs)
+        return train_model_based_policy(train_data, bnn_model, **kwargs)
 
     # copy latest version of train_policy.py to remote and make sure remote directory exists
     os.system(f'scp {remote_config["local_script"]} {remote_config["remote_machine"]}:{remote_config["remote_script"]}')
@@ -78,44 +109,242 @@ def train_model_based_policy_remote(train_data: Dict, run_remote: bool = True, v
     return result
 
 
-def main(seed: int = 234238, num_episodes: int = 20, num_framestacks: int = 0):
-    rng_key_env, rng_key_model, rng_key_rollouts = jax.random.split(jax.random.PRNGKey(seed), 3)
-    env = RCCarSimEnv()
+class MainConfig(NamedTuple):
+    horizon_len: int = 200
+    seed: int = 0
+    project_name: str = 'RaceCar'
+    num_episodes: int = 20
+    bnn_train_steps: int = 10_000
+    sac_num_env_steps: int = 1_000_000
+    learnable_likelihood_std: int = 1
+    reset_bnn: int = 1
+    sim_prior: str = 'none_SVGD'
+    include_aleatoric_noise: int = 1
+    best_bnn_model: int = 1
+    best_policy: int = 1
+    predict_difference: int = 1
+    margin_factor: float = 20.0
+    ctrl_cost_weight: float = 0.005
+    num_stacked_actions: int = 3
+    delay: float = 3 / 30
+    max_replay_size_true_data_buffer: int = 10_000
+    likelihood_exponent: float = 0.5
+    data_batch_size: int = 32
+    bandwidth_svgd: float = 0.2
+    length_scale_aditive_sim_gp: float = 10.0
+    num_f_samples: int = 512
+    num_measurement_points: int = 16
+
+
+def main(config: MainConfig = MainConfig()):
+    rng_key_env, rng_key_model, rng_key_rollouts = jax.random.split(jax.random.PRNGKey(config.seed), 3)
+    env = RCCarSimEnv(encode_angle=ENCODE_ANGLE, )
 
     # initialize train_data as empty arrays
     train_data = {
-        'x_train': jnp.empty((0, env.dim_state[-1] + (1 + num_framestacks) * env.dim_action[-1])),
+        'x_train': jnp.empty((0, env.dim_state[-1] + (1 + config.num_stacked_actions) * env.dim_action[-1])),
         'y_train': jnp.empty((0, env.dim_state[-1])),
     }
 
-    for episode_id in range(1, num_episodes+1):
+    ################################################################################
+    #############################  Setup hyperparameters  ##########################
+    ################################################################################
+    """Setup key"""
+    key = jr.PRNGKey(config.seed)
+    key_sim, key_run_episodes = jr.split(key, 2)
+
+    """Setup car reward kwargs"""
+    car_reward_kwargs = dict(encode_angle=ENCODE_ANGLE,
+                             ctrl_cost_weight=config.ctrl_cost_weight,
+                             margin_factor=config.margin_factor)
+
+    """Setup SAC config dict"""
+    num_env_steps_between_updates = 16
+    num_envs = 64
+    sac_kwargs = dict(num_timesteps=config.sac_num_env_steps,
+                      num_evals=20,
+                      reward_scaling=10,
+                      episode_length=config.horizon_len,
+                      episode_length_eval=2 * config.horizon_len,
+                      action_repeat=1,
+                      discounting=0.99,
+                      lr_policy=3e-4,
+                      lr_alpha=3e-4,
+                      lr_q=3e-4,
+                      max_grad_norm=5.0,
+                      num_envs=num_envs,
+                      batch_size=64,
+                      grad_updates_per_step=num_env_steps_between_updates * num_envs,
+                      num_env_steps_between_updates=num_env_steps_between_updates,
+                      tau=0.005,
+                      wd_policy=0,
+                      wd_q=0,
+                      wd_alpha=0,
+                      num_eval_envs=2 * num_envs,
+                      max_replay_size=5 * 10 ** 4,
+                      min_replay_size=2 ** 11,
+                      policy_hidden_layer_sizes=(64, 64),
+                      critic_hidden_layer_sizes=(64, 64),
+                      normalize_observations=True,
+                      deterministic_eval=True,
+                      wandb_logging=True)
+
+    """Setup gym-like environment"""
+    gym_env = RCCarSimEnv(encode_angle=ENCODE_ANGLE,
+                          action_delay=config.delay,
+                          use_tire_model=True,
+                          use_obs_noise=True,
+                          ctrl_cost_weight=config.ctrl_cost_weight,
+                          margin_factor=config.margin_factor,
+                          )
+
+    total_config = sac_kwargs | config._asdict() | car_reward_kwargs
+    wandb.init(
+        dir='/cluster/scratch/' + ENTITY,
+        project=config.project_name,
+        config=total_config,
+    )
+
+    """ Setup BNN"""
+    sim = RaceCarSim(encode_angle=True, use_blend=config.sim_prior == 'high_fidelity', car_id=2)
+    if config.num_stacked_actions > 0:
+        sim = StackedActionSimWrapper(sim, num_stacked_actions=config.num_stacked_actions, action_size=2)
+    if config.predict_difference:
+        sim = PredictStateChangeWrapper(sim)
+
+    standard_params = {
+        'input_size': sim.input_size,
+        'output_size': sim.output_size,
+        'rng_key': key_sim,
+        'likelihood_std': _RACECAR_NOISE_STD_ENCODED,
+        'normalize_data': True,
+        'normalize_likelihood_std': True,
+        'learn_likelihood_std': bool(config.learnable_likelihood_std),
+        'likelihood_exponent': config.likelihood_exponent,
+        'hidden_layer_sizes': [64, 64, 64],
+        'normalization_stats': sim.normalization_stats,
+        'data_batch_size': config.data_batch_size,
+        'hidden_activation': jax.nn.leaky_relu,
+        'num_train_steps': config.bnn_train_steps,
+
+    }
+
+    if config.sim_prior == 'none_FVSGD':
+        bnn = BNN_FSVGD(
+            **standard_params,
+            domain=sim.domain,
+            bandwidth_svgd=config.bandwidth_svgd,
+        )
+    elif config.sim_prior == 'none_SVGD':
+        bnn = BNN_SVGD(
+            **standard_params,
+            bandwidth_svgd=1.0,
+        )
+    elif config.sim_prior == 'high_fidelity_no_aditive_GP':
+        bnn = BNN_FSVGD_SimPrior(
+            **standard_params,
+            domain=sim.domain,
+            function_sim=sim,
+            score_estimator='gp',
+            num_f_samples=config.num_f_samples,
+            bandwidth_svgd=config.bandwidth_svgd,
+            num_measurement_points=config.num_measurement_points,
+        )
+    else:
+        if config.sim_prior == 'high_fidelity':
+            outputscales_racecar = [0.008, 0.008, 0.009, 0.009, 0.05, 0.05, 0.20]
+        elif config.sim_prior == 'low_fidelity':
+            outputscales_racecar = [0.008, 0.008, 0.01, 0.01, 0.08, 0.08, 0.5]
+        else:
+            raise ValueError(f'Invalid sim prior: {config.sim_prior}')
+
+        sim = AdditiveSim(base_sims=[sim,
+                                     GaussianProcessSim(sim.input_size, sim.output_size,
+                                                        output_scale=outputscales_racecar,
+                                                        length_scale=config.length_scale_aditive_sim_gp,
+                                                        consider_only_first_k_dims=None)
+                                     ])
+
+        bnn = BNN_FSVGD_SimPrior(
+            **standard_params,
+            domain=sim.domain,
+            function_sim=sim,
+            score_estimator='gp',
+            num_f_samples=config.num_f_samples,
+            bandwidth_svgd=config.bandwidth_svgd,
+            num_measurement_points=config.num_measurement_points,
+        )
+
+    ################################################################################
+    ################################################################################
+    ################################################################################
+    mbrl_config = ModelBasedRLConfig(
+        x_dim=7,
+        u_dim=2,
+        num_stacked_actions=config.num_stacked_actions,
+        max_replay_size_true_data_buffer=config.max_replay_size_true_data_buffer,
+        include_aleatoric_noise=bool(config.include_aleatoric_noise),
+        car_reward_kwargs=car_reward_kwargs,
+        sac_kwargs=sac_kwargs,
+        reset_bnn=bool(config.reset_bnn),
+        return_best_bnn=bool(config.best_bnn_model),
+        return_best_policy=bool(config.best_policy),
+        predict_difference=bool(config.predict_difference),
+        bnn_training_test_ratio=0.2,
+        max_num_episodes=100)
+
+    for episode_id in range(1, config.num_episodes + 1):
         print('\n\n ------- Episode', episode_id)
+        key, key_episode = jr.split(key)
 
         # train model & policy
-        # Note: sleep_time is only a random kwarg to test whether kwargs are passed correctly
-        # TODO: remove sleep_time and rempalace with proper kwargs
-        policy = train_model_based_policy_remote(train_data, sleep_time=2)
+        policy, bnn = train_model_based_policy_remote(train_data=train_data,
+                                                      bnn_model=bnn,
+                                                      config=mbrl_config,
+                                                      key=key_episode,
+                                                      episode_idx=episode_id,
+                                                      run_remote=RUN_REMOTE)
         print(episode_id, policy)
 
         # perform policy rollout on the car
-        # TODO: implement the rollouts properly (i.e., add a proper policy and support for framestacks)
-
+        stacked_actions = jnp.zeros(shape=(config.num_stacked_actions * mbrl_config.u_dim,))
         actions = []
-        trajectory = [env.reset()]
-        for i in range(20):
+        obs = env.reset()
+        obs = jnp.concatenate([obs, stacked_actions])
+        trajectory = [obs]
+        rewards = []
+        pure_obs = []
+        for i in range(200):
             rng_key_rollouts, rng_key_act = jax.random.split(rng_key_rollouts)
-            act = jax.random.uniform(rng_key_act, shape=(2,), minval=-1.0, maxval=1.0)  # takes random actions atm
+            # act = jax.random.uniform(rng_key_act, shape=(2,), minval=-1.0, maxval=1.0)  # takes random actions atm
+            act = policy(obs)
             obs, reward, _, _ = env.step(act)
+            rewards.append(reward)
             actions.append(act)
+            pure_obs.append(obs)
+            obs = jnp.concatenate([obs, stacked_actions])
             trajectory.append(obs)
+            if config.num_stacked_actions > 0:
+                stacked_actions = jnp.concatenate([stacked_actions[mbrl_config.u_dim:], act])
 
         trajectory = jnp.array(trajectory)
         actions = jnp.array(actions)
+        rewards = jnp.array(rewards)
+        pure_obs = jnp.array(pure_obs)
+
+        fig, axes = plot_rc_trajectory(pure_obs,
+                                       actions,
+                                       encode_angle=ENCODE_ANGLE,
+                                       show=False)
+        wandb.log({'True_trajectory_path': wandb.Image(fig),
+                   'reward_on_true_system': jnp.sum(rewards),
+                   'x_axis/episode': episode_id})
+        plt.close('all')
 
         # add observations and actions to train_data
         train_data['x_train'] = jnp.concatenate([train_data['x_train'],
                                                  jnp.concatenate([actions, trajectory[:-1]], axis=-1)], axis=0)
-        train_data['y_train'] = jnp.concatenate([train_data['y_train'], trajectory[1:]], axis=0)
+        train_data['y_train'] = jnp.concatenate([train_data['y_train'], trajectory[1:, :mbrl_config.x_dim]], axis=0)
 
 
 if __name__ == '__main__':
