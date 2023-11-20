@@ -110,14 +110,14 @@ def train_model_based_policy_remote(train_data: Dict,
 
 
 class MainConfig(NamedTuple):
-    horizon_len: int = 200
+    horizon_len: int = 64
     seed: int = 0
     project_name: str = 'RaceCar'
     num_episodes: int = 20
-    bnn_train_steps: int = 10_000
+    bnn_train_steps: int = 40_000
     sac_num_env_steps: int = 1_000_000
     learnable_likelihood_std: int = 1
-    reset_bnn: int = 1
+    reset_bnn: int = 0
     sim_prior: str = 'none_SVGD'
     include_aleatoric_noise: int = 1
     best_bnn_model: int = 1
@@ -188,15 +188,6 @@ def main(config: MainConfig = MainConfig()):
                       normalize_observations=True,
                       deterministic_eval=True,
                       wandb_logging=True)
-
-    """Setup gym-like environment"""
-    gym_env = RCCarSimEnv(encode_angle=ENCODE_ANGLE,
-                          action_delay=config.delay,
-                          use_tire_model=True,
-                          use_obs_noise=True,
-                          ctrl_cost_weight=config.ctrl_cost_weight,
-                          margin_factor=config.margin_factor,
-                          )
 
     total_config = sac_kwargs | config._asdict() | car_reward_kwargs
     wandb.init(
@@ -316,7 +307,6 @@ def main(config: MainConfig = MainConfig()):
         pure_obs = []
         for i in range(200):
             rng_key_rollouts, rng_key_act = jax.random.split(rng_key_rollouts)
-            # act = jax.random.uniform(rng_key_act, shape=(2,), minval=-1.0, maxval=1.0)  # takes random actions atm
             act = policy(obs)
             obs, reward, _, _ = env.step(act)
             rewards.append(reward)
