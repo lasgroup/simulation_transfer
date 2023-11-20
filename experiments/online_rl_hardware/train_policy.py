@@ -119,6 +119,7 @@ def train_model_based_policy(train_data: Dict,
 
     """Train policy"""
     _sac_kwargs = config.sac_kwargs
+    # TODO: Be careful!!
     if num_training_points == 0:
         _sac_kwargs = copy.deepcopy(_sac_kwargs)
         _sac_kwargs['num_timesteps'] = 10_000
