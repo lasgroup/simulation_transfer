@@ -14,8 +14,9 @@ tfk = tfp.math.psd_kernels
 class BayesianNeuralNetworkSVGD(RegressionModel):
 
     def __init__(self, x_train, y_train, hidden_layer_sizes=(32, 32, 32, 32), activation='relu',
-                 likelihood_std=0.1, learn_likelihood=True, prior_std=0.1, prior_weight=1e-4,
-                 likelihood_prior_mean=tf.math.log(0.1), likelihood_prior_std=1.0, sqrt_mode=False,
+                 likelihood_std=0.1, learn_likelihood=True, normalize_likelihood_std: bool = True,
+                 prior_std=0.1, prior_weight=1e-4, likelihood_prior_mean=tf.math.log(0.1),
+                 likelihood_prior_std=1.0, sqrt_mode=False,
                  n_particles=10, batch_size=8, bandwidth=100., lr=1e-3, meta_learned_prior=None,
                  normalization_stats=None):
 
@@ -53,6 +54,8 @@ class BayesianNeuralNetworkSVGD(RegressionModel):
             self.meta_learned_prior_mode = True
 
         # Likelihood
+        if normalize_likelihood_std:
+            likelihood_std = tf.convert_to_tensor(likelihood_std) / tf.reshape(self.y_std, (self.output_dim,))
         self.likelihood = GaussianLikelihood(self.output_dim, n_particles,
                                              trainable=learn_likelihood, std=likelihood_std)
 

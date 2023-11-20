@@ -11,14 +11,15 @@ import os
 MODEL_SPECIFIC_CONFIG = {
     'PACOH': {
         'prior_weight': {'distribution': 'log_uniform_10', 'min': -1., 'max': 0.},
-        'num_iter_meta_train': {'values': [20000]},
+        'num_iter_meta_train': {'values': [20000, 30000, 40000]},
         'meta_batch_size': {'values': [4, 8, 16]},
         'bandwidth': {'distribution': 'log_uniform_10', 'min': 0., 'max': 2.},
+        'lr': {'distribution': 'log_uniform_10', 'min': -4., 'max': -3}
     },
     'NP': {
-        'num_iter_meta_train': {'values': [40000]},
-        'latent_dim': {'values': [64, 128]},
-        'hidden_dim': {'values': [32, 64]},
+        'num_iter_meta_train': {'values': [60000]},
+        'latent_dim': {'values': [64, 128, 256]},
+        'hidden_dim': {'values': [32, 64, 128]},
         'lr': {'distribution': 'log_uniform_10', 'min': -4., 'max': -3},
     },
 }
@@ -31,6 +32,7 @@ def main(args):
     data_seeds = list(rds.randint(0, 10**6, size=(100,)))
 
     sweep_config = {
+        'learn_likelihood_std': {'value': args.learn_likelihood_std},
         'data_source': {'value': args.data_source},
         'num_samples_train': DATASET_CONFIGS[args.data_source]['num_samples_train'],
         'model': {'value': args.model},
@@ -85,6 +87,7 @@ if __name__ == '__main__':
 
     # # standard BNN parameters
     parser.add_argument('--model', type=str, default='NP')
+    parser.add_argument('--learn_likelihood_std', type=int, default=0)
 
     args = parser.parse_args()
     main(args)

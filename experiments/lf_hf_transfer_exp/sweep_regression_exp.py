@@ -11,22 +11,31 @@ import os
 MODEL_SPECIFIC_CONFIG = {
     'BNN_SVGD': {
         'bandwidth_svgd': {'distribution': 'log_uniform', 'min': -1., 'max': 4.},
-        'num_train_steps': {'values': [20000, 40000]}
+        'num_train_steps': {'values': [5000, 10000, 20000]}
     },
     'BNN_FSVGD': {
         'bandwidth_svgd': {'distribution': 'log_uniform_10', 'min': -1.0, 'max': 0.0},
         'bandwidth_gp_prior': {'distribution': 'log_uniform', 'min': -2., 'max': 0.},
-        'num_train_steps': {'values': [20000]},
+        'num_train_steps': {'values': [5000, 10000, 20000]},
         'num_measurement_points': {'values': [16, 32, 64, 128]},
     },
     'BNN_FSVGD_SimPrior_gp': {
         'bandwidth_svgd': {'distribution': 'log_uniform_10', 'min': -1.0, 'max': 0.0},
         'num_train_steps': {'values': [40000]},
-        'num_measurement_points': {'values': [16, 32]},
+        'num_measurement_points': {'values': [32]},
         'num_f_samples': {'values': [1024]},
-        'added_gp_lengthscale': {'distribution': 'uniform', 'min': 1., 'max': 20.0},   # racecar: 4 - 8
+        'added_gp_lengthscale': {'distribution': 'uniform', 'min': 2., 'max': 10.},   # racecar: 4 - 8  # pendulum (diff): > 8 - 15.
         #'added_gp_outputscale': {'distribution': 'uniform', 'min': 0.05, 'max': 0.5},  # racecar: 0.2 - 0.8
-        'added_gp_outputscale': {'distribution': 'uniform', 'min': 0.5, 'max': 2.0},   # racecar: 4 - 8
+        'added_gp_outputscale': {'distribution': 'uniform', 'min': 0.5, 'max': 4.},  # pendulum (diff): 1 - 3.0
+    },
+    'BNN_FSVGD_SimPrior_nu-method': {
+        'bandwidth_svgd': {'distribution': 'log_uniform_10', 'min': -1.0, 'max': 0.0},
+        'num_train_steps': {'values': [40000]},
+        'num_measurement_points': {'values': [32]},
+        'num_f_samples': {'values': [512]},
+        'bandwidth_score_estim': {'distribution': 'uniform', 'min': 0.8, 'max': 2.0},
+        'added_gp_lengthscale': {'distribution': 'uniform', 'min': 2., 'max': 10.},
+        'added_gp_outputscale': {'distribution': 'uniform', 'min': 0.5, 'max': 4.},
     },
     'BNN_FSVGD_SimPrior_ssge': {
         'bandwidth_svgd': {'distribution': 'log_uniform_10', 'min': -1.0, 'max': 0.0},
@@ -34,15 +43,6 @@ MODEL_SPECIFIC_CONFIG = {
         'num_measurement_points': {'values': [8, 16, 32]},
         'num_f_samples': {'values': [512]},
         'bandwidth_score_estim': {'distribution': 'log_uniform_10', 'min': -0.5, 'max': 1.},
-    },
-    'BNN_FSVGD_SimPrior_nu-method': {
-        'bandwidth_svgd': {'distribution': 'log_uniform_10', 'min': -1.0, 'max': 0.0},
-        'num_train_steps': {'values': [40000]},
-        'num_measurement_points': {'values': [16, 32]},
-        'num_f_samples': {'values': [512]},
-        'bandwidth_score_estim': {'distribution': 'log_uniform_10', 'min': 0.0, 'max': 0.0},
-        'added_gp_lengthscale': {'distribution': 'uniform', 'min': 5., 'max': 10.0},
-        'added_gp_outputscale': {'distribution': 'uniform', 'min': 0.5, 'max': 2.0},   # racecar: 4 - 8
     },
     'BNN_FSVGD_SimPrior_gp+nu-method': {
         'bandwidth_svgd': {'distribution': 'log_uniform_10', 'min': -1.0, 'max': 0.0},
@@ -87,6 +87,7 @@ def main(args):
         #'likelihood_std': {'value': None},
         'num_particles': {'value': 20},
         'data_batch_size': {'value': 8},
+        'pred_diff': {'value': args.pred_diff},
     }
     # update with model specific sweep ranges
     model_name = args.model.replace('_no_add_gp', '')
@@ -134,7 +135,8 @@ if __name__ == '__main__':
     parser.add_argument('--yes', default=False, action='store_true')
 
     # data parameters
-    parser.add_argument('--data_source', type=str, default='pendulum')
+    parser.add_argument('--data_source', type=str, default='pendulum_hf')
+    parser.add_argument('--pred_diff', type=int, default=0)
 
     # # standard BNN parameters
     parser.add_argument('--model', type=str, default='BNN_SVGD')

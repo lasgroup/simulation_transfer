@@ -30,6 +30,7 @@ def meta_learning_experiment(
         lr: float = 1e-3,
         latent_dim: int = 128,
         hidden_dim: int = 32,
+        learn_likelihood_std: bool = False,
 ):
     # provide data and sim
     x_train, y_train, x_test, y_test, sim = provide_data_and_sim(
@@ -54,7 +55,7 @@ def meta_learning_experiment(
         pacoh_model = PACOH_NN_Regression(meta_training_data, random_seed=model_seed,
                                           num_iter_meta_train=num_iter_meta_train,
                                           num_iter_meta_test=5000,
-                                          learn_likelihood=False,
+                                          learn_likelihood=bool(learn_likelihood_std),
                                           normalize_likelihood_std=True,
                                           hidden_layer_sizes=(64, 64, 64),
                                           activation='leaky_relu',
@@ -73,6 +74,25 @@ def meta_learning_experiment(
         rmse = float(tf.sqrt(tf.reduce_mean(tf.reduce_sum((pred_dist.mean() - y_test)**2, axis=-1))))
         avg_std = float(tf.reduce_mean(pred_dist.stddev()))
         eval_stats = {'nll': nll, 'rmse': rmse, 'avg_std': avg_std}
+    elif model == 'BNN':
+        from baselines.pacoh_nn.bnn import BayesianNeuralNetworkSVGD
+        pacoh_model = BayesianNeuralNetworkSVGD(x_train, y_train,
+                                                hidden_layer_sizes=(64, 64, 64),
+                                                activation='leaky_relu',
+                                                likelihood_std=likelihood_std,
+                                                learn_likelihood=bool(learn_likelihood_std),
+                                                normalize_likelihood_std=True,
+                                                lr=lr,
+                                                prior_weight=1e-4,
+                                                bandwidth=bandwidth,
+                                                batch_size=batch_size)
+        pacoh_model.fit(x_test, y_test, num_iter_fit=10000)
+        _, pred_dist = pacoh_model.predict(x_test)
+        nll = - float(tf.reduce_mean(pred_dist.log_prob(y_test)))
+        rmse = float(tf.sqrt(tf.reduce_mean(tf.reduce_sum((pred_dist.mean() - y_test)**2, axis=-1))))
+        avg_std = float(tf.reduce_mean(pred_dist.stddev()))
+        eval_stats = {'nll': nll, 'rmse': rmse, 'avg_std': avg_std}
+
     elif model == 'NP':
         from baselines.neural_process.neural_process import NeuralProcess
         np_model = NeuralProcess(input_size=sim.input_size,
@@ -176,6 +196,7 @@ if __name__ == '__main__':
     parser.add_argument('--meta_batch_size', type=int, default=4)
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--bandwidth', type=float, default=10.)
+    parser.add_argument('--learn_likelihood_std', type=int, default=0)
 
     # -- NP
     parser.add_argument('--use_cross_attention', type=int, default=1)

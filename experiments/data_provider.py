@@ -1,10 +1,12 @@
 import os
 import pickle
-from functools import partial
-from typing import Dict, Any
-
+import glob
 import jax
 import jax.numpy as jnp
+
+from functools import partial
+from typing import Dict, Any, List
+from brax.training.types import Transition
 
 from experiments.util import load_csv_recordings
 from sim_transfer.sims.car_sim_config import OBS_NOISE_STD_SIM_CAR
@@ -132,88 +134,88 @@ def get_rccar_recorded_data(encode_angle: bool = True, skip_first_n_points: int 
     return x_train, y_train, x_test, y_test
 
 
+def _load_transitions(file_names: List[str]) -> List[Transition]:
+    transitions = []
+    for fn in file_names:
+        with open(fn, 'rb') as f:
+            data = pickle.load(f)
+            assert (data.observation.shape[-1] == 13 or data.observation.shape[-1] == 12), "state must be 12D or 13D"
+            if data.observation.shape[-1] == 13:
+                data = Transition(
+                    observation=decode_angles_fn(data.observation, angle_idx=2),
+                    action=data.action, reward=data.reward, discount=data.discount,
+                    next_observation=decode_angles_fn(data.next_observation, angle_idx=2), extras=data.extras,)
+            transitions.append(data)
+    return transitions
+
+
+def _rccar_transitions_to_dataset(transitions: Transition, encode_angles: bool = False, skip_first_n: int = 30,
+                                  action_delay: int = 3, action_stacking: bool = False):
+    assert 0 <= action_delay <= 3, "Only recorded the last 3 actions and the current action"
+    assert action_delay >= 0, "Action delay must be non-negative"
+
+    if action_stacking:
+        if action_delay == 0:
+            u = transitions.action
+        else:
+            u = jnp.concatenate([transitions.observation[:, -2 * action_delay:], transitions.action], axis=-1)
+        assert u.shape[-1] == 2 * (action_delay + 1)
+    else:
+        if action_delay == 0:
+            u = transitions.action
+        elif action_delay == 1:
+            u = transitions.observation[:, -2:]
+        else:
+            u = transitions.observation[:, -2 * action_delay: -2 * (action_delay - 1)]
+        assert u.shape[-1] == 2
+
+    # make sure that we only take the actual state without the stacked actions
+    x = transitions.observation[:, :6]
+    y = transitions.next_observation[:, :6]
+
+    # project theta into [-\pi, \pi]
+    x[:, 2] = (x[:, 2] + jnp.pi) % (2 * jnp.pi) - jnp.pi
+    y[:, 2] = (y[:, 2] + jnp.pi) % (2 * jnp.pi) - jnp.pi
+    if encode_angles:
+        x = encode_angles_fn(x, angle_idx=2)
+        y = encode_angles_fn(y, angle_idx=2)
+
+    # remove first n steps (since often not much is happening)
+    x, u, y = x[skip_first_n:], u[skip_first_n:], y[skip_first_n:]
+
+    # concatenate state and action
+    x_data = jnp.concatenate([x, u], axis=-1)  # current state + action
+    y_data = y  # next state
+
+    # check shapes
+    assert x_data.shape[0] == y_data.shape[0]
+    assert x_data.shape[1] - (2 * (1 + int(action_stacking) * action_delay)) == y_data.shape[1]
+
+    return x_data, y_data
+
+
 def get_rccar_recorded_data_new(encode_angle: bool = True, skip_first_n_points: int = 10,
                                 action_delay: int = 3, action_stacking: bool = False,
-                                car_id: int = 2, key_data: jax.random.PRNGKeyArray = jax.random.PRNGKey(0)):
-    from brax.training.types import Transition
+                                car_id: int = 2):
 
     assert car_id in [1, 2]
     if car_id == 1:
         num_train_traj = 8
         recordings_dir = os.path.join(DATA_DIR, 'recordings_rc_car_v1')
-        import glob
-        file_name = glob.glob(recordings_dir + '/*.pickle')
     elif car_id == 2:
-        num_train_traj = 12
+        num_train_traj = 10
         recordings_dir = os.path.join(DATA_DIR, 'recordings_rc_car_v2')
-        import glob
-        file_name = glob.glob(recordings_dir + '/*.pickle')
-
     else:
         raise ValueError(f"Unknown car id {car_id}")
+    file_names = sorted(glob.glob(recordings_dir + '/*.pickle'))
 
-    transitions = []
-    for fn in file_name:
-        with open(fn, 'rb') as f:
-            data = pickle.load(f)
-            assert (data.observation.shape[-1] == 13 or data.observation.shape[-1] == 12), "state must be 12D or 13D"
-            if data.observation.shape[-1] == 13:
-                x = decode_angles_fn(data.observation, angle_idx=2)
-                x_next = decode_angles_fn(data.next_observation, angle_idx=2)
-                data = Transition(
-                    observation=x,
-                    action=data.action,
-                    reward=data.reward,
-                    discount=data.discount,
-                    next_observation=x_next,
-                    extras=data.extras,
-                )
-            transitions.append(data)
-
-    indices = jnp.arange(0, len(transitions))
-    indices = jax.random.shuffle(key=key_data, x=indices)
+    # load and shuffle transitions
+    transitions = _load_transitions(file_names)
+    indices = jax.random.permutation(key=jax.random.PRNGKey(9345), x=jnp.arange(0, len(transitions)))
     transitions = [transitions[idx] for idx in indices]
 
-    def prepare_rccar_data(transitions: Transition, encode_angles: bool = False, skip_first_n: int = 30,
-                           action_delay: int = 3, action_stacking: bool = False):
-        assert 0 <= action_delay <= 3, "Only recorded the last 3 actions and the current action"
-        assert action_delay >= 0, "Action delay must be non-negative"
-
-        if action_stacking:
-            if action_delay == 0:
-                u = transitions.action
-            else:
-                u = jnp.concatenate([transitions.observation[:, -2 * action_delay:], transitions.action], axis=-1)
-            assert u.shape[-1] == 2 * (action_delay + 1)
-        else:
-            if action_delay == 0:
-                u = transitions.action
-            elif action_delay == 1:
-                u = transitions.observation[:, -2:]
-            else:
-                u = transitions.observation[:, -2 * action_delay: -2 * (action_delay - 1)]
-            assert u.shape[-1] == 2
-
-        x = transitions.observation[:, :6]
-        y = transitions.next_observation[: , :6]
-
-        # project theta into [-\pi, \pi]
-        x[:, 2] = (x[:, 2] + jnp.pi) % (2 * jnp.pi) - jnp.pi
-        y[:, 2] = (y[:, 2] + jnp.pi) % (2 * jnp.pi) - jnp.pi
-        if encode_angles:
-            x = encode_angles_fn(x, angle_idx=2)
-            y = encode_angles_fn(y, angle_idx=2)
-
-        # remove first n steps (since often not much is happening)
-        x, u, y = x[skip_first_n:], u[skip_first_n:], y[skip_first_n:]
-        x_data = jnp.concatenate([x, u], axis=-1)  # current state + action
-        y_data = y # next state
-        assert x_data.shape[0] == y_data.shape[0]
-        assert x_data.shape[1] - (2 * (1 + int(action_stacking) * action_delay)) == y_data.shape[1]
-        return x_data, y_data
-
-
-    prep_fn = partial(prepare_rccar_data, encode_angles=encode_angle, skip_first_n=skip_first_n_points,
+    # transform transitions into supervised learning datasets
+    prep_fn = partial(_rccar_transitions_to_dataset, encode_angles=encode_angle, skip_first_n=skip_first_n_points,
                       action_delay=action_delay, action_stacking=action_stacking)
     x_train, y_train = map(lambda x: jnp.concatenate(x, axis=0), zip(*map(prep_fn, transitions[:num_train_traj])))
     x_test, y_test = map(lambda x: jnp.concatenate(x, axis=0), zip(*map(prep_fn, transitions[num_train_traj:])))
