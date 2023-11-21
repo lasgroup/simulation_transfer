@@ -14,7 +14,8 @@ tensorflow-probability
 tensorflow-datasets
 tensorflow
 pytest
-brax >= 0.9.1
+brax>=0.9.3
 gym==0.23.1
 XInput-Python
 distro
+git+https://github.com/lasgroup/Model-based-policy-optimizers

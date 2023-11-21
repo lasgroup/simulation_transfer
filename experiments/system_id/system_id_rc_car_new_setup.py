@@ -78,7 +78,7 @@ transitions = load_transitions(DATA_DIR)
 datasets = list(map(partial(prepare_data, window_size=11, encode_angles=args.encode_angle, action_delay=args.action_delay),
                           transitions))
 # shuffle data
-[datasets[i] for i in jax.random.shuffle(key_data, jnp.arange(len(datasets)))]
+[datasets[i] for i in jax.random.permutation(key_data, jnp.arange(len(datasets)))]
 
 # split into train and test
 datasets_train = datasets[:num_train_traj]

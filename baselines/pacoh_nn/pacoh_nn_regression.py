@@ -35,6 +35,8 @@ class PACOH_NN_Regression(MetaLearner):
         # prepare config for meta eval model
         self.eval_model_config = {'hidden_layer_sizes': hidden_layer_sizes, 'activation': activation,
                                   'learn_likelihood': learn_likelihood,
+                                  'likelihood_std': likelihood_std,
+                                  'normalize_likelihood_std': normalize_likelihood_std,
                                   'n_particles': num_posterior_particles * self.n_batched_priors,
                                   'prior_weight': prior_weight, 'bandwidth': bandwidth,
                                   'batch_size': batch_size}

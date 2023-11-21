@@ -35,6 +35,7 @@ def regression_experiment(
                           data_source: str,
                           num_samples_train: int,
                           data_seed: int = 981648,
+                          pred_diff: bool = False,
 
                           # logging parameters
                           use_wandb: bool = False,
@@ -78,7 +79,8 @@ def regression_experiment(
     # provide data and sim
     x_train, y_train, x_test, y_test, sim_lf = provide_data_and_sim(
         data_source=data_source,
-        data_spec={'num_samples_train': num_samples_train},
+        data_spec={'num_samples_train': num_samples_train,
+                   'pred_diff': bool(pred_diff)},
         data_seed=data_seed)
 
     if model.endswith('_no_add_gp'):
@@ -114,6 +116,7 @@ def regression_experiment(
         'hidden_layer_sizes': [layer_size]*num_layers,
         'normalize_likelihood_std': normalize_likelihood_std,
         'learn_likelihood_std': bool(learn_likelihood_std),
+        'likelihood_exponent': likelihood_exponent,
     }
 
     if model == 'BNN_SVGD':
@@ -265,12 +268,13 @@ if __name__ == '__main__':
     parser.add_argument('--use_wandb', type=bool, default=False)
 
     # data parameters
-    parser.add_argument('--data_source', type=str, default='racecar_hf_no_angvel')
-    parser.add_argument('--num_samples_train', type=int, default=20000)
+    parser.add_argument('--data_source', type=str, default='pendulum_hf')
+    parser.add_argument('--num_samples_train', type=int, default=20)
     parser.add_argument('--data_seed', type=int, default=77698)
+    parser.add_argument('--pred_diff', type=int, default=0)
 
     # standard BNN parameters
-    parser.add_argument('--model', type=str, default='BNN_FSVGD_SimPrior_gp')
+    parser.add_argument('--model', type=str, default='BNN_SVGD')
     parser.add_argument('--model_seed', type=int, default=892616)
     parser.add_argument('--likelihood_std', type=float, default=None)
     parser.add_argument('--learn_likelihood_std', type=int, default=0)
