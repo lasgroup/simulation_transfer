@@ -352,6 +352,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Meta-BO run')
     parser.add_argument('--seed', type=int, default=914)
     parser.add_argument('--prior', type=str, default='none_FVSGD')
+    parser.add_argument('--project_name', type=str, default='OnlineRL_RCCar')
     parser.add_argument('--run_remote', type=int, default=0)
     parser.add_argument('--wandb_tag', type=str, default='')
     parser.add_argument('--gpu', type=int, default=1)
@@ -363,5 +364,6 @@ if __name__ == '__main__':
 
     assert args.prior in PRIORS, f'Invalid prior: {args.prior}'
     main(config=MainConfig(sim_prior=args.prior,
-                           seed=args.seed),
+                           seed=args.seed,
+                           project_name=args.project_name, ),
          run_remote=bool(args.run_remote), )
