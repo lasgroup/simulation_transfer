@@ -341,7 +341,7 @@ def main(config: MainConfig = MainConfig(), run_remote: bool = False, encode_ang
 
         # add observations and actions to train_data
         train_data['x_train'] = jnp.concatenate([train_data['x_train'],
-                                                 jnp.concatenate([actions, trajectory[:-1]], axis=-1)], axis=0)
+                                                 jnp.concatenate([trajectory[:-1], actions], axis=-1)], axis=0)
         train_data['y_train'] = jnp.concatenate([train_data['y_train'], trajectory[1:, :mbrl_config.x_dim]], axis=0)
         print(f'Size of train_data in episode {episode_id}:', train_data['x_train'].shape[0])
 
