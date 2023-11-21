@@ -1,6 +1,6 @@
 from sim_transfer.models.bnn_fsvgd import BNN_FSVGD
 import jax.numpy as jnp
-from typing import Optional, Dict, Union
+from typing import Optional, Dict, Union, Tuple
 from collections import OrderedDict
 import jax
 from typing import NamedTuple
@@ -29,6 +29,7 @@ class BNN_FSVGD_GreyBox(BNN_FSVGD):
         likelihood_std = -1. * jnp.ones(self.output_size)
         self.params_sim = {'sim_params': sim_params, 'likelihood_std': likelihood_std}
         self.optim_sim = None
+        self._y_mean_sim, self._y_std_sim = jnp.copy(self._y_mean), jnp.copy(self._y_std)
         if lr_sim:
             self.lr_sim = lr_sim
         else:
@@ -45,11 +46,15 @@ class BNN_FSVGD_GreyBox(BNN_FSVGD):
         if rng_key is None:
             key_rng = self._next_rng_key()
             key_model = self._next_rng_key()
+            param_key = self._next_rng_key()
         else:
-            key_model, key_rng = jax.random.split(rng_key)
+            key_model, key_rng, param_key = jax.random.split(rng_key, 3)
         self._rng_key = key_rng  # reinitialize rng_key
         self.batched_model.reinit_params(key_model)  # reinitialize model parameters
         self.params['nn_params_stacked'] = self.batched_model.param_vectors_stacked
+        sim_params = self.sim.sample_params(param_key)
+        likelihood_std = -1. * jnp.ones(self.output_size)
+        self.params_sim = {'sim_params': sim_params, 'likelihood_std': likelihood_std}
         self._init_likelihood()  # reinitialize likelihood std
         self._init_optim()  # reinitialize optimizer
         self._init_sim_optim()
@@ -62,6 +67,66 @@ class BNN_FSVGD_GreyBox(BNN_FSVGD):
         else:
             self.optim_sim = optax.adam(learning_rate=self.lr_sim)
         self.opt_state_sim = self.optim_sim.init(self.params_sim)
+
+    def _preprocess_train_data_sim(self, x_train: jnp.ndarray, y_train: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
+        """ Convert data to float32, ensure 2d shape and normalize if necessary"""
+        if self.normalize_data:
+            if self._need_to_compute_norm_stats:
+                self._compute_normalization_stats_sim(x_train, y_train)
+            x_train, y_train = self._normalize_data_sim(x_train, y_train)
+        else:
+            x_train, y_train = self._ensure_atleast_2d_float(x_train, y_train)
+        return x_train, y_train
+
+    def _compute_normalization_stats_sim(self, x: jnp.ndarray, y: jnp.ndarray) -> None:
+        # computes the empirical normalization stats and stores as private variables
+        x, y = self._ensure_atleast_2d_float(x, y)
+        self._x_mean = jnp.mean(x, axis=0)
+        self._y_mean_sim = jnp.mean(y, axis=0)
+        self._x_std = jnp.std(x, axis=0)
+        self._y_std_sim = jnp.std(y, axis=0)
+
+    def _normalize_data_sim(self, x: jnp.ndarray, y: Optional[jnp.ndarray] = None, eps: float = 1e-8):
+        # normalized the given data with the normalization stats
+        if y is None:
+            x = self._ensure_atleast_2d_float(x)
+        else:
+            x, y = self._ensure_atleast_2d_float(x, y)
+        x_normalized = (x - self._x_mean[None, :]) / (self._x_std[None, :] + eps)
+        assert x_normalized.shape == x.shape
+        if y is None:
+            return x_normalized
+        else:
+            y_normalized = self._normalize_y_sim(y, eps=eps)
+            assert y_normalized.shape == y.shape
+            return x_normalized, y_normalized
+
+    def _unnormalize_data_sim(self, x: jnp.ndarray, y: Optional[jnp.ndarray] = None, eps: float = 1e-8):
+        if y is None:
+            x = self._ensure_atleast_2d_float(x)
+        else:
+            x, y = self._ensure_atleast_2d_float(x, y)
+        x_unnorm = x * (self._x_std[None, :] + eps) + self._x_mean[None, :]
+        assert x_unnorm.shape == x.shape
+        if y is None:
+            return x_unnorm
+        else:
+            y_unnorm = self._unnormalize_y_sim(y, eps=eps)
+            return x_unnorm, y_unnorm
+
+    def _normalize_y_sim(self, y: jnp.ndarray, eps: float = 1e-8) -> jnp.ndarray:
+        y = self._ensure_atleast_2d_float(y)
+        assert y.shape[-1] == self.output_size
+        y_normalized = (y - self._y_mean_sim) / (self._y_std_sim + eps)
+        assert y_normalized.shape == y.shape
+        return y_normalized
+
+    def _unnormalize_y_sim(self, y: jnp.ndarray, eps: float = 1e-8) -> jnp.ndarray:
+        y = self._ensure_atleast_2d_float(y)
+        assert y.shape[-1] == self.output_size
+        y_unnorm = y * (self._y_std_sim + eps) + self._y_mean_sim
+        assert y_unnorm.shape == y.shape
+        return y_unnorm
 
     def _sim_step(self, opt_state_sim: optax.OptState, params_sim: Dict,
                   x_batch: jnp.array, y_batch: jnp.array, num_train_points: Union[float, int]):
@@ -86,28 +151,41 @@ class BNN_FSVGD_GreyBox(BNN_FSVGD):
     def sim_model_step(self, x: jnp.array, params_sim: NamedTuple, normalized_x: bool = False,
                        normalized_y: bool = False):
         if normalized_x:
-            x = self._unnormalize_data(x)
+            x = self._unnormalize_data_sim(x)
         y = self.sim.evaluate_sim(x, params_sim)
         if normalized_y:
-            y_normalized = self._normalize_y(y)
+            y_normalized = self._normalize_y_sim(y)
             assert y_normalized.shape == y.shape
             y = y_normalized
         return y
 
     def predict_dist(self, x: jnp.ndarray, include_noise: bool = True):
-        self.batched_model.param_vectors_stacked = self.params['nn_params_stacked']
-        sim_model_prediction = self.sim_model_step(x, params_sim=self.params_sim['sim_params'], normalized_x=False,
-                                                   normalized_y=True)
-        x = self._normalize_data(x)
-        y_pred_raw = self.batched_model(x)
-        y_pred_raw = jax.vmap(lambda z: z + sim_model_prediction)(y_pred_raw)
+        y_pred_raw = self.normalized_batched_predictions(x)
         pred_dist = self._to_pred_dist(y_pred_raw, likelihood_std=self.likelihood_std, include_noise=include_noise)
         assert pred_dist.batch_shape == x.shape[:-1]
         assert pred_dist.event_shape == (self.output_size,)
         return pred_dist
 
+    def normalized_batched_predictions(self, x: jnp.ndarray):
+        # sim model takes unormalized input and predicts unnormalized output.
+        y_sim_raw = self.sim_model_step(x, params_sim=self.params_sim['sim_params'], normalized_x=False,
+                                        normalized_y=False)
+        # We scale the output of the sim model with y_std to obtain y_sim_raw
+        y_sim_raw = self._ensure_atleast_2d_float(y_sim_raw)
+        assert y_sim_raw.shape[-1] == self.output_size
+        y_sim_scaled = y_sim_raw / (self._y_std + 1e-8)
+        # normalize data to get normalized output of the neural network.
+        x = self._normalize_data(x)
+        self.batched_model.param_vectors_stacked = self.params['nn_params_stacked']
+        y_pred_raw = self.batched_model(x)
+        # total normalized output is output of NNs + y_sim_scaled. To unnormalize we get (y_nn + y_sim_scaled) * std
+        # + mean -> y_nn * std + mean + y_sim_scaled * std -> y_nn_unnormalized + y_sim_raw
+        y_pred_raw = jax.vmap(lambda z: z + y_sim_scaled)(y_pred_raw)
+        return y_pred_raw
+
     def predict_post_samples(self, x: jnp.ndarray) -> jnp.ndarray:
-        sim_model_prediction = self.sim_model_step(x, self.params_sim['sim_params'])
+        sim_model_prediction = self.sim_model_step(x, self.params_sim['sim_params'], normalized_x=False,
+                                                   normalized_y=False)
         x = self._normalize_data(x)
         y_pred_raw = self.batched_model(x)
         y_pred = y_pred_raw * self._y_std + self._y_mean
@@ -142,24 +220,22 @@ class BNN_FSVGD_GreyBox(BNN_FSVGD):
             y_batch=y_batch, num_train_points=num_train_points)
         return stats
 
-    def fit(self, x_train: jnp.ndarray, y_train: jnp.ndarray, x_eval: Optional[jnp.ndarray] = None,
-            y_eval: Optional[jnp.ndarray] = None, num_steps: Optional[int] = None,
-            num_sim_model_train_steps: Optional[int] = None, log_period: int = 1000,
-            log_to_wandb: bool = False, metrics_objective: str = 'train_nll_loss', keep_the_best: bool = False,
-            per_dim_metrics: bool = False):
-        # check whether eval data has been passed
+    def fit_sim_prior(self, x_train: jnp.ndarray, y_train: jnp.ndarray, x_eval: Optional[jnp.ndarray] = None,
+                      y_eval: Optional[jnp.ndarray] = None,
+                      num_sim_model_train_steps: Optional[int] = None, log_period: int = 1000,
+                      log_to_wandb: bool = False, metrics_objective: str = 'train_nll_loss',
+                      keep_the_best: bool = False,
+                      per_dim_metrics: bool = False):
+
         evaluate = x_eval is not None or y_eval is not None
         assert not evaluate or x_eval.shape[0] == y_eval.shape[0]
 
         # prepare data and data loader
-        x_train_unnormalized, y_train_unnormalized = x_train, y_train
-        x_train, y_train = self._preprocess_train_data(x_train, y_train)
+        x_train, y_train = self._preprocess_train_data_sim(x_train, y_train)
         batch_size = min(self.data_batch_size, x_train.shape[0])
         train_loader = self._create_data_loader(x_train, y_train, batch_size=batch_size)
         num_train_points = x_train.shape[0]
 
-        # initialize attributes to keep track of during training
-        num_steps = self.num_train_steps if num_steps is None else num_steps
         num_sim_model_train_steps = self.num_sim_model_train_steps if num_sim_model_train_steps is None else \
             num_sim_model_train_steps
         samples_cum_period = 0.0
@@ -203,7 +279,7 @@ class BNN_FSVGD_GreyBox(BNN_FSVGD):
                     log_dict = {f'regression_model_training/{n}': float(v) for n, v in stats_agg.items()}
                     wandb.log(log_dict | {'x_axis/bnn_step': step})
                 stats_msg = ' | '.join([f'{n}: {v:.4f}' for n, v in stats_agg.items()])
-                msg = (f'Step {step}/{num_steps} | {stats_msg} | Duration {duration_sec:.2f} sec | '
+                msg = (f'Step {step}/{num_sim_model_train_steps} | {stats_msg} | Duration {duration_sec:.2f} sec | '
                        f'Time per sample {duration_per_sample_ms:.2f} ms')
                 print(msg)
 
@@ -220,13 +296,6 @@ class BNN_FSVGD_GreyBox(BNN_FSVGD):
             print(f'Keeping the best model with {metrics_objective}={best_objective:.4f}')
             if log_to_wandb:
                 wandb.log({metrics_objective: best_objective})
-
-        y_train_unnormalized = y_train_unnormalized - self.sim_model_step(x_train_unnormalized,
-                                                                          self.params_sim['sim_params'])
-        super().fit(
-            x_train_unnormalized, y_train_unnormalized, x_eval, y_eval, num_steps, log_period, log_to_wandb, metrics_objective,
-            keep_the_best, per_dim_metrics
-        )
 
     def eval_sim(self, x: jnp.ndarray, y: np.ndarray, prefix: str = '', per_dim_metrics: bool = False) \
             -> Dict[str, jnp.ndarray]:
@@ -258,6 +327,21 @@ class BNN_FSVGD_GreyBox(BNN_FSVGD):
         # make sure that all stats are python native floats
         eval_stats = {name: float(val) for name, val in eval_stats.items()}
         return eval_stats
+
+    def fit(self, x_train: jnp.ndarray, y_train: jnp.ndarray, x_eval: Optional[jnp.ndarray] = None,
+            y_eval: Optional[jnp.ndarray] = None, num_steps: Optional[int] = None,
+            num_sim_model_train_steps: Optional[int] = None, log_period: int = 1000,
+            log_to_wandb: bool = False, metrics_objective: str = 'train_nll_loss', keep_the_best: bool = False,
+            per_dim_metrics: bool = False):
+
+        self.fit_sim_prior(x_train, y_train, x_eval, y_eval, num_sim_model_train_steps, log_period,
+                           log_to_wandb, metrics_objective, keep_the_best, per_dim_metrics)
+        y_train = y_train - self.sim_model_step(x_train, self.params_sim['sim_params'])
+        super().fit(
+            x_train, y_train, x_eval, y_eval, num_steps, log_period, log_to_wandb,
+            metrics_objective,
+            keep_the_best, per_dim_metrics
+        )
 
 
 if __name__ == '__main__':
