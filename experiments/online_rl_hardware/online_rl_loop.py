@@ -21,9 +21,7 @@ from sim_transfer.sims.simulators import AdditiveSim, PredictStateChangeWrapper,
 from sim_transfer.sims.simulators import RaceCarSim, StackedActionSimWrapper
 from sim_transfer.sims.util import plot_rc_trajectory
 
-ENCODE_ANGLE = True
-RUN_REMOTE = False
-ENTITY = 'trevenl'
+WANDB_ENTITY = 'jonasrothfuss'
 PRIORS = {'none_FVSGD',
           'none_SVGD',
           'high_fidelity',
@@ -32,7 +30,7 @@ PRIORS = {'none_FVSGD',
           }
 
 """ LOAD REMOTE CONFIG """
-with open('remote_config.json', 'r') as f:
+with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'remote_config.json'), 'r') as f:
     remote_config = json.load(f)
 print('Remote config:')
 pprint(remote_config)
@@ -112,7 +110,7 @@ def train_model_based_policy_remote(train_data: Dict,
 class MainConfig(NamedTuple):
     horizon_len: int = 64
     seed: int = 0
-    project_name: str = 'RaceCar'
+    project_name: str = 'OnlineRL_RCCar'
     num_episodes: int = 20
     bnn_train_steps: int = 40_000
     sac_num_env_steps: int = 1_000_000
@@ -136,9 +134,9 @@ class MainConfig(NamedTuple):
     num_measurement_points: int = 16
 
 
-def main(config: MainConfig = MainConfig()):
+def main(config: MainConfig = MainConfig(), run_remote: bool = False, encode_angle: bool = True, wandb_tag: str = ''):
     rng_key_env, rng_key_model, rng_key_rollouts = jax.random.split(jax.random.PRNGKey(config.seed), 3)
-    env = RCCarSimEnv(encode_angle=ENCODE_ANGLE, )
+    env = RCCarSimEnv(encode_angle=encode_angle, )
 
     # initialize train_data as empty arrays
     train_data = {
@@ -154,7 +152,7 @@ def main(config: MainConfig = MainConfig()):
     key_sim, key_run_episodes = jr.split(key, 2)
 
     """Setup car reward kwargs"""
-    car_reward_kwargs = dict(encode_angle=ENCODE_ANGLE,
+    car_reward_kwargs = dict(encode_angle=encode_angle,
                              ctrl_cost_weight=config.ctrl_cost_weight,
                              margin_factor=config.margin_factor)
 
@@ -191,9 +189,11 @@ def main(config: MainConfig = MainConfig()):
 
     total_config = sac_kwargs | config._asdict() | car_reward_kwargs
     wandb.init(
-        dir='/cluster/scratch/' + ENTITY,
+        entity=WANDB_ENTITY,
+        dir='/cluster/scratch/rojonas',
         project=config.project_name,
         config=total_config,
+        tags=[] if wandb_tag == '' else [wandb_tag],
     )
 
     """ Setup BNN"""
@@ -294,7 +294,7 @@ def main(config: MainConfig = MainConfig()):
                                                       config=mbrl_config,
                                                       key=key_episode,
                                                       episode_idx=episode_id,
-                                                      run_remote=RUN_REMOTE)
+                                                      run_remote=run_remote)
         print(episode_id, policy)
 
         # perform policy rollout on the car
@@ -324,7 +324,7 @@ def main(config: MainConfig = MainConfig()):
 
         fig, axes = plot_rc_trajectory(pure_obs,
                                        actions,
-                                       encode_angle=ENCODE_ANGLE,
+                                       encode_angle=encode_angle,
                                        show=False)
         wandb.log({'True_trajectory_path': wandb.Image(fig),
                    'reward_on_true_system': jnp.sum(rewards),
@@ -338,4 +338,20 @@ def main(config: MainConfig = MainConfig()):
 
 
 if __name__ == '__main__':
-    main()
+    import argparse
+    parser = argparse.ArgumentParser(description='Meta-BO run')
+    parser.add_argument('--seed', type=int, default=914)
+    parser.add_argument('--prior', type=str, default='none_FVSGD')
+    parser.add_argument('--run_remote', type=int, default=0)
+    parser.add_argument('--wandb_tag', type=str, default='')
+    parser.add_argument('--gpu', type=int, default=1)
+    args = parser.parse_args()
+
+    if not args.gpu:
+        # disable gp
+        os.environ['JAX_PLATFORM_NAME'] = 'cpu'
+
+    assert args.prior in PRIORS, f'Invalid prior: {args.prior}'
+    main(config=MainConfig(sim_prior=args.prior,
+                           seed=args.seed),
+         run_remote=bool(args.run_remote),)
