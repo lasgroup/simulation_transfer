@@ -4,7 +4,7 @@ from experiments.util import generate_run_commands, generate_base_command, dict_
 def main(args):
     _applicable_configs = {
         'prior': ['none_FVSGD', 'none_SVGD', 'high_fidelity', 'low_fidelity'],  # 'high_fidelity_no_aditive_GP'],
-        'seed': [345],
+        'seed': list(range(5)),
         'run_remote': [0],
         'gpu': [1],
         'wandb_tag': ['gpu' if args.num_gpus > 0 else 'cpu'],

@@ -59,7 +59,7 @@ def train_model_based_policy(train_data: Dict,
         Here y_train is the next state (not the difference)!!!!!
     """
     assert 'x_train' in train_data and 'y_train' in train_data
-    x_train, y_train = train_data['x_train'], train_data['y_train']
+    x_all, y_all = train_data['x_train'], train_data['y_train']
     discounting = config.sac_kwargs['discounting']
 
     """Setup the data buffers"""
@@ -77,20 +77,20 @@ def train_model_based_policy(train_data: Dict,
         sample_batch_size=1)
 
     """Insert the data into the buffers for the policy training"""
-    num_training_points = x_train.shape[0]
-    assert x_train.shape == (num_training_points, config.x_dim + config.u_dim * (config.num_stacked_actions + 1))
-    assert y_train.shape == (num_training_points, config.x_dim)
+    num_training_points = x_all.shape[0]
+    assert x_all.shape == (num_training_points, config.x_dim + config.u_dim * (config.num_stacked_actions + 1))
+    assert y_all.shape == (num_training_points, config.x_dim)
 
-    observations = x_train[:, :config.x_dim + config.num_stacked_actions * config.u_dim]
-    actions = x_train[:, config.x_dim + config.num_stacked_actions * config.u_dim:]
+    observations = x_all[:, :config.x_dim + config.num_stacked_actions * config.u_dim]
+    actions = x_all[:, config.x_dim + config.num_stacked_actions * config.u_dim:]
     rewards = jnp.zeros(shape=(num_training_points,))
     discounts = jnp.ones(shape=(num_training_points,)) * discounting
     if config.num_stacked_actions > 0:
         old_stacked_actions = observations[:, config.x_dim:]
         next_stacked_actions = jnp.concatenate([old_stacked_actions[:, config.u_dim:], actions], axis=1)
-        next_observations = jnp.concatenate([y_train, next_stacked_actions], axis=1)
+        next_observations = jnp.concatenate([y_all, next_stacked_actions], axis=1)
     else:
-        next_observations = y_train
+        next_observations = y_all
     transitions = Transition(observation=observations,
                              action=actions,
                              reward=rewards,
@@ -105,9 +105,9 @@ def train_model_based_policy(train_data: Dict,
     # Prepare data for training the transition model
     if num_training_points > 0:
         if config.predict_difference:
-            y_train = y_train - x_train[:, :config.x_dim]
+            y_all = y_all - x_all[:, :config.x_dim]
         key, key_split_data, key_reinit_model = jr.split(key, 3)
-        x_train, x_test, y_train, y_test = split_data(x_train, y_train,
+        x_train, x_test, y_train, y_test = split_data(x_all, y_all,
                                                       test_ratio=config.bnn_training_test_ratio,
                                                       key=key_split_data)
 
@@ -121,6 +121,7 @@ def train_model_based_policy(train_data: Dict,
     _sac_kwargs = config.sac_kwargs
     # TODO: Be careful!!
     if num_training_points == 0:
+        print("We don't have any data for training the bnn model")
         _sac_kwargs = copy.deepcopy(_sac_kwargs)
         _sac_kwargs['num_timesteps'] = 10_000
 

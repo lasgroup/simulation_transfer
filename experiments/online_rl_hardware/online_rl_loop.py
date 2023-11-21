@@ -21,7 +21,8 @@ from sim_transfer.sims.simulators import AdditiveSim, PredictStateChangeWrapper,
 from sim_transfer.sims.simulators import RaceCarSim, StackedActionSimWrapper
 from sim_transfer.sims.util import plot_rc_trajectory
 
-WANDB_ENTITY = 'jonasrothfuss'
+WANDB_ENTITY = 'trevenl'
+EULER_NAME = 'trevenl'
 PRIORS = {'none_FVSGD',
           'none_SVGD',
           'high_fidelity',
@@ -136,7 +137,14 @@ class MainConfig(NamedTuple):
 
 def main(config: MainConfig = MainConfig(), run_remote: bool = False, encode_angle: bool = True, wandb_tag: str = ''):
     rng_key_env, rng_key_model, rng_key_rollouts = jax.random.split(jax.random.PRNGKey(config.seed), 3)
-    env = RCCarSimEnv(encode_angle=encode_angle, )
+
+    env = RCCarSimEnv(encode_angle=encode_angle,
+                      action_delay=config.delay,
+                      use_tire_model=True,
+                      use_obs_noise=True,
+                      ctrl_cost_weight=config.ctrl_cost_weight,
+                      margin_factor=config.margin_factor,
+                      )
 
     # initialize train_data as empty arrays
     train_data = {
@@ -190,7 +198,7 @@ def main(config: MainConfig = MainConfig(), run_remote: bool = False, encode_ang
     total_config = sac_kwargs | config._asdict() | car_reward_kwargs
     wandb.init(
         entity=WANDB_ENTITY,
-        dir='/cluster/scratch/rojonas',
+        dir='/cluster/scratch/' + EULER_NAME,
         project=config.project_name,
         config=total_config,
         tags=[] if wandb_tag == '' else [wandb_tag],
@@ -306,7 +314,7 @@ def main(config: MainConfig = MainConfig(), run_remote: bool = False, encode_ang
         rewards = []
         pure_obs = []
         for i in range(200):
-            rng_key_rollouts, rng_key_act = jax.random.split(rng_key_rollouts)
+            rng_key_rollouts, rng_key_act = jr.split(rng_key_rollouts)
             act = policy(obs)
             obs, reward, _, _ = env.step(act)
             rewards.append(reward)
@@ -335,10 +343,12 @@ def main(config: MainConfig = MainConfig(), run_remote: bool = False, encode_ang
         train_data['x_train'] = jnp.concatenate([train_data['x_train'],
                                                  jnp.concatenate([actions, trajectory[:-1]], axis=-1)], axis=0)
         train_data['y_train'] = jnp.concatenate([train_data['y_train'], trajectory[1:, :mbrl_config.x_dim]], axis=0)
+        print(f'Size of train_data in episode {episode_id}:', train_data['x_train'].shape[0])
 
 
 if __name__ == '__main__':
     import argparse
+
     parser = argparse.ArgumentParser(description='Meta-BO run')
     parser.add_argument('--seed', type=int, default=914)
     parser.add_argument('--prior', type=str, default='none_FVSGD')
@@ -354,4 +364,4 @@ if __name__ == '__main__':
     assert args.prior in PRIORS, f'Invalid prior: {args.prior}'
     main(config=MainConfig(sim_prior=args.prior,
                            seed=args.seed),
-         run_remote=bool(args.run_remote),)
+         run_remote=bool(args.run_remote), )
