@@ -5,11 +5,11 @@ import jax.random as jr
 import wandb
 
 from experiments.data_provider import provide_data_and_sim, _RACECAR_NOISE_STD_ENCODED
-from sim_transfer.models import BNN_FSVGD_SimPrior, BNN_FSVGD, BNN_FSVGD_GreyBox
+from sim_transfer.models import BNN_FSVGD_SimPrior, BNN_FSVGD, BNNGreyBox
 from sim_transfer.rl.rl_on_offline_data import RLFromOfflineData
 from sim_transfer.sims.simulators import AdditiveSim, PredictStateChangeWrapper, GaussianProcessSim
 
-ENTITY = 'rojonas'
+ENTITY = 'sukhijab'
 
 
 def experiment(horizon_len: int,
@@ -237,13 +237,17 @@ def experiment(horizon_len: int,
     elif use_grey_box:
         if predict_difference:
             sim = PredictStateChangeWrapper(sim)
-        model = BNN_FSVGD_GreyBox(
+        base_bnn = BNN_FSVGD(
             **standard_params,
             normalization_stats=sim.normalization_stats,
-            sim=sim,
-            lr=3e-4,
             num_train_steps=bnn_train_steps,
+            domain=sim.domain,
+            lr=3e-4,
             bandwidth_svgd=bandwidth_svgd,
+        )
+        model = BNNGreyBox(
+            base_bnn=base_bnn,
+            sim=sim,
         )
     else:
         if predict_difference:

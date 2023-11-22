@@ -1,5 +1,5 @@
 import os
-import pickle
+import cloudpickle as pickle
 from typing import Callable, Any
 
 import chex
