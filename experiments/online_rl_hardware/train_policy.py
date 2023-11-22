@@ -3,6 +3,7 @@ import copy
 import pickle
 from typing import Any, Dict, NamedTuple
 
+import time
 import chex
 import jax.numpy as jnp
 import jax.random as jr
@@ -102,6 +103,7 @@ def train_model_based_policy(train_data: Dict,
     true_data_buffer_state = true_data_buffer.insert(true_data_buffer_state, transitions)
 
     """Train transition model"""
+    t = time.time()
     # Prepare data for training the transition model
     if num_training_points > 0:
         if config.predict_difference:
@@ -115,9 +117,12 @@ def train_model_based_policy(train_data: Dict,
         if config.reset_bnn:
             bnn_model.reinit(rng_key=key_reinit_model)
         bnn_model.fit(x_train=x_train, y_train=y_train, x_eval=x_test, y_eval=y_test, log_to_wandb=True,
-                      keep_the_best=config.return_best_bnn, metrics_objective='eval_nll')
+                      keep_the_best=config.return_best_bnn, metrics_objective='eval_nll', log_period=2000)
+    print(f'Time fo training the transition model: {time.time() - t:.2f} seconds')
+
 
     """Train policy"""
+    t = time.time()
     _sac_kwargs = config.sac_kwargs
     # TODO: Be careful!!
     if num_training_points == 0:
@@ -154,6 +159,8 @@ def train_model_based_policy(train_data: Dict,
 
     def policy(x):
         return make_inference_fn(params, deterministic=True)(x, jr.PRNGKey(0))[0]
+
+    print(f'Time fo training the SAC policy: {time.time() - t:.2f} seconds')
 
     return policy, bnn_model
 
