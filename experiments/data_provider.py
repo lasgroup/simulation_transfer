@@ -196,13 +196,17 @@ def get_rccar_recorded_data_new(encode_angle: bool = True, skip_first_n_points: 
     assert car_id in [1, 2]
     if car_id == 1:
         num_train_traj = 8
-        recordings_dir = os.path.join(DATA_DIR, 'recordings_rc_car_v1')
+        recordings_dir = [os.path.join(DATA_DIR, 'recordings_rc_car_v1')]
     elif car_id == 2:
         num_train_traj = 10
-        recordings_dir = os.path.join(DATA_DIR, 'recordings_rc_car_v2')
+        recordings_dir = [os.path.join(DATA_DIR, 'recordings_rc_car_v2'),
+                          os.path.join(DATA_DIR, 'recordings_rc_car_v3')]
     else:
         raise ValueError(f"Unknown car id {car_id}")
-    file_names = sorted(glob.glob(recordings_dir + '/*.pickle'))
+    files = [sorted(glob.glob(rd + '/*.pickle')) for rd in recordings_dir]
+    file_names = []
+    for f in files:
+        file_names += f
 
     # load and shuffle transitions
     transitions = _load_transitions(file_names)
@@ -254,7 +258,7 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
             sim_hf = PredictStateChangeWrapper(sim_hf)
         assert {'num_samples_train'} <= set(data_spec.keys()) <= {'num_samples_train'}.union(DEFAULTS_PENDULUM.keys())
     elif data_source.startswith('racecar'):
-        from sim_transfer.sfims.simulators import RaceCarSim
+        from sim_transfer.sims.simulators import RaceCarSim
         defaults = DEFAULTS_RACECAR
         # TODO: Lenart ask Jonas why we always return low fidelity model here:
         if data_source == 'racecar_actionstack':
