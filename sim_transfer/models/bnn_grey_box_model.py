@@ -15,6 +15,7 @@ import copy
 from sim_transfer.modules.util import aggregate_stats
 import wandb
 import numpy as np
+from tensorflow_probability.substrates import jax as tfp
 
 
 class BNNGreyBox(AbstractRegressionModel):
@@ -254,12 +255,17 @@ class BNNGreyBox(AbstractRegressionModel):
                                                    jnp.std(y_pred_raw, axis=0))
         return pred_dist
 
-    def predict_dist(self, x: jnp.ndarray, include_noise: bool = True):
+    def predict_dist(self, x: jnp.ndarray, include_noise: bool = True) -> tfp.distributions.Distribution:
         self.batched_model.param_vectors_stacked = self.params['nn_params_stacked']
         y_pred = self.predict_post_samples(x)
         pred_dist = self._to_pred_dist(y_pred, likelihood_std=self.likelihood_std, include_noise=include_noise)
         assert pred_dist.batch_shape == x.shape[:-1]
         assert pred_dist.event_shape == (self.output_size,)
+        if callable(pred_dist.mean):
+            mean, stddev, var = pred_dist.mean(), pred_dist.stddev(), pred_dist.variance()
+            pred_dist.mean = mean
+            pred_dist.stddev = stddev
+            pred_dist.variance = var
         return pred_dist
 
     def predict(self, x: jnp.ndarray, include_noise: bool = False) -> Tuple[jnp.ndarray, jnp.ndarray]:
