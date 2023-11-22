@@ -8,7 +8,7 @@ def main(args):
         'run_remote': [0],
         'gpu': [1],
         'wandb_tag': ['gpu' if args.num_gpus > 0 else 'cpu'],
-        'project_name': ['OnlineRLDebug2'],
+        'project_name': ['OnlineRLDebug3'],
     }
 
     all_flags_combinations = dict_permutations(_applicable_configs)

@@ -21,8 +21,9 @@ from sim_transfer.sims.simulators import AdditiveSim, PredictStateChangeWrapper,
 from sim_transfer.sims.simulators import RaceCarSim, StackedActionSimWrapper
 from sim_transfer.sims.util import plot_rc_trajectory
 
-WANDB_ENTITY = 'trevenl'
-EULER_NAME = 'trevenl'
+WANDB_ENTITY = 'jonasrothfuss'
+EULER_NAME = 'rojonas'
+WANDB_LOG_DIR = os.path.join('/cluster/scratch/', EULER_NAME)
 PRIORS = {'none_FVSGD',
           'none_SVGD',
           'high_fidelity',
@@ -87,7 +88,7 @@ def train_model_based_policy_remote(train_data: Dict,
         print('[Local] Transferring train data to remote')
 
     # run the train_policy.py script on the remote machine
-    result_path_remote = os.path.join(remote_config['local_dir'], f'result_{run_hash}.pkl')
+    result_path_remote = os.path.join(remote_config['remote_dir'], f'result_{run_hash}.pkl')
     command = f'{remote_config["remote_interpreter"]} {remote_config["remote_script"]} ' \
               f'--data_load_path {train_data_path_remote} --model_dump_path {result_path_remote}'
     if verbosity:
@@ -198,7 +199,7 @@ def main(config: MainConfig = MainConfig(), run_remote: bool = False, encode_ang
     total_config = sac_kwargs | config._asdict() | car_reward_kwargs
     wandb.init(
         entity=WANDB_ENTITY,
-        dir='/cluster/scratch/' + EULER_NAME,
+        dir=WANDB_LOG_DIR if os.path.isdir(WANDB_LOG_DIR) else None,
         project=config.project_name,
         config=total_config,
         tags=[] if wandb_tag == '' else [wandb_tag],

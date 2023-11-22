@@ -190,7 +190,6 @@ def experiment(horizon_len: int,
                            },
                 data_seed=int(int_data_seed), )
 
-
     # Deal with randomness
     key = jr.PRNGKey(seed)
     key_bnn, key_offline_rl, key_evaluation_trained_bnn, key_evaluation_pretrained_bnn = jr.split(key, 4)
@@ -205,7 +204,6 @@ def experiment(horizon_len: int,
         'learn_likelihood_std': bool(learnable_likelihood_std),
         'likelihood_exponent': likelihood_exponent,
         'hidden_layer_sizes': [64, 64, 64],
-        'normalization_stats': sim.normalization_stats,
         'data_batch_size': bnn_batch_size,
         'hidden_activation': jax.nn.leaky_relu
     }
@@ -226,6 +224,7 @@ def experiment(horizon_len: int,
 
         model = BNN_FSVGD_SimPrior(
             **standard_params,
+            normalization_stats=sim.normalization_stats,
             domain=sim.domain,
             function_sim=sim,
             score_estimator='gp',
@@ -240,14 +239,19 @@ def experiment(horizon_len: int,
             sim = PredictStateChangeWrapper(sim)
         model = BNN_FSVGD_GreyBox(
             **standard_params,
+            normalization_stats=sim.normalization_stats,
             sim=sim,
             lr=3e-4,
             num_train_steps=bnn_train_steps,
             bandwidth_svgd=bandwidth_svgd,
         )
     else:
+        if predict_difference:
+            sim = PredictStateChangeWrapper(sim)
+
         model = BNN_FSVGD(
             **standard_params,
+            normalization_stats=sim.normalization_stats,
             num_train_steps=bnn_train_steps,
             domain=sim.domain,
             lr=3e-4,
