@@ -139,12 +139,7 @@ def _load_transitions(file_names: List[str]) -> List[Transition]:
     for fn in file_names:
         with open(fn, 'rb') as f:
             data = pickle.load(f)
-            assert (data.observation.shape[-1] == 13 or data.observation.shape[-1] == 12), "state must be 12D or 13D"
-            if data.observation.shape[-1] == 13:
-                data = Transition(
-                    observation=decode_angles_fn(data.observation, angle_idx=2),
-                    action=data.action, reward=data.reward, discount=data.discount,
-                    next_observation=decode_angles_fn(data.next_observation, angle_idx=2), extras=data.extras,)
+            assert data.observation.shape[-1] == 12 and data.next_observation.shape[-1] == 12, "state must be 12D"
             transitions.append(data)
     return transitions
 
@@ -259,7 +254,7 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
             sim_hf = PredictStateChangeWrapper(sim_hf)
         assert {'num_samples_train'} <= set(data_spec.keys()) <= {'num_samples_train'}.union(DEFAULTS_PENDULUM.keys())
     elif data_source.startswith('racecar'):
-        from sim_transfer.sims.simulators import RaceCarSim
+        from sim_transfer.sfims.simulators import RaceCarSim
         defaults = DEFAULTS_RACECAR
         # TODO: Lenart ask Jonas why we always return low fidelity model here:
         if data_source == 'racecar_actionstack':
