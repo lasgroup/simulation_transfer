@@ -567,7 +567,8 @@ class PendulumSim(FunctionSimulator):
                                                   upper_bound=self._upper_bound_params)
 
         params = jtu.tree_map(lambda x: x.item(), params)
-        return params
+        train_params = jtu.tree_map(lambda x: 1, params)
+        return params, train_params
 
     def sample_function_vals(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
         assert x.ndim == 2 and x.shape[-1] == self.input_size
@@ -797,7 +798,9 @@ class RaceCarSim(FunctionSimulator):
                                                   lower_bound=self._lower_bound_params,
                                                   upper_bound=self._upper_bound_params)
         params = jtu.tree_map(lambda x: x.item(), params)
-        return params
+        train_params = jtu.tree_map(lambda x: 1, params)
+        train_params = train_params._replace(use_blend=0)
+        return params, train_params
 
     def sample_function_vals(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
         assert x.ndim == 2 and x.shape[-1] == self.input_size

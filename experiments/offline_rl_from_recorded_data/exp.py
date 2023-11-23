@@ -46,6 +46,7 @@ def experiment(horizon_len: int,
                length_scale_aditive_sim_gp: float = 1.0,
                input_from_recorded_data: int = 1,
                obtain_consecutive_data: int = 1,
+               lr: float = 3e-4,
                ):
     bnn_train_steps = min(num_epochs * num_offline_collected_transitions, max_train_steps)
     bnn_train_steps = max(bnn_train_steps, min_train_steps)
@@ -230,7 +231,7 @@ def experiment(horizon_len: int,
             score_estimator='gp',
             num_train_steps=bnn_train_steps,
             num_f_samples=256,
-            lr=3e-4,
+            lr=lr,
             bandwidth_svgd=bandwidth_svgd,
             num_measurement_points=num_measurement_points,
         )
@@ -242,12 +243,14 @@ def experiment(horizon_len: int,
             normalization_stats=sim.normalization_stats,
             num_train_steps=bnn_train_steps,
             domain=sim.domain,
-            lr=3e-4,
+            lr=lr,
             bandwidth_svgd=bandwidth_svgd,
         )
         model = BNNGreyBox(
             base_bnn=base_bnn,
             sim=sim,
+            num_sim_model_train_steps=2000,
+            lr_sim=1e-3,
         )
     else:
         if predict_difference:
@@ -258,7 +261,7 @@ def experiment(horizon_len: int,
             normalization_stats=sim.normalization_stats,
             num_train_steps=bnn_train_steps,
             domain=sim.domain,
-            lr=3e-4,
+            lr=lr,
             bandwidth_svgd=bandwidth_svgd,
         )
 
@@ -335,6 +338,7 @@ def main(args):
         length_scale_aditive_sim_gp=args.length_scale_aditive_sim_gp,
         input_from_recorded_data=args.input_from_recorded_data,
         obtain_consecutive_data=args.obtain_consecutive_data,
+        lr=args.lr,
     )
 
 
@@ -355,7 +359,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_offline_collected_transitions', type=int, default=20_000)
     parser.add_argument('--use_sim_prior', type=int, default=0)
     parser.add_argument('--use_grey_box', type=int, default=1)
-    parser.add_argument('--high_fidelity', type=int, default=1)
+    parser.add_argument('--high_fidelity', type=int, default=0)
     parser.add_argument('--num_measurement_points', type=int, default=8)
     parser.add_argument('--bnn_batch_size', type=int, default=32)
     parser.add_argument('--test_data_ratio', type=float, default=0.1)
@@ -368,10 +372,11 @@ if __name__ == '__main__':
     parser.add_argument('--num_frame_stack', type=int, default=3)
     parser.add_argument('--bandwidth_svgd', type=float, default=0.2)
     parser.add_argument('--num_epochs', type=int, default=20)
-    parser.add_argument('--max_train_steps', type=int, default=100_000)
-    parser.add_argument('--min_train_steps', type=int, default=40_000)
+    parser.add_argument('--max_train_steps', type=int, default=50_000)
+    parser.add_argument('--min_train_steps', type=int, default=10_000)
     parser.add_argument('--length_scale_aditive_sim_gp', type=float, default=1.0)
     parser.add_argument('--input_from_recorded_data', type=int, default=1)
     parser.add_argument('--obtain_consecutive_data', type=int, default=1)
+    parser.add_argument('--lr', type=float, default=3e-4)
     args = parser.parse_args()
     main(args)

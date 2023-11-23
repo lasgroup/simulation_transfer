@@ -40,9 +40,11 @@ class BNNGreyBox(AbstractRegressionModel):
         self.sim = sim
         param_key = self._next_rng_key()
         self.num_sim_model_train_steps = num_sim_model_train_steps
-        sim_params = self.sim.sample_params(param_key)
+        sim_params, train_params = self.sim.sample_params(param_key)
         likelihood_std = -1. * jnp.ones(self.output_size)
         self.params_sim = {'sim_params': sim_params, 'likelihood_std': likelihood_std}
+        self.init_sim_params = sim_params
+        self.train_params = train_params
         self.optim_sim = None
         self._x_mean_sim, self._x_std_sim = jnp.copy(self.base_bnn._x_mean), jnp.copy(self.base_bnn._x_std)
         self._y_mean_sim, self._y_std_sim = jnp.copy(self.base_bnn._y_mean), jnp.copy(self.base_bnn._y_std)
@@ -63,6 +65,7 @@ class BNNGreyBox(AbstractRegressionModel):
             self.optim_sim = optax.adamw(learning_rate=self.lr_sim, weight_decay=self.weight_decay_sim)
         else:
             self.optim_sim = optax.adam(learning_rate=self.lr_sim)
+
         self.opt_state_sim = self.optim_sim.init(self.params_sim)
 
     def _init_optim(self):
@@ -79,8 +82,10 @@ class BNNGreyBox(AbstractRegressionModel):
             key_model, key_rng, param_key = jax.random.split(rng_key, 3)
         self.base_bnn.reinit(key_model)
         self._rng_key = key_rng  # reinitialize rng_key
-        sim_params = self.sim.sample_params(param_key)
+        sim_params, train_params = self.sim.sample_params(param_key)
         likelihood_std = -1. * jnp.ones(self.output_size)
+        self.init_sim_params = sim_params
+        self.train_params = train_params
         self.params_sim = {'sim_params': sim_params, 'likelihood_std': likelihood_std}
         self._init_optim()  # reinitialize optimizer
 
@@ -183,6 +188,9 @@ class BNNGreyBox(AbstractRegressionModel):
 
     def sim_model_step(self, x: jnp.array, params_sim: NamedTuple):
         """Take unnormalized inputs and return unnormalized output from the sim."""
+        # parameters that are trainable, have 1 in self.train_params if train_params is 0 then initial param is taken.
+        params_sim = jax.tree_util.tree_map(lambda v, w, z:
+                                            v * w + (1 - w) * z, params_sim, self.train_params, self.init_sim_params)
         y = self.sim.evaluate_sim(x, params_sim)
         return y
 
