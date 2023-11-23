@@ -104,6 +104,10 @@ class BNNGreyBox(AbstractRegressionModel):
         return self.base_bnn.likelihood_std
 
     @property
+    def likelihood_std_unnormalized(self):
+        return self.base_bnn.likelihood_std_unnormalized
+
+    @property
     def learn_likelihood_std(self):
         return self.base_bnn.learn_likelihood_std
 
@@ -269,7 +273,7 @@ class BNNGreyBox(AbstractRegressionModel):
     def predict_dist(self, x: jnp.ndarray, include_noise: bool = True) -> tfp.distributions.Distribution:
         self.batched_model.param_vectors_stacked = self.params['nn_params_stacked']
         y_pred = self.predict_post_samples(x)
-        pred_dist = self._to_pred_dist(y_pred, likelihood_std=self.likelihood_std, include_noise=include_noise)
+        pred_dist = self._to_pred_dist(y_pred, likelihood_std=self.likelihood_std_unnormalized, include_noise=include_noise)
         assert pred_dist.batch_shape == x.shape[:-1]
         assert pred_dist.event_shape == (self.output_size,)
         if callable(pred_dist.mean):
@@ -429,7 +433,7 @@ if __name__ == '__main__':
         input_size=NUM_DIM_X, output_size=NUM_DIM_Y, rng_key=next(key_iter),
         num_train_steps=20000,
         bandwidth_svgd=1.0, likelihood_std=obs_noise_std, likelihood_exponent=1.0,
-        normalize_likelihood_std=True, learn_likelihood_std=False, weight_decay=weight_decay, domain=sim.domain,
+        normalize_likelihood_std=True, learn_likelihood_std=True, weight_decay=weight_decay, domain=sim.domain,
     )
     bnn = BNNGreyBox(base_bnn=base_bnn, sim=sim, use_base_bnn=True, lr_sim=3e-4)
     for i in range(10):
