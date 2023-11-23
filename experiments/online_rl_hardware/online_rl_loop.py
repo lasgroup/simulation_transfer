@@ -2,8 +2,10 @@ import json
 import os
 import pickle
 import random
+import sys
 from pprint import pprint
-from typing import Any, Dict, NamedTuple
+from typing import Any, NamedTuple
+from functools import cache
 
 import jax
 import jax.numpy as jnp
@@ -11,19 +13,19 @@ import jax.random as jr
 import matplotlib.pyplot as plt
 import wandb
 
-from experiments.data_provider import _RACECAR_NOISE_STD_ENCODED
 from experiments.online_rl_hardware.train_policy import ModelBasedRLConfig
 from experiments.online_rl_hardware.train_policy import train_model_based_policy
-from sim_transfer.models import BNN_FSVGD_SimPrior, BNN_FSVGD, BNN_SVGD
-from sim_transfer.models.abstract_model import BatchedNeuralNetworkModel
+from experiments.online_rl_hardware.utils import (set_up_bnn_dynamics_model, set_up_dummy_sac_trainer,
+                                                  dump_trajectory_summary, execute)
+from experiments.util import Logger, RESULT_DIR
+
 from sim_transfer.sims.envs import RCCarSimEnv
-from sim_transfer.sims.simulators import AdditiveSim, PredictStateChangeWrapper, GaussianProcessSim
-from sim_transfer.sims.simulators import RaceCarSim, StackedActionSimWrapper
 from sim_transfer.sims.util import plot_rc_trajectory
 
+
 WANDB_ENTITY = 'jonasrothfuss'
-EULER_NAME = 'rojonas'
-WANDB_LOG_DIR = os.path.join('/cluster/scratch/', EULER_NAME)
+EULER_ENTITY = 'rojonas'
+WANDB_LOG_DIR_EULER = '/cluster/scratch/' + EULER_ENTITY
 PRIORS = {'none_FVSGD',
           'none_SVGD',
           'high_fidelity',
@@ -31,24 +33,36 @@ PRIORS = {'none_FVSGD',
           'high_fidelity_no_aditive_GP',
           }
 
-""" LOAD REMOTE CONFIG """
-with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'remote_config.json'), 'r') as f:
-    remote_config = json.load(f)
-print('Remote config:')
-pprint(remote_config)
+
+@cache
+def _load_remote_config(machine: str):
+    # load remote config
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'remote_config.json'), 'r') as f:
+        remote_config = json.load(f)
+
+    # choose machine
+    assert machine in remote_config, f'Machine {machine} not found in remote config. ' \
+                                     f'Available machines: {list(remote_config.keys())}'
+    remote_config = remote_config[machine]
+
+    # create local director if it does not exist
+    os.makedirs(remote_config['local_dir'], exist_ok=True)
+
+    # print remote config
+    print(f'Remote config [{machine}]:')
+    pprint(remote_config)
+    print('')
+
+    return remote_config
 
 
 def _get_random_hash() -> str:
     return "%032x" % random.getrandbits(128)
 
 
-os.makedirs(remote_config['local_dir'], exist_ok=True)
-
-
-def train_model_based_policy_remote(train_data: Dict,
-                                    bnn_model: BatchedNeuralNetworkModel,
-                                    run_remote: bool = True,
-                                    verbosity: int = 1,
+def train_model_based_policy_remote(*args,
+                                    verbosity: int = 2,
+                                    machine: str = 'euler',
                                     **kwargs) -> Any:
     """ Trains a model-based policy on the remote machine and returns the trained model.
     Args:
@@ -65,41 +79,43 @@ def train_model_based_policy_remote(train_data: Dict,
 
     Returns: the returned object/value of the train_model_based_policy function in train_policy.py
     """
-    if not run_remote:
+    if machine == 'local':
         # if not running remotely, just run the function locally and return the result
-        return train_model_based_policy(train_data, bnn_model, **kwargs)
+        return train_model_based_policy(*args, **kwargs)
+    rmt_cfg = _load_remote_config(machine=machine)
 
     # copy latest version of train_policy.py to remote and make sure remote directory exists
-    os.system(f'scp {remote_config["local_script"]} {remote_config["remote_machine"]}:{remote_config["remote_script"]}')
-    os.system(f'ssh {remote_config["remote_machine"]} "mkdir -p {remote_config["remote_dir"]}"')
+    execute(f'scp {rmt_cfg["local_script"]} {rmt_cfg["remote_machine"]}:{rmt_cfg["remote_script"]}', verbosity)
+    execute(f'ssh {rmt_cfg["remote_machine"]} "mkdir -p {rmt_cfg["remote_dir"]}"', verbosity)
 
     # dump train_data to local pkl file
     run_hash = _get_random_hash()
-    train_data_path_local = os.path.join(remote_config['local_dir'], f'train_data_{run_hash}.pkl')
+    train_data_path_local = os.path.join(rmt_cfg['local_dir'], f'train_data_{run_hash}.pkl')
     with open(train_data_path_local, 'wb') as f:
-        pickle.dump({'train_data': train_data, 'kwargs': kwargs}, f)
+        pickle.dump({'args': args, 'kwargs': kwargs}, f)
     if verbosity:
         print('[Local] Saved function input to', train_data_path_local)
 
     # transfer train_data + kwargs to remote
-    train_data_path_remote = os.path.join(remote_config['remote_dir'], f'train_data_{run_hash}.pkl')
-    os.system(f'scp {train_data_path_local} {remote_config["remote_machine"]}:{train_data_path_remote}')
+    train_data_path_remote = os.path.join(rmt_cfg['remote_dir'], f'train_data_{run_hash}.pkl')
+    execute(f'scp {train_data_path_local} {rmt_cfg["remote_machine"]}:{train_data_path_remote}', verbosity)
     if verbosity:
         print('[Local] Transferring train data to remote')
 
     # run the train_policy.py script on the remote machine
-    result_path_remote = os.path.join(remote_config['remote_dir'], f'result_{run_hash}.pkl')
-    command = f'{remote_config["remote_interpreter"]} {remote_config["remote_script"]} ' \
+    result_path_remote = os.path.join(rmt_cfg['remote_dir'], f'result_{run_hash}.pkl')
+    command = f'export PYTHONPATH={rmt_cfg["remote_pythonpath"]} && ' \
+              f'{rmt_cfg["remote_interpreter"]} {rmt_cfg["remote_script"]} ' \
               f'--data_load_path {train_data_path_remote} --model_dump_path {result_path_remote}'
     if verbosity:
         print('[Local] Executing command:', command)
-    os.system(f'ssh {remote_config["remote_machine"]} "{command}"')
+    execute(f'ssh {rmt_cfg["remote_machine"]} "{command}"', verbosity)
 
     # transfer result back to local
-    result_path_local = os.path.join(remote_config['local_dir'], f'result_{run_hash}.pkl')
+    result_path_local = os.path.join(rmt_cfg['local_dir'], f'result_{run_hash}.pkl')
     if verbosity:
         print('[Local] Transferring result back to local')
-    os.system(f'scp {remote_config["remote_machine"]}:{result_path_remote} {result_path_local}')
+    execute(f'scp {rmt_cfg["remote_machine"]}:{result_path_remote} {result_path_local}', verbosity)
 
     # load result
     with open(result_path_local, 'rb') as f:
@@ -114,8 +130,8 @@ class MainConfig(NamedTuple):
     seed: int = 0
     project_name: str = 'OnlineRL_RCCar'
     num_episodes: int = 20
-    bnn_train_steps: int = 40_000
-    sac_num_env_steps: int = 1_000_000
+    bnn_train_steps: int = 4_000    # TODO: 40_000
+    sac_num_env_steps: int = 10_000  # TODO: 1_000_000
     learnable_likelihood_std: int = 1
     reset_bnn: int = 0
     sim_prior: str = 'none_SVGD'
@@ -136,7 +152,8 @@ class MainConfig(NamedTuple):
     num_measurement_points: int = 16
 
 
-def main(config: MainConfig = MainConfig(), run_remote: bool = False, encode_angle: bool = True, wandb_tag: str = ''):
+def main(config: MainConfig = MainConfig(), encode_angle: bool = True,
+         machine: str = 'local'):
     rng_key_env, rng_key_model, rng_key_rollouts = jax.random.split(jax.random.PRNGKey(config.seed), 3)
 
     env = RCCarSimEnv(encode_angle=encode_angle,
@@ -158,7 +175,7 @@ def main(config: MainConfig = MainConfig(), run_remote: bool = False, encode_ang
     ################################################################################
     """Setup key"""
     key = jr.PRNGKey(config.seed)
-    key_sim, key_run_episodes = jr.split(key, 2)
+    key_bnn, key_run_episodes, key_dummy_sac_trainer = jr.split(key, 3)
 
     """Setup car reward kwargs"""
     car_reward_kwargs = dict(encode_angle=encode_angle,
@@ -197,87 +214,33 @@ def main(config: MainConfig = MainConfig(), run_remote: bool = False, encode_ang
                       wandb_logging=True)
 
     total_config = sac_kwargs | config._asdict() | car_reward_kwargs
-    wandb.init(
-        entity=WANDB_ENTITY,
-        dir=WANDB_LOG_DIR if os.path.isdir(WANDB_LOG_DIR) else None,
-        project=config.project_name,
-        config=total_config,
-        tags=[] if wandb_tag == '' else [wandb_tag],
-    )
 
-    """ Setup BNN"""
-    sim = RaceCarSim(encode_angle=True, use_blend=config.sim_prior == 'high_fidelity', car_id=2)
-    if config.num_stacked_actions > 0:
-        sim = StackedActionSimWrapper(sim, num_stacked_actions=config.num_stacked_actions, action_size=2)
-    if config.predict_difference:
-        sim = PredictStateChangeWrapper(sim)
+    """ WANDB & Logging configuration """
+    wandb_config = {'project': config.project_name, 'entity': WANDB_ENTITY, 'resume': 'allow',
+                    'dir': WANDB_LOG_DIR_EULER if os.path.isdir(WANDB_LOG_DIR_EULER) else '/tmp/',
+                    'config': total_config, 'settings': {'_service_wait': 300}}
+    wandb.init(**wandb_config)
+    wandb_config['id'] = wandb.run.id
+    remote_training = not (machine == 'local')
 
-    standard_params = {
-        'input_size': sim.input_size,
-        'output_size': sim.output_size,
-        'rng_key': key_sim,
-        'likelihood_std': _RACECAR_NOISE_STD_ENCODED,
-        'normalize_data': True,
-        'normalize_likelihood_std': True,
-        'learn_likelihood_std': bool(config.learnable_likelihood_std),
-        'likelihood_exponent': config.likelihood_exponent,
-        'hidden_layer_sizes': [64, 64, 64],
-        'normalization_stats': sim.normalization_stats,
-        'data_batch_size': config.data_batch_size,
-        'hidden_activation': jax.nn.leaky_relu,
-        'num_train_steps': config.bnn_train_steps,
+    dump_dir = os.path.join(RESULT_DIR, 'online_rl_hardware', wandb_config['id'])
+    os.makedirs(dump_dir, exist_ok=True)
+    log_path = os.path.join(dump_dir, f"{wandb_config['id']}.log")
 
-    }
-
-    if config.sim_prior == 'none_FVSGD':
-        bnn = BNN_FSVGD(
-            **standard_params,
-            domain=sim.domain,
-            bandwidth_svgd=config.bandwidth_svgd,
-        )
-    elif config.sim_prior == 'none_SVGD':
-        bnn = BNN_SVGD(
-            **standard_params,
-            bandwidth_svgd=1.0,
-        )
-    elif config.sim_prior == 'high_fidelity_no_aditive_GP':
-        bnn = BNN_FSVGD_SimPrior(
-            **standard_params,
-            domain=sim.domain,
-            function_sim=sim,
-            score_estimator='gp',
-            num_f_samples=config.num_f_samples,
-            bandwidth_svgd=config.bandwidth_svgd,
-            num_measurement_points=config.num_measurement_points,
-        )
+    if machine == 'euler':
+        wandb_config_remote = wandb_config | {'dir': '/cluster/scratch/' + EULER_ENTITY}
     else:
-        if config.sim_prior == 'high_fidelity':
-            outputscales_racecar = [0.008, 0.008, 0.009, 0.009, 0.05, 0.05, 0.20]
-        elif config.sim_prior == 'low_fidelity':
-            outputscales_racecar = [0.008, 0.008, 0.01, 0.01, 0.08, 0.08, 0.5]
-        else:
-            raise ValueError(f'Invalid sim prior: {config.sim_prior}')
+        wandb_config_remote = wandb_config | {'dir': '/tmp/'}
 
-        sim = AdditiveSim(base_sims=[sim,
-                                     GaussianProcessSim(sim.input_size, sim.output_size,
-                                                        output_scale=outputscales_racecar,
-                                                        length_scale=config.length_scale_aditive_sim_gp,
-                                                        consider_only_first_k_dims=None)
-                                     ])
+    if remote_training:
+        wandb.finish()
+    sys.stdout = Logger(log_path, stream=sys.stdout)
+    sys.stderr = Logger(log_path, stream=sys.stderr)
+    print(f'\nDumping trajectories and logs to {dump_dir}\n')
 
-        bnn = BNN_FSVGD_SimPrior(
-            **standard_params,
-            domain=sim.domain,
-            function_sim=sim,
-            score_estimator='gp',
-            num_f_samples=config.num_f_samples,
-            bandwidth_svgd=config.bandwidth_svgd,
-            num_measurement_points=config.num_measurement_points,
-        )
+    """ Setup BNN """
+    bnn = set_up_bnn_dynamics_model(config=config, key=key_bnn)
 
-    ################################################################################
-    ################################################################################
-    ################################################################################
     mbrl_config = ModelBasedRLConfig(
         x_dim=7,
         u_dim=2,
@@ -293,27 +256,35 @@ def main(config: MainConfig = MainConfig(), run_remote: bool = False, encode_ang
         bnn_training_test_ratio=0.2,
         max_num_episodes=100)
 
+    """ Set up dummy SAC trainer for getting the policy from policy params """
+    dummy_sac_trainer = set_up_dummy_sac_trainer(main_config=config, mbrl_config=mbrl_config, key=key)
+
+    """ Main loop over episodes """
     for episode_id in range(1, config.num_episodes + 1):
-        print('\n\n ------- Episode', episode_id)
+
+        if remote_training:
+            wandb.init(**wandb_config)
+        sys.stdout = Logger(log_path, stream=sys.stdout)
+        sys.stderr = Logger(log_path, stream=sys.stderr)
+        print('\n\n------- Episode', episode_id)
+
         key, key_episode = jr.split(key)
 
         # train model & policy
-        policy, bnn = train_model_based_policy_remote(train_data=train_data,
-                                                      bnn_model=bnn,
-                                                      config=mbrl_config,
-                                                      key=key_episode,
-                                                      episode_idx=episode_id,
-                                                      run_remote=run_remote)
-        print(episode_id, policy)
+        policy_params, bnn = train_model_based_policy_remote(
+            train_data=train_data, bnn_model=bnn, config=mbrl_config, key=key_episode,
+            episode_idx=episode_id, machine=machine, wandb_config=wandb_config_remote,
+            remote_training=remote_training)
+
+        # get  allable policy from policy params
+        def policy(x):
+            return dummy_sac_trainer.make_policy(policy_params, deterministic=True)(x, jr.PRNGKey(0))[0]
 
         # perform policy rollout on the car
         stacked_actions = jnp.zeros(shape=(config.num_stacked_actions * mbrl_config.u_dim,))
-        actions = []
-        obs = env.reset()
-        obs = jnp.concatenate([obs, stacked_actions])
+        obs = jnp.concatenate([env.reset(), stacked_actions])
         trajectory = [obs]
-        rewards = []
-        pure_obs = []
+        actions, rewards, pure_obs = [], [], []
         for i in range(200):
             rng_key_rollouts, rng_key_act = jr.split(rng_key_rollouts)
             act = policy(obs)
@@ -326,15 +297,15 @@ def main(config: MainConfig = MainConfig(), run_remote: bool = False, encode_ang
             if config.num_stacked_actions > 0:
                 stacked_actions = jnp.concatenate([stacked_actions[mbrl_config.u_dim:], act])
 
-        trajectory = jnp.array(trajectory)
-        actions = jnp.array(actions)
-        rewards = jnp.array(rewards)
-        pure_obs = jnp.array(pure_obs)
+        # logging and saving
+        trajectory, actions, rewards, pure_obs = map(lambda arr: jnp.array(arr),
+                                                    [trajectory, actions, rewards, pure_obs])
 
-        fig, axes = plot_rc_trajectory(pure_obs,
-                                       actions,
-                                       encode_angle=encode_angle,
-                                       show=False)
+        traj_summary = {'episode_id': episode_id, 'trajectory': trajectory, 'actions': actions, 'rewards': rewards,
+                        'obs': pure_obs, 'return': jnp.sum(rewards)}
+        dump_trajectory_summary(dump_dir=dump_dir, episode_id=episode_id, traj_summary=traj_summary, verbosity=1)
+
+        fig, axes = plot_rc_trajectory(pure_obs, actions, encode_angle=encode_angle, show=False)
         wandb.log({'True_trajectory_path': wandb.Image(fig),
                    'reward_on_true_system': jnp.sum(rewards),
                    'x_axis/episode': episode_id})
@@ -346,6 +317,9 @@ def main(config: MainConfig = MainConfig(), run_remote: bool = False, encode_ang
         train_data['y_train'] = jnp.concatenate([train_data['y_train'], trajectory[1:, :mbrl_config.x_dim]], axis=0)
         print(f'Size of train_data in episode {episode_id}:', train_data['x_train'].shape[0])
 
+        if remote_training:
+            wandb.finish()
+
 
 if __name__ == '__main__':
     import argparse
@@ -354,8 +328,7 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=914)
     parser.add_argument('--prior', type=str, default='none_FVSGD')
     parser.add_argument('--project_name', type=str, default='OnlineRL_RCCar')
-    parser.add_argument('--run_remote', type=int, default=0)
-    parser.add_argument('--wandb_tag', type=str, default='')
+    parser.add_argument('--machine', type=str, default='optimality')
     parser.add_argument('--gpu', type=int, default=1)
     args = parser.parse_args()
 
@@ -367,4 +340,4 @@ if __name__ == '__main__':
     main(config=MainConfig(sim_prior=args.prior,
                            seed=args.seed,
                            project_name=args.project_name, ),
-         run_remote=bool(args.run_remote), )
+         machine=args.machine)

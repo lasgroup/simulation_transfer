@@ -45,16 +45,17 @@ class Logger:
         Not intended as full Logger with verbosity capabilities.
     """
 
-    def __init__(self, filename):
-        self.console = sys.stdout
-        self.file = open(filename, 'w')
+    def __init__(self, filename, stream=sys.stdout):
+        self.stream = stream
+        self.file = open(filename, 'a')
 
     def write(self, message):
-        self.console.write(message)
+        self.stream.write(message)
         self.file.write(message)
+        self.flush()
 
     def flush(self):
-        self.console.flush()
+        self.stream.flush()
         self.file.flush()
 
 

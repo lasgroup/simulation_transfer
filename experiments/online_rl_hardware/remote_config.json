@@ -1,9 +1,22 @@
 {
-  "local_dir": "/tmp/ssh_remote/",
-  "local_script": "/Users/rojonas/Dropbox/Eigene_Dateien/ETH/02_Projects/20_sim_transfer/code_sim_transfer/experiments/online_rl_hardware/train_policy.py",
-  "remote_machine": "rojonas@matroid3.inf.ethz.ch",
-  "remote_dir": "/tmp/ssh_remote/",
-  "remote_interpreter": "/local/rojonas/sim_transfer/sim_transfer_gpu_interpreter_wrapper",
-  "remote_script": "/local/rojonas/sim_transfer/experiments/online_rl_hardware/train_policy.py",
-  "remote_pythonpath": "/local/rojonas/miniconda3/envs/sim_transfer_gpu/bin/python"
+  "euler": {
+    "local_dir": "/tmp/ssh_remote/",
+    "local_script": "/Users/rojonas/Dropbox/Eigene_Dateien/ETH/02_Projects/20_sim_transfer/code_sim_transfer/experiments/online_rl_hardware/train_policy.py",
+    "remote_machine": "rojonas@euler",
+    "remote_dir": "/cluster/scratch/rojonas/",
+    "remote_pre_cmd": "srun --gpus=1 --cpus-per-task=4 --time=01:00:00",
+    "remote_interpreter": "/cluster/project/infk/krause/rojonas/.venv/sim_transfer_gpu/bin/python",
+    "remote_script": "/cluster/project/infk/krause/rojonas/sim_transfer/experiments/online_rl_hardware/train_policy.py",
+    "remote_pythonpath": "/cluster/project/infk/krause/rojonas/sim_transfer"
+  },
+  "optimality": {
+    "local_dir": "/tmp/ssh_remote/",
+    "local_script": "/Users/rojonas/Dropbox/Eigene_Dateien/ETH/02_Projects/20_sim_transfer/code_sim_transfer/experiments/online_rl_hardware/train_policy.py",
+    "remote_machine": "rojonas@optimality.inf.ethz.ch",
+    "remote_dir": "/tmp/ssh_remote/",
+    "remote_pre_cmd": "",
+    "remote_interpreter": "/local/rojonas/miniconda3/envs/sim_transfer_gpu/bin/python",
+    "remote_script": "/local/rojonas/sim_transfer/experiments/online_rl_hardware/train_policy.py",
+    "remote_pythonpath": "/local/rojonas/sim_transfer"
+  }
 }
