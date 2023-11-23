@@ -248,9 +248,8 @@ class BNNGreyBox(AbstractRegressionModel):
         sim_model_prediction = self.sim_model_step(x, self.params_sim['sim_params'])
         x = self._normalize_data(x)
         y_pred_raw = self.batched_model(x)
-        y_pred = jax.tree_util.tree_map(lambda y:
-                                        int(self.use_base_bnn) * self._unnormalize_y(y) + sim_model_prediction,
-                                        y_pred_raw)
+        y_pred = jax.vmap(lambda y: int(self.use_base_bnn) * self._unnormalize_y(y) + sim_model_prediction,
+                          in_axes=0)(y_pred_raw)
         assert y_pred.ndim == 3 and y_pred.shape[-2:] == (x.shape[0], self.output_size)
         return y_pred
 
