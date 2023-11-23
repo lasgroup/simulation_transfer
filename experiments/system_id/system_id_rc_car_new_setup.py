@@ -7,18 +7,17 @@ import jax
 import optax
 import numpy as np
 import argparse
+import glob
 from functools import partial
 
-from experiments.util import load_csv_recordings, get_trajectory_windows
+from experiments.util import get_trajectory_windows
 from sim_transfer.sims.dynamics_models import RaceCar, CarParams
-from sim_transfer.sims.util import angle_diff, plot_rc_trajectory
+from sim_transfer.sims.util import angle_diff
 from matplotlib import pyplot as plt
 from brax.training.types import Transition
 
 import tensorflow_probability.substrates.jax.distributions as tfd
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-                        'data/recordings_rc_car_v2')
 
 arg_parser = argparse.ArgumentParser()
 arg_parser.add_argument('--batch_size', type=int, default=64)
@@ -27,10 +26,15 @@ arg_parser.add_argument('--action_delay', type=int, default=3)
 arg_parser.add_argument('--real_data', type=bool, default=True)
 arg_parser.add_argument('--encode_angle', type=bool, default=True)
 arg_parser.add_argument('--use_blend', type=float, default=1.0)
+arg_parser.add_argument('--data_source', type=str, default='recordings_rc_car_v4')
 arg_parser.add_argument('--seed', type=int, default=234234)
 args = arg_parser.parse_args()
 
 key_init, key_train, key_data = jax.random.split(jax.random.PRNGKey(args.seed), 3)
+
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                        f'data/{args.data_source}')
+
 
 def rotate_vector(v, theta):
     v_x, v_y = v[..., 0], v[..., 1]
@@ -65,20 +69,23 @@ def prepare_data(transitions: Transition, window_size=10, encode_angles: bool = 
 
 
 def load_transitions(file_dir):
-    file_name = [f'recording_car2_sep29_{i:02d}.pickle' for i in [8, 1, 11, 4, 3, 13, 6, 12, 7, 14, 9,  5, 2, 10]]
+    file_names = glob.glob(os.path.join(file_dir, '*.pickle'))
     transitions = []
-    for fn in file_name:
-        with open(file_dir + '/' + fn, 'rb') as f:
+    for fn in file_names:
+        with open(fn, 'rb') as f:
             transitions.append(pickle.load(f))
     return transitions
 
-
-num_train_traj = 9 if args.real_data else 7
+if args.data_source == 'recordings_rc_car_v3':
+    num_train_traj = 4
+else:
+    num_train_traj = 10 if args.real_data else 7
 transitions = load_transitions(DATA_DIR)
 datasets = list(map(partial(prepare_data, window_size=11, encode_angles=args.encode_angle, action_delay=args.action_delay),
-                          transitions))
+                            transitions))
+
 # shuffle data
-[datasets[i] for i in jax.random.permutation(key_data, jnp.arange(len(datasets)))]
+datasets = [datasets[i] for i in jax.random.permutation(key_data, jnp.arange(len(datasets)))]
 
 # split into train and test
 datasets_train = datasets[:num_train_traj]
