@@ -27,6 +27,7 @@ def experiment(horizon_len: int,
                num_offline_collected_transitions: int,
                use_sim_prior: int,
                use_grey_box: int,
+               use_sim_model: int,
                high_fidelity: int,
                num_measurement_points: int,
                bnn_batch_size: int,
@@ -57,7 +58,8 @@ def experiment(horizon_len: int,
                        high_fidelity=high_fidelity,
                        num_offline_data=num_offline_collected_transitions,
                        share_of_x0s=share_of_x0s_in_sac_buffer,
-                       train_sac_only_from_init_states=train_sac_only_from_init_states,
+                       sac_only_from_is=train_sac_only_from_init_states,
+                       use_sim_model=use_sim_model,
                        )
     group_name = '_'.join(list(str(key) + '=' + str(value) for key, value in config_dict.items() if key != 'seed'))
 
@@ -112,7 +114,9 @@ def experiment(horizon_len: int,
                        ctrl_cost_weight=ctrl_cost_weight,
                        num_offline_collected_transitions=num_offline_collected_transitions,
                        use_sim_prior=use_sim_prior,
+                       use_grey_box=use_grey_box,
                        high_fidelity=high_fidelity,
+                       use_sim_model=use_sim_model,
                        bnn_batch_size=bnn_batch_size,
                        num_measurement_points=num_measurement_points,
                        test_data_ratio=test_data_ratio,
@@ -235,7 +239,8 @@ def experiment(horizon_len: int,
             bandwidth_svgd=bandwidth_svgd,
             num_measurement_points=num_measurement_points,
         )
-    elif use_grey_box:
+    elif use_grey_box or use_sim_model:
+        assert use_grey_box == 1 - use_sim_model, "can either use grey box or sim model"
         if predict_difference:
             sim = PredictStateChangeWrapper(sim)
         base_bnn = BNN_FSVGD(
@@ -249,8 +254,7 @@ def experiment(horizon_len: int,
         model = BNNGreyBox(
             base_bnn=base_bnn,
             sim=sim,
-            num_sim_model_train_steps=2000,
-            lr_sim=1e-3,
+            use_base_bnn=bool(1 - use_sim_model)
         )
     else:
         if predict_difference:
@@ -319,6 +323,7 @@ def main(args):
         ctrl_diff_weight=args.ctrl_diff_weight,
         num_offline_collected_transitions=args.num_offline_collected_transitions,
         use_sim_prior=args.use_sim_prior,
+        use_sim_model=args.use_sim_model,
         use_grey_box=args.use_grey_box,
         high_fidelity=args.high_fidelity,
         num_measurement_points=args.num_measurement_points,
@@ -359,7 +364,8 @@ if __name__ == '__main__':
     parser.add_argument('--num_offline_collected_transitions', type=int, default=20_000)
     parser.add_argument('--use_sim_prior', type=int, default=0)
     parser.add_argument('--use_grey_box', type=int, default=1)
-    parser.add_argument('--high_fidelity', type=int, default=0)
+    parser.add_argument('--use_sim_model', type=int, default=0)
+    parser.add_argument('--high_fidelity', type=int, default=1)
     parser.add_argument('--num_measurement_points', type=int, default=8)
     parser.add_argument('--bnn_batch_size', type=int, default=32)
     parser.add_argument('--test_data_ratio', type=float, default=0.1)
@@ -372,7 +378,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_frame_stack', type=int, default=3)
     parser.add_argument('--bandwidth_svgd', type=float, default=0.2)
     parser.add_argument('--num_epochs', type=int, default=20)
-    parser.add_argument('--max_train_steps', type=int, default=50_000)
+    parser.add_argument('--max_train_steps', type=int, default=10_000)
     parser.add_argument('--min_train_steps', type=int, default=10_000)
     parser.add_argument('--length_scale_aditive_sim_gp', type=float, default=1.0)
     parser.add_argument('--input_from_recorded_data', type=int, default=1)
