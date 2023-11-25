@@ -1,8 +1,8 @@
 import copy
 import logging
 import time
-from typing import Optional, Tuple, Callable, Dict, List
-
+from typing import Optional, Tuple, Callable, Dict, List, Union
+from jaxtyping import PyTree
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
@@ -12,9 +12,9 @@ import tensorflow_datasets as tfds
 import tensorflow_probability.substrates.jax.distributions as tfd
 import wandb
 from tensorflow_probability.substrates import jax as tfp
-
+import optax
 from sim_transfer.modules.distribution import AffineTransform
-from sim_transfer.modules.metrics import calibration_error_cum, calibration_error_bin
+from sim_transfer.modules.metrics import _check_dist_and_sample_shapes, _get_mean_std_from_dist
 from sim_transfer.modules.nn_modules import BatchedMLP
 from sim_transfer.modules.util import RngKeyMixin, aggregate_stats
 
@@ -47,6 +47,30 @@ class AbstractRegressionModel(RngKeyMixin):
 
         # disable some stupid tensorflow probability warnings
         self._add_checktypes_logging_filter()
+        conf_values_cum = jnp.array([0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.977, 0.99])
+        quantiles_cum = tfp.distributions.Chi2(df=1).quantile(conf_values_cum)
+        conf_values_bin = jnp.array([0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.])
+        quantiles_bin = tfp.distributions.Chi2(df=1).quantile(conf_values_bin)
+        self.calibration_params = {
+            'conf_values_cum': conf_values_cum,
+            'quantiles_cum': quantiles_cum,
+            'conf_values_bin': conf_values_bin,
+            'quantiles_bin': quantiles_bin,
+        }
+
+        def step_jit(carry, ins):
+            opt_state, params, key, num_train_points = carry[0], carry[1], carry[2], carry[3]
+            x_batch, y_batch = ins[0], ins[1]
+            key, train_key = jax.random.split(key)
+            new_opt_state, new_params, stats = self._step_jit(
+                opt_state=opt_state, params=params, x_batch=x_batch, y_batch=y_batch,
+                key=train_key,
+                num_train_points=num_train_points,
+            )
+            carry = [new_opt_state, new_params, key, num_train_points]
+            return carry, stats
+
+        self.step_jit = jax.jit(step_jit)
 
     def _compute_normalization_stats(self, x: jnp.ndarray, y: jnp.ndarray) -> None:
         # computes the empirical normalization stats and stores as private variables
@@ -148,11 +172,42 @@ class AbstractRegressionModel(RngKeyMixin):
         ds = tfds.as_numpy(ds)
         return ds
 
+    def step(self, x_batch: jnp.ndarray, y_batch: jnp.ndarray, num_train_points: Union[float, int]) -> Dict[str, float]:
+        raise NotImplementedError
+
+    def _step_jit(self, opt_state: optax.OptState, params: PyTree, x_batch: jnp.array, y_batch: jnp.array,
+                  key: jax.random.PRNGKey,
+                  num_train_points: Union[float, int]) -> [optax.OptState, PyTree, Dict]:
+        raise NotImplementedError
+
     def predict_dist(self, x: jnp.ndarray, include_noise: bool = False) -> tfp.distributions.Distribution:
         return False
 
     def predict(self, x: jnp.ndarray, include_noise: bool = False) -> Tuple[jnp.ndarray, jnp.ndarray]:
         raise NotImplementedError
+
+    def calibration_error_cum(self, dist: tfp.distributions.Distribution, y: jnp.ndarray) -> Union[jnp.ndarray, float]:
+        """ Computes the calibration error of a distribution w.r.t. a sample based the differences in
+            empirical cdf and expected cdf. """
+        _check_dist_and_sample_shapes(dist, y)
+        mean, std = _get_mean_std_from_dist(dist)
+        res2 = ((mean - y) / std) ** 2
+        conf_values = self.calibration_params['conf_values_cum']
+        quantiles = self.calibration_params['quantiles_cum']
+        emp_freqs = jnp.mean(res2[..., None] <= quantiles, axis=0)
+        return jnp.mean(jnp.abs(emp_freqs - conf_values))
+
+    def calibration_error_bin(self, dist: tfp.distributions.Distribution, y: jnp.ndarray) -> Union[jnp.ndarray, float]:
+        """ Computes the calibration error of a distribution w.r.t. a sample based on 10 % bins of the probability mass """
+        _check_dist_and_sample_shapes(dist, y)
+        mean, std = _get_mean_std_from_dist(dist)
+        res2 = ((mean - y) / std) ** 2
+        conf_values = self.calibration_params['conf_values_bin']
+        quantiles = self.calibration_params['quantiles_bin']
+        n_bins = len(conf_values) - 1
+        emp_freqs = jnp.mean((quantiles[:-1] <= res2[..., None]) & (res2[..., None] <= quantiles[1:]), axis=0)
+        expected_freqs = conf_values[1:] - conf_values[:-1]
+        return jnp.mean(jnp.sum(jnp.abs(emp_freqs - expected_freqs), axis=-1)) / (2 - 2 / n_bins)
 
     def eval(self, x: jnp.ndarray, y: np.ndarray, prefix: str = '', per_dim_metrics: bool = False) \
             -> Dict[str, jnp.ndarray]:
@@ -172,8 +227,8 @@ class AbstractRegressionModel(RngKeyMixin):
         # compute standard evaluation metrics
         nll = - jnp.mean(pred_dist.log_prob(y))
         rmse = jnp.sqrt(jnp.mean(jnp.sum((pred_dist.mean - y) ** 2, axis=-1)))
-        cal_err_cum = calibration_error_cum(pred_dist, y)
-        cal_err_bin = calibration_error_bin(pred_dist, y)
+        cal_err_bin = self.calibration_error_bin(pred_dist, y)
+        cal_err_cum = self.calibration_error_cum(pred_dist, y)
         avg_std = jnp.mean(pred_dist.stddev)
         eval_stats = {'nll': nll, 'rmse': rmse, 'avg_std': avg_std,
                       'cal_err_cum': cal_err_cum, 'cal_err_bin': cal_err_bin}
@@ -309,7 +364,6 @@ class BatchedNeuralNetworkModel(AbstractRegressionModel):
                 duration_sec = time.time() - t_start_period
                 duration_per_sample_ms = duration_sec / samples_cum_period * 1000
                 stats_agg = aggregate_stats(stats_list)
-
                 if evaluate:
                     eval_stats = self.eval(x_eval, y_eval, prefix='eval_', per_dim_metrics=per_dim_metrics)
                     if keep_the_best:
@@ -338,6 +392,77 @@ class BatchedNeuralNetworkModel(AbstractRegressionModel):
             if step >= num_steps:
                 break
 
+        if keep_the_best and best_params is not None:
+            self.params = best_params
+            print(f'Keeping the best model with {metrics_objective}={best_objective:.4f}')
+            if log_to_wandb:
+                wandb.log({metrics_objective: best_objective})
+
+    def fit_with_scan(self,
+                      x_train: jnp.ndarray, y_train: jnp.ndarray, x_eval: Optional[jnp.ndarray] = None,
+                      y_eval: Optional[jnp.ndarray] = None, num_steps: Optional[int] = None, log_period: int = 1000,
+                      log_to_wandb: bool = False, metrics_objective: str = 'train_nll_loss',
+                      keep_the_best: bool = False,
+                      per_dim_metrics: bool = False
+                      ):
+        evaluate = x_eval is not None or y_eval is not None
+        assert not evaluate or x_eval.shape[0] == y_eval.shape[0]
+
+        # prepare data and data loader
+        x_train, y_train = self._preprocess_train_data(x_train, y_train)
+        batch_size = min(self.data_batch_size, x_train.shape[0])
+        num_train_points = x_train.shape[0]
+
+        # initialize attributes to keep track of during training
+        num_steps = self.num_train_steps if num_steps is None else num_steps
+        t_start_period = time.time()
+
+        # do callback before training loop starts in case the specific method wants to do something for
+        # which it needs the normalization stats of the data
+        self._before_training_loop_callback()
+
+        best_objective = jnp.array(jnp.inf)
+        best_params = None
+        train_steps = min(num_steps, log_period)
+        log_loops = num_steps // train_steps
+
+        for i in range(log_loops):
+            batch_index = jax.random.randint(minval=0, maxval=num_train_points,
+                                             key=self.rng_key, shape=(train_steps, batch_size))
+            x_data, y_data = jax.vmap(lambda idx: (x_train[idx], y_train[idx]))(batch_index)
+            carry, outs = jax.lax.scan(self.step_jit, [self.opt_state, self.params, self.rng_key, num_train_points],
+                                       xs=[x_data, y_data],
+                                       length=train_steps)
+            self.opt_state, self.params = carry[0], carry[1]
+            stats = jax.tree_util.tree_map(lambda x: x[-1], outs)
+            step = (i + 1) * train_steps
+            samples_cum_period = (i + 1) * train_steps * x_train.shape[0]
+            duration_sec = time.time() - t_start_period
+            duration_per_sample_ms = duration_sec / samples_cum_period * 1000
+            stats_agg = jax.tree_util.tree_map(jnp.mean, outs)
+            if step % log_period == 0:
+                if evaluate:
+                    eval_stats = self.eval(x_eval, y_eval, prefix='eval_', per_dim_metrics=per_dim_metrics)
+                    if keep_the_best:
+                        if metrics_objective in eval_stats.keys():
+                            if eval_stats[metrics_objective] < best_objective:
+                                best_objective = eval_stats[metrics_objective]
+                                best_params = copy.deepcopy(self.params)
+                        else:
+                            if stats[metrics_objective] < best_objective:
+                                best_objective = stats[metrics_objective]
+                                best_params = copy.deepcopy(self.params)
+                    stats_agg.update(eval_stats)
+                if log_to_wandb:
+                    log_dict = {f'regression_model_training/{n}': float(v) for n, v in stats_agg.items()}
+                    wandb.log(log_dict | {'x_axis/bnn_step': step})
+                stats_msg = ' | '.join([f'{n}: {v:.4f}' for n, v in stats_agg.items()])
+                msg = (f'Step {step}/{num_steps} | {stats_msg} | Duration {duration_sec:.2f} sec | '
+                       f'Time per sample {duration_per_sample_ms:.2f} ms')
+                print(msg)
+
+                # reset the attributes we keep track of
+                t_start_period = time.time()
         if keep_the_best and best_params is not None:
             self.params = best_params
             print(f'Keeping the best model with {metrics_objective}={best_objective:.4f}')

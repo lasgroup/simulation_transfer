@@ -36,6 +36,17 @@ class BNNGreyBox(AbstractRegressionModel):
             normalization_stats=None,
         )
         del self._x_mean, self._x_std, self._y_mean, self._y_std, self.affine_transform_y
+
+        def step_jit_sim(carry, ins):
+            opt_state_sim, params_sim, num_train_points = carry[0], carry[1], carry[2]
+            x_batch, y_batch = ins[0], ins[1]
+            new_opt_state_sim, new_params_sim, stats = self._step_grey_box_jit(
+                opt_state_sim=opt_state_sim, params_sim=params_sim, x_batch=x_batch,
+                y_batch=y_batch, num_train_points=num_train_points)
+            carry = [new_opt_state_sim, new_params_sim, num_train_points]
+            return carry, stats
+
+        self.step_jit_sim = jax.jit(step_jit_sim)
         self.normalize_data = self.base_bnn.normalize_data
         self._need_to_compute_norm_stats = self.base_bnn._need_to_compute_norm_stats
         self.sim = sim
@@ -192,6 +203,7 @@ class BNNGreyBox(AbstractRegressionModel):
         assert y_unnorm.shape == y.shape
         return y_unnorm
 
+    @partial(jax.jit, static_argnums=0)
     def sim_model_step(self, x: jnp.array, params_sim: NamedTuple):
         """Take unnormalized inputs and return unnormalized output from the sim."""
         # parameters that are trainable, have 1 in self.train_params if train_params is 0 then initial param is taken.
@@ -273,7 +285,8 @@ class BNNGreyBox(AbstractRegressionModel):
     def predict_dist(self, x: jnp.ndarray, include_noise: bool = True) -> tfp.distributions.Distribution:
         self.batched_model.param_vectors_stacked = self.params['nn_params_stacked']
         y_pred = self.predict_post_samples(x)
-        pred_dist = self._to_pred_dist(y_pred, likelihood_std=self.likelihood_std_unnormalized, include_noise=include_noise)
+        pred_dist = self._to_pred_dist(y_pred, likelihood_std=self.likelihood_std_unnormalized,
+                                       include_noise=include_noise)
         assert pred_dist.batch_shape == x.shape[:-1]
         assert pred_dist.event_shape == (self.output_size,)
         if callable(pred_dist.mean):
@@ -356,7 +369,6 @@ class BNNGreyBox(AbstractRegressionModel):
                 duration_sec = time.time() - t_start_period
                 duration_per_sample_ms = duration_sec / samples_cum_period * 1000
                 stats_agg = aggregate_stats(stats_list)
-
                 if evaluate:
                     eval_stats = self.eval_sim(x_eval, y_eval, prefix='eval_', per_dim_metrics=per_dim_metrics)
                     if keep_the_best:
@@ -390,6 +402,89 @@ class BNNGreyBox(AbstractRegressionModel):
             print(f'Keeping the best model with {metrics_objective}={best_objective:.4f}')
             if log_to_wandb:
                 wandb.log({metrics_objective: best_objective})
+
+    def fit_sim_prior_with_scan(self, x_train: jnp.ndarray, y_train: jnp.ndarray, x_eval: Optional[jnp.ndarray] = None,
+                                y_eval: Optional[jnp.ndarray] = None,
+                                num_sim_model_train_steps: Optional[int] = None, log_period: int = 1000,
+                                log_to_wandb: bool = False, metrics_objective: str = 'train_sim_nll_loss',
+                                keep_the_best: bool = False,
+                                per_dim_metrics: bool = False):
+        evaluate = x_eval is not None or y_eval is not None
+        assert not evaluate or x_eval.shape[0] == y_eval.shape[0]
+
+        x_train, y_train = self._preprocess_train_data_sim(x_train, y_train)
+        batch_size = min(self.data_batch_size, x_train.shape[0])
+        num_train_points = x_train.shape[0]
+
+        num_sim_model_train_steps = self.num_sim_model_train_steps if num_sim_model_train_steps is None else \
+            num_sim_model_train_steps
+
+        best_objective = jnp.array(jnp.inf)
+        best_params = None
+        train_steps = min(num_sim_model_train_steps, log_period)
+        log_loops = num_sim_model_train_steps // train_steps
+        t_start_period = time.time()
+
+        for i in range(log_loops):
+            batch_index = jax.random.randint(minval=0, maxval=num_train_points,
+                                             key=self.rng_key, shape=(train_steps, batch_size))
+            x_data, y_data = jax.vmap(lambda idx: (x_train[idx], y_train[idx]))(batch_index)
+            carry, outs = jax.lax.scan(self.step_jit_sim, [self.opt_state_sim, self.params_sim, num_train_points],
+                                       xs=[x_data, y_data],
+                                       length=train_steps)
+            self.opt_state_sim, self.params_sim = carry[0], carry[1]
+            stats = jax.tree_util.tree_map(lambda x: x[-1], outs)
+            step = (i + 1) * train_steps
+            samples_cum_period = (i + 1) * train_steps * x_train.shape[0]
+            duration_sec = time.time() - t_start_period
+            duration_per_sample_ms = duration_sec / samples_cum_period * 1000
+            stats_agg = jax.tree_util.tree_map(jnp.mean, outs)
+            if step % log_period == 0:
+                if evaluate:
+                    eval_stats = self.eval_sim(x_eval, y_eval, prefix='eval_', per_dim_metrics=per_dim_metrics)
+                    if keep_the_best:
+                        if metrics_objective in eval_stats.keys():
+                            if eval_stats[metrics_objective] < best_objective:
+                                best_objective = eval_stats[metrics_objective]
+                                best_params = copy.deepcopy(self.params_sim)
+                        else:
+                            if stats[metrics_objective] < best_objective:
+                                best_objective = stats[metrics_objective]
+                                best_params = copy.deepcopy(self.params_sim)
+                    stats_agg.update(eval_stats)
+                if log_to_wandb:
+                    log_dict = {f'regression_model_training/{n}': float(v) for n, v in stats_agg.items()}
+                    wandb.log(log_dict | {'x_axis/bnn_step': step})
+                stats_msg = ' | '.join([f'{n}: {v:.4f}' for n, v in stats_agg.items()])
+                msg = (f'Step {step}/{num_sim_model_train_steps} | {stats_msg} | Duration {duration_sec:.2f} sec | '
+                       f'Time per sample {duration_per_sample_ms:.2f} ms')
+                print(msg)
+
+                # reset the attributes we keep track of
+                t_start_period = time.time()
+        if keep_the_best and best_params is not None:
+            self.params_sim = best_params
+            print(f'Keeping the best model with {metrics_objective}={best_objective:.4f}')
+            if log_to_wandb:
+                wandb.log({metrics_objective: best_objective})
+
+    def fit_with_scan(self, x_train: jnp.ndarray, y_train: jnp.ndarray, x_eval: Optional[jnp.ndarray] = None,
+                      y_eval: Optional[jnp.ndarray] = None, num_steps: Optional[int] = None,
+                      num_sim_model_train_steps: Optional[int] = None, log_period: int = 1000,
+                      log_to_wandb: bool = False, metrics_objective: str = 'train_nll_loss',
+                      keep_the_best: bool = False,
+                      per_dim_metrics: bool = False):
+
+        self.fit_sim_prior_with_scan(x_train, y_train, x_eval, y_eval, num_sim_model_train_steps, log_period,
+                                     log_to_wandb, metrics_objective, keep_the_best, per_dim_metrics)
+        y_train = y_train - self.sim_model_step(x_train, self.params_sim['sim_params'])
+        y_eval = y_eval - self.sim_model_step(x_eval, self.params_sim['sim_params'])
+        if self.use_base_bnn:
+            self.base_bnn.fit_with_scan(
+                x_train, y_train, x_eval, y_eval, num_steps, log_period, log_to_wandb,
+                metrics_objective,
+                keep_the_best, per_dim_metrics
+            )
 
     def fit(self, x_train: jnp.ndarray, y_train: jnp.ndarray, x_eval: Optional[jnp.ndarray] = None,
             y_eval: Optional[jnp.ndarray] = None, num_steps: Optional[int] = None,
@@ -437,8 +532,8 @@ if __name__ == '__main__':
     )
     bnn = BNNGreyBox(base_bnn=base_bnn, sim=sim, use_base_bnn=True, lr_sim=3e-4)
     for i in range(10):
-        bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=2000, per_dim_metrics=True,
-                num_sim_model_train_steps=2000)
+        bnn.fit_with_scan(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=2000, per_dim_metrics=True,
+                          num_sim_model_train_steps=2000)
         y_pred, _ = bnn.predict(x_test)
         loss = jnp.sqrt(jnp.square(y_pred - y_test).sum(axis=-1)).mean(0)
         print('loss: ', loss)
