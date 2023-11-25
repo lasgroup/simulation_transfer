@@ -448,8 +448,8 @@ class BNNGreyBox(AbstractRegressionModel):
                                 best_objective = eval_stats[metrics_objective]
                                 best_params = copy.deepcopy(self.params_sim)
                         else:
-                            if stats[metrics_objective] < best_objective:
-                                best_objective = stats[metrics_objective]
+                            if stats['sim_params_nll'] < best_objective:
+                                best_objective = stats['sim_params_nll']
                                 best_params = copy.deepcopy(self.params_sim)
                     stats_agg.update(eval_stats)
                 if log_to_wandb:
