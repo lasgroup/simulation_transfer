@@ -9,6 +9,7 @@ from sim_transfer.models.abstract_model import AbstractRegressionModel
 from sim_transfer.models import BNN_SVGD, BNN_VI, BNN_FSVGD, BNN_FSVGD_SimPrior
 from sim_transfer.sims import HypercubeDomain
 
+
 class TestAbstractRegression(unittest.TestCase):
 
     def test_normalization(self):
@@ -57,7 +58,7 @@ class TestAbstractRegression(unittest.TestCase):
 
     def test_setting_normalization_stats(self):
         key1, key2, key3 = jax.random.split(jax.random.PRNGKey(897), 3)
-        x_data = jnp.array([1.,]) + jnp.array([1.]) * jax.random.normal(key1, (10, 1))
+        x_data = jnp.array([1., ]) + jnp.array([1.]) * jax.random.normal(key1, (10, 1))
         y_data = jnp.array([5.0, -3.0]) + jnp.array([0.1, 5.]) * jax.random.normal(key2, (10, 2))
 
         norm_stats = {'x_mean': jnp.array([1.]), 'x_std': jnp.array([2.]),
@@ -109,12 +110,17 @@ class TestAbstractRegression(unittest.TestCase):
 
 """ TEST RE-INITIALIZATION """
 
-def _get_1d_data():
+
+def _get_1d_data(get_test: bool = False):
     # generate train and test data
     x_train = jnp.linspace(-1, 1, 10).reshape((-1, 1))
     y_train = jnp.sin(x_train)
     x_test = jnp.linspace(-1, 1, 100).reshape((-1, 1))
-    return x_train, y_train, x_test
+    if get_test:
+        y_test = jnp.sin(x_test)
+        return x_train, y_train, x_test, y_test
+    else:
+        return x_train, y_train, x_test
 
 
 @pytest.mark.parametrize('model', ['BNN_SVGD', 'BNN_VI'])
@@ -193,7 +199,6 @@ def test_serialization(model: str):
     else:
         raise ValueError(f'Unknown model {model}')
 
-
     x_train, y_train, x_test = _get_1d_data()
     model.fit(x_train, y_train, num_steps=10)
 
@@ -214,6 +219,7 @@ def test_serialization(model: str):
     y2_mean, y2_std = model2.predict(x_test)
     assert jnp.allclose(y1_mean, y2_mean) and jnp.allclose(y1_std, y2_std)
 
+
 @pytest.mark.parametrize('score_estimator', ['gp', 'kde', 'ssge', 'nu-method'])
 def test_serialization_bnn_with_simprior(score_estimator: str):
     from sim_transfer.sims.simulators import RaceCarSim, AdditiveSim, GaussianProcessSim, PredictStateChangeWrapper
@@ -221,7 +227,7 @@ def test_serialization_bnn_with_simprior(score_estimator: str):
                        GaussianProcessSim(input_size=9, output_size=7)])
     sim = PredictStateChangeWrapper(sim)
 
-    x_train, y_train, x_test, _ = sim.sample_datasets(num_samples_train=16, num_samples_test= 50,
+    x_train, y_train, x_test, _ = sim.sample_datasets(num_samples_train=16, num_samples_test=50,
                                                       rng_key=jax.random.PRNGKey(234657))
     model = BNN_FSVGD_SimPrior(
         input_size=sim.input_size,
@@ -253,6 +259,26 @@ def test_serialization_bnn_with_simprior(score_estimator: str):
     y2_mean, y2_std = model2.predict(x_test)
     assert jnp.allclose(y1_mean, y2_mean) and jnp.allclose(y1_std, y2_std)
 
+
+@pytest.mark.parametrize('model', ['BNN_SVGD', 'BNN_FSVGD'])
+def test_training_with_scan(model: str):
+    if model == 'BNN_SVGD':
+        bnn = BNN_SVGD(input_size=1, output_size=1, rng_key=jax.random.PRNGKey(34534527))
+    elif model == 'BNN_FSVGD':
+        bnn = BNN_FSVGD(input_size=1, output_size=1, domain=HypercubeDomain(-2 * jnp.ones(1), jnp.ones(1)),
+                        rng_key=jax.random.PRNGKey(34534527),
+                        learn_likelihood_std=True, num_particles=8,
+                        bandwidth_svgd=4.,
+                        bandwidth_gp_prior=4.)
+    else:
+        raise ValueError(f'Unknown model {model}')
+
+    x_train, y_train, x_test, y_test = _get_1d_data(get_test=True)
+
+    bnn.fit_with_scan(x_train, y_train, num_steps=1000)
+    y_pred, _ = bnn.predict(x_test)
+    mse = jnp.mean(jnp.square(y_test - y_pred).sum(axis=-1))
+    assert mse < 1e-3
 
 
 """ TEST BNN_SVGD """

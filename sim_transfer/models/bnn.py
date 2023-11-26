@@ -28,7 +28,7 @@ class LikelihoodMixin:
         if normalize_likelihood_std:
             assert hasattr(self, '_y_std') and self._y_std is not None and self.normalize_data, \
                 'normalize_likelihood_std requires normalization'
-            assert self._y_std.shape == (self.output_size, )
+            assert self._y_std.shape == (self.output_size,)
             likelihood_std = likelihood_std / self._y_std
 
         # store initial likelihood std
@@ -87,7 +87,6 @@ class LikelihoodMixin:
         return jnp.sum(log_probs)
 
 
-
 class AbstractParticleBNN(BatchedNeuralNetworkModel, LikelihoodMixin):
 
     def __init__(self, likelihood_std: Union[float, jnp.array] = 0.2, learn_likelihood_std: bool = False,
@@ -129,7 +128,7 @@ class AbstractParticleBNN(BatchedNeuralNetworkModel, LikelihoodMixin):
         return self._step(*args, **kwargs)
 
     def _step(self, opt_state: optax.OptState, params: Dict, x_batch: jnp.array, y_batch: jnp.array,
-                  key: jax.random.PRNGKey, num_train_points: Union[float, int]):
+              key: jax.random.PRNGKey, num_train_points: Union[float, int]):
         (loss, stats), grad = jax.value_and_grad(self._surrogate_loss, has_aux=True)(
             params, x_batch, y_batch, num_train_points, key)
         updates, opt_state = self.optim.update(grad, opt_state, params)
@@ -185,7 +184,7 @@ class AbstractVariationalBNN(BatchedNeuralNetworkModel, LikelihoodMixin):
 
     def __init__(self, likelihood_std: Union[float, jnp.array] = 0.2, learn_likelihood_std: bool = False,
                  normalize_likelihood_std: bool = False, likelihood_exponent: float = 1.0, **kwargs):
-        self.params = {} # this must happen before super().__init__ is called
+        self.params = {}  # this must happen before super().__init__ is called
         BatchedNeuralNetworkModel.__init__(self, **kwargs)
         LikelihoodMixin.__init__(self, likelihood_std=likelihood_std, learn_likelihood_std=learn_likelihood_std,
                                  normalize_likelihood_std=normalize_likelihood_std)
@@ -203,7 +202,7 @@ class AbstractVariationalBNN(BatchedNeuralNetworkModel, LikelihoodMixin):
         return stats
 
     def _loss(self, params: Dict, x_batch: jnp.array, y_batch: jnp.array,
-                    num_train_points: int, key: jax.random.PRNGKey) -> [jnp.ndarray, Dict]:
+              num_train_points: int, key: jax.random.PRNGKey) -> [jnp.ndarray, Dict]:
         raise NotImplementedError('Needs to be implemented by subclass')
 
     @partial(jax.jit, static_argnums=(0,))
@@ -216,7 +215,7 @@ class AbstractVariationalBNN(BatchedNeuralNetworkModel, LikelihoodMixin):
         return opt_state, params, stats
 
     def _post_predict_raw(self, x: jnp.ndarray, key: Optional[jax.random.PRNGKey] = None,
-                     num_post_samples: Optional[int] = None) -> jnp.ndarray:
+                          num_post_samples: Optional[int] = None) -> jnp.ndarray:
         if key is None:
             key = self.rng_key
         if num_post_samples is None:
@@ -384,7 +383,7 @@ class AbstractSVGD_BNN(AbstractParticleBNN):
 
     @partial(jax.jit, static_argnums=(0,))
     def _step_jit(self, opt_state: optax.OptState, params: PyTree, x_batch: jnp.array, y_batch: jnp.array,
-                  num_train_points: Union[float, int]):
+                  num_train_points: Union[float, int], *args, **kwargs):
         # SVGD updates
         (log_post, post_stats), grad_params_q = jax.value_and_grad(self._neg_log_posterior, has_aux=True)(
             params, x_batch, y_batch, num_train_points)
