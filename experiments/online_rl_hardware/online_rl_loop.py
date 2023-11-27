@@ -334,7 +334,7 @@ if __name__ == '__main__':
 
     if not args.gpu:
         # disable gp
-        os.environ['JAX_PLATFORM_NAME'] = 'cpu'
+        os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
     assert args.prior in PRIORS, f'Invalid prior: {args.prior}'
     main(config=MainConfig(sim_prior=args.prior,
