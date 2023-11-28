@@ -313,7 +313,7 @@ def main(config: MainConfig = MainConfig(), encode_angle: bool = True,
             init_transitions = None
         # train model & policy
         if remote_training:
-            wandb_config_remote['id'] = run_id + '_episode_{}'.format(episode_id)
+            wandb_config_remote['id'] = f'{run_id}_{episode_id}'
         policy_params, bnn = train_model_based_policy_remote(
             train_data=train_data, bnn_model=bnn, config=mbrl_config, key=key_episode,
             episode_idx=episode_id, machine=machine, wandb_config=wandb_config_remote,
