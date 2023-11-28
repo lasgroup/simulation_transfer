@@ -8,7 +8,7 @@ from sim_transfer.rl.model_based_rl.learned_system import LearnedCarSystem
 from sim_transfer.models import BNN_FSVGD_SimPrior, BNN_FSVGD, BNN_SVGD
 from sim_transfer.sims.simulators import AdditiveSim, PredictStateChangeWrapper, GaussianProcessSim
 from sim_transfer.sims.simulators import RaceCarSim, StackedActionSimWrapper
-
+from sim_transfer.sims.envs import RCCarSimEnv
 from mbpo.optimizers.policy_optimizers.sac.sac import SAC
 from mbpo.systems.brax_wrapper import BraxWrapper
 
@@ -41,6 +41,7 @@ def execute(cmd: str, verbosity: int = 0) -> None:
     if verbosity >= 2:
         print(cmd)
     os.system(cmd)
+
 
 def load_data(data_load_path: str) -> Any:
     # loads the pkl file
@@ -208,3 +209,21 @@ def set_up_dummy_sac_trainer(main_config, mbrl_config: ModelBasedRLConfig, key: 
         data_buffer_state=true_data_buffer_state, key=key_bnn, config=mbrl_config)
 
     return sac_trainer
+
+
+def prepare_init_transitions_for_car_env(key: jax.random.PRNGKey, number_of_samples: int, num_frame_stack: int = 3):
+    sim = RCCarSimEnv(encode_angle=True, use_tire_model=True)
+    action_dim = 2
+    key_init_state = jax.random.split(key, number_of_samples)
+    state_obs = jax.vmap(sim.reset)(rng_key=key_init_state)
+    framestacked_actions = jnp.zeros(
+        shape=(number_of_samples, num_frame_stack * action_dim))
+    actions = jnp.zeros(shape=(number_of_samples, action_dim))
+    rewards = jnp.zeros(shape=(number_of_samples,))
+    discounts = 0.99 * jnp.ones(shape=(number_of_samples,))
+    transitions = Transition(observation=jnp.concatenate([state_obs, framestacked_actions], axis=-1),
+                             action=actions,
+                             reward=rewards,
+                             discount=discounts,
+                             next_observation=jnp.concatenate([state_obs, framestacked_actions], axis=-1))
+    return transitions
