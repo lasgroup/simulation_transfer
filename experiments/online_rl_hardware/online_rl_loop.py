@@ -332,7 +332,7 @@ if __name__ == '__main__':
     parser.add_argument('--gpu', type=int, default=1)
 
     parser.add_argument('--prior', type=str, default='none_FVSGD')
-    parser.add_argument('--num_env_steps', type=int, default=200, info='number of steps in the environment per episode')
+    parser.add_argument('--num_env_steps', type=int, default=200, help='number of steps in the environment per episode')
     parser.add_argument('--reset_bnn', type=int, default=0)
     args = parser.parse_args()
 
