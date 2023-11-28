@@ -23,7 +23,7 @@ from experiments.util import Logger, RESULT_DIR
 from sim_transfer.sims.envs import RCCarSimEnv
 from sim_transfer.sims.util import plot_rc_trajectory
 
-WANDB_ENTITY = 'sukhijab'
+WANDB_ENTITY = 'jonasrothfuss'
 EULER_ENTITY = 'rojonas'
 WANDB_LOG_DIR_EULER = '/cluster/scratch/' + EULER_ENTITY
 PRIORS = {'none_FVSGD',
@@ -359,13 +359,13 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Meta-BO run')
     parser.add_argument('--seed', type=int, default=914)
     parser.add_argument('--project_name', type=str, default='OnlineRL_RCCar')
-    parser.add_argument('--machine', type=str, default='local')
+    parser.add_argument('--machine', type=str, default='optimality')
     parser.add_argument('--gpu', type=int, default=1)
     parser.add_argument('--sim', type=int, default=1)
     parser.add_argument('--control_time_ms', type=float, default=24.)
 
     parser.add_argument('--prior', type=str, default='none_FVSGD')
-    parser.add_argument('--num_env_steps', type=int, default=200)
+    parser.add_argument('--num_env_steps', type=int, default=200, info='number of steps in the environment per episode')
     parser.add_argument('--reset_bnn', type=int, default=0)
     parser.add_argument('--deterministic_policy', type=int, default=1)
     parser.add_argument('--initial_state_fraction', type=float, default=0.5)
