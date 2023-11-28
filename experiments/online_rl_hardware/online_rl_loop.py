@@ -23,8 +23,8 @@ from experiments.util import Logger, RESULT_DIR
 from sim_transfer.sims.envs import RCCarSimEnv
 from sim_transfer.sims.util import plot_rc_trajectory
 
-WANDB_ENTITY = 'jonasrothfuss'
-EULER_ENTITY = 'rojonas'
+WANDB_ENTITY = 'sukhijab'
+EULER_ENTITY = 'sukhijab'
 WANDB_LOG_DIR_EULER = '/cluster/scratch/' + EULER_ENTITY
 PRIORS = {'none_FVSGD',
           'none_SVGD',
@@ -155,6 +155,8 @@ class MainConfig(NamedTuple):
     initial_state_fraction: float = 0.5
     sim: int = 1
     control_time_ms: float = 24.
+    num_sac_envs: int = 64
+    eval_only_on_init_states: int = 1
 
 
 def main(config: MainConfig = MainConfig(), encode_angle: bool = True,
@@ -202,7 +204,7 @@ def main(config: MainConfig = MainConfig(), encode_angle: bool = True,
 
     """Setup SAC config dict"""
     num_env_steps_between_updates = 16
-    num_envs = 64
+    num_envs = config.num_sac_envs
     sac_kwargs = dict(num_timesteps=config.sac_num_env_steps,
                       num_evals=20,
                       reward_scaling=10,
@@ -274,11 +276,22 @@ def main(config: MainConfig = MainConfig(), encode_angle: bool = True,
         max_num_episodes=100)
 
     initial_states_fraction = max(min(config.initial_state_fraction, 0.9999), 0.0)
-    init_state_points = lambda true_buffer_points: int(initial_states_fraction * true_buffer_points
-                                                       / (1 - initial_states_fraction))
+
+    def init_state_points(true_buffer_points):
+        desired_points = int(initial_states_fraction * true_buffer_points
+                             / (1 - initial_states_fraction))
+        return min(desired_points, config.max_replay_size_true_data_buffer)
 
     """ Set up dummy SAC trainer for getting the policy from policy params """
     dummy_sac_trainer = set_up_dummy_sac_trainer(main_config=config, mbrl_config=mbrl_config, key=key)
+
+    key, key_eval_buffer = jr.split(key)
+    if config.eval_only_on_init_states:
+        eval_buffer_transitions = prepare_init_transitions_for_car_env(key=key_eval_buffer,
+                                                                       number_of_samples=1000,
+                                                                       num_frame_stack=config.num_stacked_actions)
+    else:
+        eval_buffer_transitions = None
 
     """ Main loop over episodes """
     for episode_id in range(1, config.num_episodes + 1):
@@ -304,7 +317,8 @@ def main(config: MainConfig = MainConfig(), encode_angle: bool = True,
         policy_params, bnn = train_model_based_policy_remote(
             train_data=train_data, bnn_model=bnn, config=mbrl_config, key=key_episode,
             episode_idx=episode_id, machine=machine, wandb_config=wandb_config_remote,
-            remote_training=remote_training, reset_buffer_transitions=init_transitions)
+            remote_training=remote_training, reset_buffer_transitions=init_transitions,
+            eval_buffer_transitions=eval_buffer_transitions)
 
         # get  allable policy from policy params
         def policy(x, key: jr.PRNGKey = jr.PRNGKey(0)):
@@ -362,6 +376,9 @@ if __name__ == '__main__':
 
     parser.add_argument('--prior', type=str, default='none_FVSGD')
     parser.add_argument('--num_env_steps', type=int, default=200)
+    parser.add_argument('--bnn_train_steps', type=int, default=40_000)
+    parser.add_argument('--sac_num_env_steps', type=int, default=1_000_000)
+    parser.add_argument('--num_sac_envs', type=int, default=64)
     parser.add_argument('--reset_bnn', type=int, default=0)
     parser.add_argument('--deterministic_policy', type=int, default=1)
     parser.add_argument('--initial_state_fraction', type=float, default=0.5)
@@ -381,5 +398,8 @@ if __name__ == '__main__':
                            control_time_ms=args.control_time_ms,
                            deterministic_policy=args.control_time_ms,
                            initial_state_fraction=args.initial_state_fraction,
+                           bnn_train_steps=args.bnn_train_steps,
+                           sac_num_env_steps=args.sac_num_env_steps,
+                           num_sac_envs=args.num_sac_envs,
                            ),
          machine=args.machine)

@@ -100,7 +100,8 @@ def add_data_to_buffer(buffer: ReplayBuffer, buffer_state: ReplayBufferState, x_
 
 
 def set_up_model_based_sac_trainer(bnn_model, data_buffer, data_buffer_state, key: jax.random.PRNGKey,
-                                   config: ModelBasedRLConfig, sac_kwargs: dict = None):
+                                   config: ModelBasedRLConfig, sac_kwargs: dict = None,
+                                   eval_buffer_state: ReplayBufferState | None = None):
     if sac_kwargs is None:
         sac_kwargs = config.sac_kwargs
 
@@ -110,14 +111,23 @@ def set_up_model_based_sac_trainer(bnn_model, data_buffer, data_buffer_state, ke
                               num_frame_stack=config.num_stacked_actions,
                               **config.car_reward_kwargs)
 
+    if eval_buffer_state is None:
+        eval_buffer_state = data_buffer_state
+
+    key, eval_env_key = jax.random.split(key)
     env = BraxWrapper(system=system,
                       sample_buffer_state=data_buffer_state,
                       sample_buffer=data_buffer,
                       system_params=system.init_params(key))
 
+    eval_env = BraxWrapper(system=system,
+                           sample_buffer_state=eval_buffer_state,
+                           sample_buffer=data_buffer,
+                           system_params=system.init_params(eval_env_key))
+
     # Here we create eval envs
     sac_trainer = SAC(environment=env,
-                      eval_environment=env,
+                      eval_environment=eval_env,
                       eval_key_fixed=True,
                       return_best_model=config.return_best_policy,
                       **sac_kwargs, )
