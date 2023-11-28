@@ -149,7 +149,7 @@ def generate_run_commands(command_list: List[str], output_file_list: Optional[Li
                    f'--cpus-per-task {num_cpus} '
 
         if num_gpus > 0:
-            bsub_cmd += f'-G {num_gpus} --gres=gpumem:10240m'
+            bsub_cmd += f'-G {num_gpus} --gres=gpumem:10240m '
 
         assert output_file_list is None or len(command_list) == len(output_file_list)
         if output_file_list is None:
