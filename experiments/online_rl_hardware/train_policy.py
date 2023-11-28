@@ -58,7 +58,7 @@ def train_model_based_policy(train_data: Dict,
         # Train model
         if config.reset_bnn:
             bnn_model.reinit(rng_key=key_reinit_model)
-        bnn_model.fit(x_train=x_train, y_train=y_train, x_eval=x_test, y_eval=y_test, log_to_wandb=True,
+        bnn_model.fit_with_scan(x_train=x_train, y_train=y_train, x_eval=x_test, y_eval=y_test, log_to_wandb=True,
                       keep_the_best=config.return_best_bnn, metrics_objective='eval_nll', log_period=2000)
     print(f'Time fo training the transition model: {time.time() - t:.2f} seconds')
 

@@ -238,7 +238,8 @@ def main(config: MainConfig = MainConfig(), encode_angle: bool = True,
                     'dir': WANDB_LOG_DIR_EULER if os.path.isdir(WANDB_LOG_DIR_EULER) else '/tmp/',
                     'config': total_config, 'settings': {'_service_wait': 300}}
     wandb.init(**wandb_config)
-    wandb_config['id'] = wandb.run.id
+    run_id = wandb.run.id
+    wandb_config['id'] = run_id
     remote_training = not (machine == 'local')
 
     dump_dir = os.path.join(RESULT_DIR, 'online_rl_hardware', wandb_config['id'])
@@ -250,8 +251,6 @@ def main(config: MainConfig = MainConfig(), encode_angle: bool = True,
     else:
         wandb_config_remote = wandb_config | {'dir': '/tmp/'}
 
-    if remote_training:
-        wandb.finish()
     sys.stdout = Logger(log_path, stream=sys.stdout)
     sys.stderr = Logger(log_path, stream=sys.stderr)
     print(f'\nDumping trajectories and logs to {dump_dir}\n')
@@ -284,8 +283,6 @@ def main(config: MainConfig = MainConfig(), encode_angle: bool = True,
     """ Main loop over episodes """
     for episode_id in range(1, config.num_episodes + 1):
 
-        if remote_training:
-            wandb.init(**wandb_config)
         sys.stdout = Logger(log_path, stream=sys.stdout)
         sys.stderr = Logger(log_path, stream=sys.stderr)
         print('\n\n------- Episode', episode_id)
@@ -302,6 +299,8 @@ def main(config: MainConfig = MainConfig(), encode_angle: bool = True,
         else:
             init_transitions = None
         # train model & policy
+        if remote_training:
+            wandb_config_remote['id'] = run_id + '_episode_{}'.format(episode_id)
         policy_params, bnn = train_model_based_policy_remote(
             train_data=train_data, bnn_model=bnn, config=mbrl_config, key=key_episode,
             episode_idx=episode_id, machine=machine, wandb_config=wandb_config_remote,
@@ -349,9 +348,6 @@ def main(config: MainConfig = MainConfig(), encode_angle: bool = True,
         train_data['y_train'] = jnp.concatenate([train_data['y_train'], trajectory[1:, :mbrl_config.x_dim]], axis=0)
         print(f'Size of train_data in episode {episode_id}:', train_data['x_train'].shape[0])
 
-        if remote_training:
-            wandb.finish()
-
 
 if __name__ == '__main__':
     import argparse
@@ -359,13 +355,13 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Meta-BO run')
     parser.add_argument('--seed', type=int, default=914)
     parser.add_argument('--project_name', type=str, default='OnlineRL_RCCar')
-    parser.add_argument('--machine', type=str, default='optimality')
+    parser.add_argument('--machine', type=str, default='euler')
     parser.add_argument('--gpu', type=int, default=1)
     parser.add_argument('--sim', type=int, default=1)
     parser.add_argument('--control_time_ms', type=float, default=24.)
 
     parser.add_argument('--prior', type=str, default='none_FVSGD')
-    parser.add_argument('--num_env_steps', type=int, default=200, info='number of steps in the environment per episode')
+    parser.add_argument('--num_env_steps', type=int, default=200)
     parser.add_argument('--reset_bnn', type=int, default=0)
     parser.add_argument('--deterministic_policy', type=int, default=1)
     parser.add_argument('--initial_state_fraction', type=float, default=0.5)
