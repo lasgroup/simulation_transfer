@@ -126,12 +126,13 @@ def train_model_based_policy_remote(*args,
 
 
 class MainConfig(NamedTuple):
+    num_env_steps: int = 200
     horizon_len: int = 64
     seed: int = 0
     project_name: str = 'OnlineRL_RCCar'
     num_episodes: int = 20
-    bnn_train_steps: int = 4_000    # TODO: 40_000
-    sac_num_env_steps: int = 10_000  # TODO: 1_000_000
+    bnn_train_steps: int = 40_000
+    sac_num_env_steps: int = 1_000_000
     learnable_likelihood_std: int = 1
     reset_bnn: int = 0
     sim_prior: str = 'none_SVGD'
@@ -285,7 +286,7 @@ def main(config: MainConfig = MainConfig(), encode_angle: bool = True,
         obs = jnp.concatenate([env.reset(), stacked_actions])
         trajectory = [obs]
         actions, rewards, pure_obs = [], [], []
-        for i in range(200):
+        for i in range(config.num_env_steps):
             rng_key_rollouts, rng_key_act = jr.split(rng_key_rollouts)
             act = policy(obs)
             obs, reward, _, _ = env.step(act)
@@ -326,10 +327,13 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Meta-BO run')
     parser.add_argument('--seed', type=int, default=914)
-    parser.add_argument('--prior', type=str, default='none_FVSGD')
     parser.add_argument('--project_name', type=str, default='OnlineRL_RCCar')
     parser.add_argument('--machine', type=str, default='optimality')
     parser.add_argument('--gpu', type=int, default=1)
+
+    parser.add_argument('--prior', type=str, default='none_FVSGD')
+    parser.add_argument('--num_env_steps', type=int, default=200, info='number of steps in the environment per episode')
+    parser.add_argument('--reset_bnn', type=int, default=0)
     args = parser.parse_args()
 
     if not args.gpu:
@@ -339,5 +343,7 @@ if __name__ == '__main__':
     assert args.prior in PRIORS, f'Invalid prior: {args.prior}'
     main(config=MainConfig(sim_prior=args.prior,
                            seed=args.seed,
-                           project_name=args.project_name, ),
+                           project_name=args.project_name,
+                           num_env_steps=args.num_env_steps,
+                           reset_bnn=args.reset_bnn),
          machine=args.machine)
