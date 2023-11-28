@@ -104,12 +104,11 @@ def train_model_based_policy_remote(*args,
 
     # run the train_policy.py script on the remote machine
     result_path_remote = os.path.join(rmt_cfg['remote_dir'], f'result_{run_hash}.pkl')
-    command = f'export PYTHONPATH={rmt_cfg["remote_pythonpath"]} && ' \
-              f'{rmt_cfg["remote_interpreter"]} {rmt_cfg["remote_script"]} ' \
+    command = f'{rmt_cfg["remote_interpreter"]} {rmt_cfg["remote_script"]} ' \
               f'--data_load_path {train_data_path_remote} --model_dump_path {result_path_remote}'
     if verbosity:
         print('[Local] Executing command:', command)
-    execute(f'ssh {rmt_cfg["remote_machine"]} "{command}"', verbosity)
+    execute(f'ssh -tt {rmt_cfg["remote_machine"]} "{rmt_cfg["remote_pre_cmd"]} {command}"', verbosity)
 
     # transfer result back to local
     result_path_local = os.path.join(rmt_cfg['local_dir'], f'result_{run_hash}.pkl')
