@@ -381,6 +381,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_sac_envs', type=int, default=64)
     parser.add_argument('--reset_bnn', type=int, default=0)
     parser.add_argument('--deterministic_policy', type=int, default=1)
+    parser.add_argument('--num_f_samples', type=int, default=512)
     parser.add_argument('--initial_state_fraction', type=float, default=0.5)
     args = parser.parse_args()
 
@@ -396,10 +397,11 @@ if __name__ == '__main__':
                            reset_bnn=args.reset_bnn,
                            sim=args.sim,
                            control_time_ms=args.control_time_ms,
-                           deterministic_policy=args.control_time_ms,
+                           deterministic_policy=args.deterministic_policy,
                            initial_state_fraction=args.initial_state_fraction,
                            bnn_train_steps=args.bnn_train_steps,
                            sac_num_env_steps=args.sac_num_env_steps,
                            num_sac_envs=args.num_sac_envs,
+                           num_f_samples=args.num_f_samples,
                            ),
          machine=args.machine)
