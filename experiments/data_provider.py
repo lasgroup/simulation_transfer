@@ -198,7 +198,7 @@ def get_rccar_recorded_data_new(encode_angle: bool = True, skip_first_n_points: 
         num_train_traj = 8
         recordings_dir = [os.path.join(DATA_DIR, 'recordings_rc_car_v1')]
     elif car_id == 2:
-        num_train_traj = 10
+        num_train_traj = 12
         recordings_dir = [os.path.join(DATA_DIR, 'recordings_rc_car_v4')]
     else:
         raise ValueError(f"Unknown car id {car_id}")
