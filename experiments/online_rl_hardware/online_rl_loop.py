@@ -27,6 +27,10 @@ PRIORS = {'none_FVSGD',
           'high_fidelity',
           'low_fidelity',
           'high_fidelity_no_aditive_GP',
+          'high_fidelity_grey_box',
+          'low_fidelity_grey_box',
+          'high_fidelity_sim',
+          'low_fidelity_sim'
           }
 
 

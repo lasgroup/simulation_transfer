@@ -6,7 +6,7 @@ from brax.training.types import Transition
 from brax.training.replay_buffers import ReplayBuffer, ReplayBufferState
 
 from sim_transfer.rl.model_based_rl.learned_system import LearnedCarSystem
-from sim_transfer.models import BNN_FSVGD_SimPrior, BNN_FSVGD, BNN_SVGD
+from sim_transfer.models import BNN_FSVGD_SimPrior, BNN_FSVGD, BNN_SVGD, BNNGreyBox
 from sim_transfer.sims.simulators import AdditiveSim, PredictStateChangeWrapper, GaussianProcessSim
 from sim_transfer.sims.simulators import RaceCarSim, StackedActionSimWrapper
 from sim_transfer.sims.envs import RCCarSimEnv
@@ -168,6 +168,28 @@ def set_up_bnn_dynamics_model(config: Any, key: jax.random.PRNGKey):
         bnn = BNN_SVGD(
             **standard_params,
             bandwidth_svgd=1.0,
+        )
+    elif config.sim_prior == 'high_fidelity_grey_box' or config.sim_prior == 'low_fidelity_grey_box':
+        base_bnn = BNN_FSVGD(
+            **standard_params,
+            domain=sim.domain,
+            bandwidth_svgd=config.bandwidth_svgd,
+        )
+        bnn = BNNGreyBox(
+            base_bnn=base_bnn,
+            sim=sim,
+            use_base_bnn=True,
+        )
+    elif config.sim_prior == 'high_fidelity_sim' or config.sim_prior == 'low_fidelity_sim':
+        base_bnn = BNN_FSVGD(
+            **standard_params,
+            domain=sim.domain,
+            bandwidth_svgd=config.bandwidth_svgd,
+        )
+        bnn = BNNGreyBox(
+            base_bnn=base_bnn,
+            sim=sim,
+            use_base_bnn=False,
         )
     elif config.sim_prior == 'high_fidelity_no_aditive_GP':
         bnn = BNN_FSVGD_SimPrior(
