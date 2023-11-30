@@ -136,7 +136,8 @@ def set_up_model_based_sac_trainer(bnn_model, data_buffer, data_buffer_state, ke
 
 
 def set_up_bnn_dynamics_model(config: Any, key: jax.random.PRNGKey):
-    sim = RaceCarSim(encode_angle=True, use_blend=config.sim_prior == 'high_fidelity', car_id=2)
+    use_blend = 'high_fidelity' in config.sim_prior
+    sim = RaceCarSim(encode_angle=True, use_blend=use_blend, car_id=2)
     if config.num_stacked_actions > 0:
         sim = StackedActionSimWrapper(sim, num_stacked_actions=config.num_stacked_actions, action_size=2)
     if config.predict_difference:
