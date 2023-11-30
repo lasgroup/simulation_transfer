@@ -1,3 +1,4 @@
+import random
 from typing import Any, NamedTuple, Dict
 
 from brax.training.replay_buffers import UniformSamplingQueue
@@ -237,3 +238,7 @@ def prepare_init_transitions_for_car_env(key: jax.random.PRNGKey, number_of_samp
                              discount=discounts,
                              next_observation=jnp.concatenate([state_obs, framestacked_actions], axis=-1))
     return transitions
+
+
+def get_random_hash() -> str:
+    return "%032x" % random.getrandbits(128)

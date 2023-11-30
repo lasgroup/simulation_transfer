@@ -1,7 +1,6 @@
 import json
 import os
 import pickle
-import random
 import sys
 from pprint import pprint
 from typing import Any, NamedTuple
@@ -17,15 +16,12 @@ from experiments.online_rl_hardware.train_policy import ModelBasedRLConfig
 from experiments.online_rl_hardware.train_policy import train_model_based_policy
 from experiments.online_rl_hardware.utils import (set_up_bnn_dynamics_model, set_up_dummy_sac_trainer,
                                                   dump_trajectory_summary, execute,
-                                                  prepare_init_transitions_for_car_env)
+                                                  prepare_init_transitions_for_car_env, get_random_hash)
 from experiments.util import Logger, RESULT_DIR
 
 from sim_transfer.sims.envs import RCCarSimEnv
 from sim_transfer.sims.util import plot_rc_trajectory
 
-WANDB_ENTITY = 'sukhijab'
-EULER_ENTITY = 'sukhijab'
-WANDB_LOG_DIR_EULER = '/cluster/scratch/' + EULER_ENTITY
 PRIORS = {'none_FVSGD',
           'none_SVGD',
           'high_fidelity',
@@ -38,26 +34,28 @@ PRIORS = {'none_FVSGD',
 def _load_remote_config(machine: str):
     # load remote config
     with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'remote_config.json'), 'r') as f:
-        remote_config = json.load(f)
+        config = json.load(f)
 
     # choose machine
-    assert machine in remote_config, f'Machine {machine} not found in remote config. ' \
-                                     f'Available machines: {list(remote_config.keys())}'
-    remote_config = remote_config[machine]
+    assert machine in config['remote_machines'], \
+        f'Machine {machine} not found in remote config. Available machines: {list(config["remote_machines"].keys())}'
+    remote_config = config['remote_machines'][machine]
 
-    # create local director if it does not exist
+    assert 'user_config' in config, 'No user config found in remote config.'
+    user_config = config['user_config']
+    user_config['wandb_log_dir_euler'] = '/cluster/scratch/' + user_config['euler_entity']
+
+    # create local directory if it does not exist
     os.makedirs(remote_config['local_dir'], exist_ok=True)
 
     # print remote config
     print(f'Remote config [{machine}]:')
     pprint(remote_config)
-    print('')
 
-    return remote_config
+    print('\nUser config:')
+    pprint(user_config)
 
-
-def _get_random_hash() -> str:
-    return "%032x" % random.getrandbits(128)
+    return remote_config, user_config
 
 
 def train_model_based_policy_remote(*args,
@@ -82,14 +80,14 @@ def train_model_based_policy_remote(*args,
     if machine == 'local':
         # if not running remotely, just run the function locally and return the result
         return train_model_based_policy(*args, **kwargs)
-    rmt_cfg = _load_remote_config(machine=machine)
+    rmt_cfg, _ = _load_remote_config(machine=machine)
 
     # copy latest version of train_policy.py to remote and make sure remote directory exists
     execute(f'scp {rmt_cfg["local_script"]} {rmt_cfg["remote_machine"]}:{rmt_cfg["remote_script"]}', verbosity)
     execute(f'ssh {rmt_cfg["remote_machine"]} "mkdir -p {rmt_cfg["remote_dir"]}"', verbosity)
 
     # dump train_data to local pkl file
-    run_hash = _get_random_hash()
+    run_hash = get_random_hash()
     train_data_path_local = os.path.join(rmt_cfg['local_dir'], f'train_data_{run_hash}.pkl')
     with open(train_data_path_local, 'wb') as f:
         pickle.dump({'args': args, 'kwargs': kwargs}, f)
@@ -104,12 +102,11 @@ def train_model_based_policy_remote(*args,
 
     # run the train_policy.py script on the remote machine
     result_path_remote = os.path.join(rmt_cfg['remote_dir'], f'result_{run_hash}.pkl')
-    command = f'export PYTHONPATH={rmt_cfg["remote_pythonpath"]} && ' \
-              f'{rmt_cfg["remote_interpreter"]} {rmt_cfg["remote_script"]} ' \
+    command = f'{rmt_cfg["remote_interpreter"]} {rmt_cfg["remote_script"]} ' \
               f'--data_load_path {train_data_path_remote} --model_dump_path {result_path_remote}'
     if verbosity:
         print('[Local] Executing command:', command)
-    execute(f'ssh {rmt_cfg["remote_machine"]} "{command}"', verbosity)
+    execute(f'ssh -tt {rmt_cfg["remote_machine"]} "{rmt_cfg["remote_pre_cmd"]} {command}"', verbosity)
 
     # transfer result back to local
     result_path_local = os.path.join(rmt_cfg['local_dir'], f'result_{run_hash}.pkl')
@@ -162,6 +159,8 @@ class MainConfig(NamedTuple):
 def main(config: MainConfig = MainConfig(), encode_angle: bool = True,
          machine: str = 'local'):
     rng_key_env, rng_key_model, rng_key_rollouts = jax.random.split(jax.random.PRNGKey(config.seed), 3)
+
+    _, user_cfg = _load_remote_config(machine=machine)
 
     """Setup car reward kwargs"""
     car_reward_kwargs = dict(encode_angle=encode_angle,
@@ -236,8 +235,9 @@ def main(config: MainConfig = MainConfig(), encode_angle: bool = True,
     total_config = sac_kwargs | config._asdict() | car_reward_kwargs
 
     """ WANDB & Logging configuration """
-    wandb_config = {'project': config.project_name, 'entity': WANDB_ENTITY, 'resume': 'allow',
-                    'dir': WANDB_LOG_DIR_EULER if os.path.isdir(WANDB_LOG_DIR_EULER) else '/tmp/',
+    wandb_config = {'project': config.project_name, 'entity': user_cfg['wandb_entity'], 'resume': 'allow',
+                    'dir': user_cfg['wandb_log_dir_euler'] if os.path.isdir(user_cfg['wandb_log_dir_euler']) \
+                        else '/tmp/',
                     'config': total_config, 'settings': {'_service_wait': 300}}
     wandb.init(**wandb_config)
     run_id = wandb.run.id
@@ -249,7 +249,7 @@ def main(config: MainConfig = MainConfig(), encode_angle: bool = True,
     log_path = os.path.join(dump_dir, f"{wandb_config['id']}.log")
 
     if machine == 'euler':
-        wandb_config_remote = wandb_config | {'dir': '/cluster/scratch/' + EULER_ENTITY}
+        wandb_config_remote = wandb_config | {'dir': '/cluster/scratch/' + user_cfg['euler_entity']}
     else:
         wandb_config_remote = wandb_config | {'dir': '/tmp/'}
 
