@@ -150,7 +150,7 @@ class MainConfig(NamedTuple):
     likelihood_exponent: float = 0.5
     data_batch_size: int = 32
     bandwidth_svgd: float = 0.2
-    length_scale_aditive_sim_gp: float = 10.0
+    length_scale_aditive_sim_gp: float = 5.0
     num_f_samples: int = 512
     num_measurement_points: int = 16
     initial_state_fraction: float = 0.5

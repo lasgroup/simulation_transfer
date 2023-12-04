@@ -199,7 +199,9 @@ def get_rccar_recorded_data_new(encode_angle: bool = True, skip_first_n_points: 
         recordings_dir = [os.path.join(DATA_DIR, 'recordings_rc_car_v1')]
     elif car_id == 2:
         num_train_traj = 12
-        recordings_dir = [os.path.join(DATA_DIR, 'recordings_rc_car_v4')]
+        recordings_dir = [os.path.join(DATA_DIR, 'recordings_rc_car_v2'),
+                          os.path.join(DATA_DIR, 'recordings_rc_car_v3'),
+                          os.path.join(DATA_DIR, 'recordings_rc_car_v4')]
     else:
         raise ValueError(f"Unknown car id {car_id}")
     files = [sorted(glob.glob(rd + '/*.pickle')) for rd in recordings_dir]
