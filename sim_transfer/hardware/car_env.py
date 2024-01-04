@@ -4,12 +4,15 @@ import gym
 import sys
 
 import jax.random
+import jax.numpy as jnp
 import numpy as np
 from gym.spaces import Box
 from typing import Optional
 from sim_transfer.sims.util import encode_angles_numpy as encode_angles, decode_angles_numpy as decode_angles
 from typing import Dict, Tuple, Any
 from sim_transfer.sims.car_system import CarReward
+from sim_transfer.rl.rl_on_offline_data import RLFromOfflineData
+from experiments.online_rl_hardware.utils import set_up_dummy_sac_trainer
 
 X_MIN_LIMIT = -1.4
 X_MAX_LIMIT = 2.8
@@ -17,10 +20,65 @@ Y_MIN_LIMIT = -2.6
 Y_MAX_LIMIT = 1.5
 
 
+def get_policy(num_frame_stack: int = 3, encode_angle: bool = True):
+    SAC_KWARGS = dict(num_timesteps=20000,
+                      num_evals=20,
+                      reward_scaling=10,
+                      episode_length=100,
+                      episode_length_eval=2 * 100,
+                      action_repeat=1,
+                      discounting=0.99,
+                      lr_policy=3e-4,
+                      lr_alpha=3e-4,
+                      lr_q=3e-4,
+                      num_envs=1,
+                      batch_size=64,
+                      grad_updates_per_step=1,
+                      num_env_steps_between_updates=1,
+                      tau=0.005,
+                      wd_policy=0,
+                      wd_q=0,
+                      wd_alpha=0,
+                      num_eval_envs=2,
+                      max_replay_size=5 * 10 ** 4,
+                      min_replay_size=2 ** 11,
+                      policy_hidden_layer_sizes=(64, 64),
+                      critic_hidden_layer_sizes=(64, 64),
+                      normalize_observations=True,
+                      deterministic_eval=True,
+                      wandb_logging=True)
+    dummy_reward_kwargs = {
+        'ctrl_cost_weight': 0.005,
+        'margin_factor': 20.0,
+        'ctrl_diff_weight': 0.0,
+    }
+    state_dim = 6 + int(encode_angle)
+    action_dim = 2
+    rl_from_offline_data = RLFromOfflineData(
+        sac_kwargs=SAC_KWARGS,
+        x_train=jnp.zeros((10, state_dim + (num_frame_stack + 1) * action_dim)),
+        y_train=jnp.zeros((10, state_dim)),
+        x_test=jnp.zeros((10, state_dim + (num_frame_stack + 1) * action_dim)),
+        y_test=jnp.zeros((10, state_dim)),
+        car_reward_kwargs=dummy_reward_kwargs,
+        load_pretrained_bnn_model=False)
+    policy_name = 'reset_policy/parameters.pkl'
+
+    import cloudpickle
+    import os
+    file_dir = os.path.dirname(os.path.realpath(__file__))
+    with open(os.path.join(file_dir, policy_name), 'rb') as handle:
+        policy_params = cloudpickle.load(handle)
+
+    policy = rl_from_offline_data.prepare_policy(params=policy_params)
+    return policy
+
+
 class CarEnv(gym.Env):
     max_steps: int = 200
     _goal: np.array = np.array([0.0, 0.0, 0.0])
     _angle_idx: int = 2
+    _init_state: np.array = np.array([1.42, -1.04, np.pi]) # np.array([1.4, -1.099, np.pi]) #
 
     def __init__(self,
                  car_id: int = 2,
@@ -60,7 +118,10 @@ class CarEnv(gym.Env):
         self.env_steps = 0
 
         # initialize reward model
-        self._reward_model = CarReward(**car_reward_kwargs, num_frame_stack=num_frame_stacks)
+        if car_reward_kwargs:
+            self._reward_model = CarReward(**car_reward_kwargs, num_frame_stack=num_frame_stacks)
+        else:
+            self._reward_model = CarReward(num_frame_stack=num_frame_stacks, encode_angle=encode_angle)
         self._reward_model.set_goal(self._goal)
         self.reward_params = self._reward_model.init_params(jax.random.PRNGKey(0))
 
@@ -78,6 +139,7 @@ class CarEnv(gym.Env):
         # init state
         self.state: np.array = np.zeros(shape=(self.state_dim,))
         self.stacked_last_actions: np.array = np.zeros(shape=(num_frame_stacks * self.action_dim))
+        self.reset_policy = get_policy()
 
     def log_mocap_info(self):
         logs = self.controller.get_mocap_logs()
@@ -117,6 +179,14 @@ class CarEnv(gym.Env):
         if not self.initial_reset:
             self.log_mocap_info()
         self.initial_reset = False
+        if not self.controller_started:
+            self.controller.start()
+            print("Starting controller in ~3 sec")
+            time.sleep(3)
+            self.controller_started = True
+        answer = input("auto reset: press Y to continue the reset.")
+        if answer == 'Y' or answer == 'y':
+            self.reset_to_origin()
         self.env_steps = 0
 
         # dialogue with user
@@ -173,10 +243,12 @@ class CarEnv(gym.Env):
         _last_state_with_last_acts = np.concatenate([_last_state, self.stacked_last_actions], axis=-1)
 
         # get current state
-        state = self.get_state_from_mocap()
+        raw_state = self.get_state_from_mocap()
+        state = raw_state
         state[0:3] = state[0:3] - self._goal
         if self.encode_angle:
             state = encode_angles(state, angle_idx=self._angle_idx)
+            raw_state = encode_angles(raw_state, angle_idx=self._angle_idx)
         self.state = state
 
         # take care of frame stacking
@@ -193,7 +265,7 @@ class CarEnv(gym.Env):
         reward = self.reward(_last_state_with_last_acts, action, state_with_last_acts)
 
         # check termination conditions
-        terminate, terminal_reward = self.terminate(state)
+        terminate, terminal_reward = self.terminate(raw_state)
         return state_with_last_acts, reward, terminate, {'time_elapsed': time_elapsed,
                                                          'terminal_reward': terminal_reward}
 
@@ -253,3 +325,20 @@ class CarEnv(gym.Env):
         state[2] = self.normalize_theta(state[2])
         return state
 
+    def reset_to_origin(self):
+        def convert_obs(env_obs):
+            obs = decode_angles(env_obs, angle_idx=self._angle_idx)
+            obs[0:3] = obs[0:3] - self._init_state[0:3]
+            obs[0:2] *= -1
+            obs[3:5] *= -1
+            return encode_angles(obs, angle_idx=self._angle_idx)
+
+        obs = np.concatenate([self.state, self.stacked_last_actions], axis=-1)
+        for i in range(200):
+            action = np.clip(np.asarray(self.reset_policy(obs)), -0.6, 0.6)
+            obs, reward, terminate, info = self.step(action)
+            obs = convert_obs(obs)
+            if terminate:
+                break
+
+        time.sleep(5)
