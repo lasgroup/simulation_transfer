@@ -1,15 +1,15 @@
 import exp
 from experiments.util import generate_run_commands, generate_base_command, dict_permutations
 
-PROJECT_NAME = 'OfflineRLRunsGreyBoxHWFinal'
+PROJECT_NAME = 'OfflineRLRunsGreyHW'
 
 _applicable_configs = {
     'horizon_len': [200],
     'seed': list(range(5)),
     'project_name': [PROJECT_NAME],
-    'sac_num_env_steps': [1_000_000],
+    'sac_num_env_steps': [2_000_000],
     'num_epochs': [50],
-    'max_train_steps': [100_000],
+    'max_train_steps': [40_000],
     'min_train_steps': [40_000],
     'learnable_likelihood_std': ['yes'],
     'include_aleatoric_noise': [1],
@@ -23,7 +23,7 @@ _applicable_configs = {
     'eval_on_all_offline_data': [1],
     'eval_only_on_init_states': [1],
     'share_of_x0s_in_sac_buffer': [0.5],
-    'bnn_batch_size': [32],  # for HW 8 worked the best
+    'bnn_batch_size': [32],
     'likelihood_exponent': [0.5],
     'train_sac_only_from_init_states': [0],
     'data_from_simulation': [0],
@@ -87,11 +87,17 @@ _applicable_configs_sim_model_low_fidelity = {'use_sim_prior': [0],
 #     _applicable_configs_high_fidelity) + dict_permutations(_applicable_configs_low_fidelity) + dict_permutations(
 #     _applicable_configs_grey_box)
 
-all_flags_combinations = dict_permutations(_applicable_configs_no_sim_prior) + dict_permutations(
+sim_flags = dict_permutations(_applicable_configs_no_sim_prior) + dict_permutations(
     _applicable_configs_high_fidelity) + dict_permutations(_applicable_configs_low_fidelity) + \
-                         dict_permutations(_applicable_configs_grey_box_high_fidelity) + \
-                         dict_permutations(_applicable_configs_sim_model_high_fidelity)
+            dict_permutations(_applicable_configs_grey_box_low_fidelity) + \
+            dict_permutations(_applicable_configs_sim_model_low_fidelity)
 
+hw_flags = dict_permutations(_applicable_configs_no_sim_prior) + dict_permutations(
+    _applicable_configs_high_fidelity) + dict_permutations(_applicable_configs_low_fidelity) + \
+           dict_permutations(_applicable_configs_grey_box_high_fidelity) + \
+           dict_permutations(_applicable_configs_sim_model_high_fidelity)
+
+all_flags_combinations = sim_flags
 
 
 def main():

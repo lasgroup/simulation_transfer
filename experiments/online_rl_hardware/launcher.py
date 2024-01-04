@@ -4,17 +4,18 @@ from experiments.util import generate_run_commands, generate_base_command, dict_
 
 def main(args):
     _applicable_configs = {
-        'prior': ['none_FVSGD', 'none_SVGD', 'high_fidelity', 'low_fidelity'],
+        'prior': ['none_FVSGD', 'high_fidelity', 'low_fidelity',
+                  'low_fidelity_grey_box'],
         'seed': list(range(5)),
         'machine': ['local'],
         'gpu': [1],
-        'project_name': ['OnlineRLFewSteps'],
+        'project_name': ['OnlineRLTestFull'],
         'reset_bnn': [1],
         'deterministic_policy': [1],
         'initial_state_fraction': [0.5],
         'bnn_train_steps': [40_000],
-        'sac_num_env_steps': [250_000],
-        'num_sac_envs': [64],
+        'sac_num_env_steps': [500_000],
+        'num_sac_envs': [128],
         'num_env_steps': [100],
         'num_f_samples': [512]
     }
