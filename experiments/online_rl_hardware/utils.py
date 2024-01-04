@@ -1,3 +1,4 @@
+import random
 from typing import Any, NamedTuple, Dict
 
 from brax.training.replay_buffers import UniformSamplingQueue
@@ -5,10 +6,10 @@ from brax.training.types import Transition
 from brax.training.replay_buffers import ReplayBuffer, ReplayBufferState
 
 from sim_transfer.rl.model_based_rl.learned_system import LearnedCarSystem
-from sim_transfer.models import BNN_FSVGD_SimPrior, BNN_FSVGD, BNN_SVGD
+from sim_transfer.models import BNN_FSVGD_SimPrior, BNN_FSVGD, BNN_SVGD, BNNGreyBox
 from sim_transfer.sims.simulators import AdditiveSim, PredictStateChangeWrapper, GaussianProcessSim
 from sim_transfer.sims.simulators import RaceCarSim, StackedActionSimWrapper
-
+from sim_transfer.sims.envs import RCCarSimEnv
 from mbpo.optimizers.policy_optimizers.sac.sac import SAC
 from mbpo.systems.brax_wrapper import BraxWrapper
 
@@ -41,6 +42,7 @@ def execute(cmd: str, verbosity: int = 0) -> None:
     if verbosity >= 2:
         print(cmd)
     os.system(cmd)
+
 
 def load_data(data_load_path: str) -> Any:
     # loads the pkl file
@@ -99,7 +101,8 @@ def add_data_to_buffer(buffer: ReplayBuffer, buffer_state: ReplayBufferState, x_
 
 
 def set_up_model_based_sac_trainer(bnn_model, data_buffer, data_buffer_state, key: jax.random.PRNGKey,
-                                   config: ModelBasedRLConfig, sac_kwargs: dict = None):
+                                   config: ModelBasedRLConfig, sac_kwargs: dict = None,
+                                   eval_buffer_state: ReplayBufferState | None = None):
     if sac_kwargs is None:
         sac_kwargs = config.sac_kwargs
 
@@ -109,14 +112,23 @@ def set_up_model_based_sac_trainer(bnn_model, data_buffer, data_buffer_state, ke
                               num_frame_stack=config.num_stacked_actions,
                               **config.car_reward_kwargs)
 
+    if eval_buffer_state is None:
+        eval_buffer_state = data_buffer_state
+
+    key, eval_env_key = jax.random.split(key)
     env = BraxWrapper(system=system,
                       sample_buffer_state=data_buffer_state,
                       sample_buffer=data_buffer,
                       system_params=system.init_params(key))
 
+    eval_env = BraxWrapper(system=system,
+                           sample_buffer_state=eval_buffer_state,
+                           sample_buffer=data_buffer,
+                           system_params=system.init_params(eval_env_key))
+
     # Here we create eval envs
     sac_trainer = SAC(environment=env,
-                      eval_environment=env,
+                      eval_environment=eval_env,
                       eval_key_fixed=True,
                       return_best_model=config.return_best_policy,
                       **sac_kwargs, )
@@ -124,7 +136,8 @@ def set_up_model_based_sac_trainer(bnn_model, data_buffer, data_buffer_state, ke
 
 
 def set_up_bnn_dynamics_model(config: Any, key: jax.random.PRNGKey):
-    sim = RaceCarSim(encode_angle=True, use_blend=config.sim_prior == 'high_fidelity', car_id=2)
+    use_blend = 'high_fidelity' in config.sim_prior
+    sim = RaceCarSim(encode_angle=True, use_blend=use_blend, car_id=2)
     if config.num_stacked_actions > 0:
         sim = StackedActionSimWrapper(sim, num_stacked_actions=config.num_stacked_actions, action_size=2)
     if config.predict_difference:
@@ -156,6 +169,28 @@ def set_up_bnn_dynamics_model(config: Any, key: jax.random.PRNGKey):
         bnn = BNN_SVGD(
             **standard_params,
             bandwidth_svgd=1.0,
+        )
+    elif config.sim_prior == 'high_fidelity_grey_box' or config.sim_prior == 'low_fidelity_grey_box':
+        base_bnn = BNN_FSVGD(
+            **standard_params,
+            domain=sim.domain,
+            bandwidth_svgd=config.bandwidth_svgd,
+        )
+        bnn = BNNGreyBox(
+            base_bnn=base_bnn,
+            sim=sim,
+            use_base_bnn=True,
+        )
+    elif config.sim_prior == 'high_fidelity_sim' or config.sim_prior == 'low_fidelity_sim':
+        base_bnn = BNN_FSVGD(
+            **standard_params,
+            domain=sim.domain,
+            bandwidth_svgd=config.bandwidth_svgd,
+        )
+        bnn = BNNGreyBox(
+            base_bnn=base_bnn,
+            sim=sim,
+            use_base_bnn=False,
         )
     elif config.sim_prior == 'high_fidelity_no_aditive_GP':
         bnn = BNN_FSVGD_SimPrior(
@@ -208,3 +243,25 @@ def set_up_dummy_sac_trainer(main_config, mbrl_config: ModelBasedRLConfig, key: 
         data_buffer_state=true_data_buffer_state, key=key_bnn, config=mbrl_config)
 
     return sac_trainer
+
+
+def prepare_init_transitions_for_car_env(key: jax.random.PRNGKey, number_of_samples: int, num_frame_stack: int = 3):
+    sim = RCCarSimEnv(encode_angle=True, use_tire_model=True)
+    action_dim = 2
+    key_init_state = jax.random.split(key, number_of_samples)
+    state_obs = jax.vmap(sim.reset)(rng_key=key_init_state)
+    framestacked_actions = jnp.zeros(
+        shape=(number_of_samples, num_frame_stack * action_dim))
+    actions = jnp.zeros(shape=(number_of_samples, action_dim))
+    rewards = jnp.zeros(shape=(number_of_samples,))
+    discounts = 0.99 * jnp.ones(shape=(number_of_samples,))
+    transitions = Transition(observation=jnp.concatenate([state_obs, framestacked_actions], axis=-1),
+                             action=actions,
+                             reward=rewards,
+                             discount=discounts,
+                             next_observation=jnp.concatenate([state_obs, framestacked_actions], axis=-1))
+    return transitions
+
+
+def get_random_hash() -> str:
+    return "%032x" % random.getrandbits(128)

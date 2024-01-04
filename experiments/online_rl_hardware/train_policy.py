@@ -2,11 +2,12 @@ import argparse
 import copy
 import time
 import chex
+import jax
 import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
 import wandb
-
+from brax.training.types import Transition
 from sim_transfer.models.abstract_model import BatchedNeuralNetworkModel
 from typing import Dict
 
@@ -14,13 +15,17 @@ from sim_transfer.rl.model_based_rl.utils import split_data
 from experiments.online_rl_hardware.utils import (load_data, dump_model, ModelBasedRLConfig, init_transition_buffer,
                                                   add_data_to_buffer, set_up_model_based_sac_trainer)
 
+
 def train_model_based_policy(train_data: Dict,
                              bnn_model: BatchedNeuralNetworkModel,
                              key: chex.PRNGKey,
                              episode_idx: int,
                              config: ModelBasedRLConfig,
                              wandb_config: Dict,
-                             remote_training: bool = False):
+                             remote_training: bool = False,
+                             reset_buffer_transitions: Transition | None = None,
+                             eval_buffer_transitions: Transition | None = None,
+                             ):
     """
     train_data = {'x_train': jnp.empty((0, state_dim + (1 + num_framestacks) * action_dim)),
                   'y_train': jnp.empty((0, state_dim))}
@@ -36,8 +41,8 @@ def train_model_based_policy(train_data: Dict,
 
     """ Setup the data buffers """
     key, key_buffer_init = jr.split(key, 2)
-    true_data_buffer, true_data_buffer_state = init_transition_buffer(config=config, key=key_buffer_init)
-    true_data_buffer, true_data_buffer_state = add_data_to_buffer(true_data_buffer, true_data_buffer_state,
+    true_data_buffer, init_buffer_state = init_transition_buffer(config=config, key=key_buffer_init)
+    true_data_buffer, true_data_buffer_state = add_data_to_buffer(true_data_buffer, init_buffer_state,
                                                                   x_data=x_all, y_data=y_all, config=config)
 
     """Train transition model"""
@@ -54,12 +59,22 @@ def train_model_based_policy(train_data: Dict,
         # Train model
         if config.reset_bnn:
             bnn_model.reinit(rng_key=key_reinit_model)
-        bnn_model.fit(x_train=x_train, y_train=y_train, x_eval=x_test, y_eval=y_test, log_to_wandb=True,
-                      keep_the_best=config.return_best_bnn, metrics_objective='eval_nll', log_period=2000)
+        bnn_model.fit_with_scan(x_train=x_train, y_train=y_train, x_eval=x_test, y_eval=y_test, log_to_wandb=True,
+                                keep_the_best=config.return_best_bnn, metrics_objective='eval_nll', log_period=2000)
     print(f'Time fo training the transition model: {time.time() - t:.2f} seconds')
 
     """Train policy"""
     t = time.time()
+    if reset_buffer_transitions:
+        sac_buffer_state = true_data_buffer.insert(true_data_buffer_state, reset_buffer_transitions)
+    else:
+        sac_buffer_state = true_data_buffer_state
+
+    if eval_buffer_transitions:
+        eval_buffer_state = true_data_buffer.insert(init_buffer_state, eval_buffer_transitions)
+    else:
+        eval_buffer_state = None
+
     _sac_kwargs = config.sac_kwargs
     # TODO: Be careful!!
     if num_training_points == 0:
@@ -69,8 +84,8 @@ def train_model_based_policy(train_data: Dict,
 
     key, key_sac_training, key_sac_trainer_init = jr.split(key, 3)
     sac_trainer = set_up_model_based_sac_trainer(
-        bnn_model=bnn_model, data_buffer=true_data_buffer, data_buffer_state=true_data_buffer_state,
-        key=key_sac_trainer_init, config=config, sac_kwargs=_sac_kwargs)
+        bnn_model=bnn_model, data_buffer=true_data_buffer, data_buffer_state=sac_buffer_state,
+        key=key_sac_trainer_init, config=config, sac_kwargs=_sac_kwargs, eval_buffer_state=eval_buffer_state)
 
     policy_params, metrics = sac_trainer.run_training(key=key_sac_training)
 

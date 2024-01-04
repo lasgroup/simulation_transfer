@@ -217,7 +217,7 @@ def experiment(horizon_len: int,
         if high_fidelity:
             outputscales_racecar = [0.008, 0.008, 0.009, 0.009, 0.05, 0.05, 0.20]
         else:
-            outputscales_racecar = [0.008, 0.008, 0.01, 0.01, 0.08, 0.08, 0.5]
+            outputscales_racecar = [0.008, 0.008, 0.01, 0.01, 0.1, 0.1, 0.5]
         sim = AdditiveSim(base_sims=[sim,
                                      GaussianProcessSim(sim.input_size, sim.output_size,
                                                         output_scale=outputscales_racecar,

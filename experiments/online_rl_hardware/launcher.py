@@ -1,14 +1,23 @@
 import online_rl_loop
 from experiments.util import generate_run_commands, generate_base_command, dict_permutations
 
+
 def main(args):
     _applicable_configs = {
-        'prior': ['none_FVSGD', 'none_SVGD', 'high_fidelity', 'low_fidelity'],  # 'high_fidelity_no_aditive_GP'],
+        'prior': ['none_FVSGD', 'high_fidelity', 'low_fidelity',
+                  'low_fidelity_grey_box'],
         'seed': list(range(5)),
-        'run_remote': [0],
+        'machine': ['local'],
         'gpu': [1],
-        'wandb_tag': ['gpu' if args.num_gpus > 0 else 'cpu'],
-        'project_name': ['OnlineRLDebug3'],
+        'project_name': ['OnlineRLTestFull'],
+        'reset_bnn': [1],
+        'deterministic_policy': [1],
+        'initial_state_fraction': [0.5],
+        'bnn_train_steps': [40_000],
+        'sac_num_env_steps': [500_000],
+        'num_sac_envs': [128],
+        'num_env_steps': [100],
+        'num_f_samples': [512]
     }
 
     all_flags_combinations = dict_permutations(_applicable_configs)
@@ -25,8 +34,9 @@ def main(args):
 
 if __name__ == '__main__':
     import argparse
+
     parser = argparse.ArgumentParser(description='Meta-BO run')
-    parser.add_argument('--num_cpus', type=int, default=2)
+    parser.add_argument('--num_cpus', type=int, default=1)
     parser.add_argument('--num_gpus', type=int, default=1)
     args = parser.parse_args()
     main(args)

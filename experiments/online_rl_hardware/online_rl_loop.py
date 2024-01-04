@@ -1,7 +1,6 @@
 import json
 import os
 import pickle
-import random
 import sys
 from pprint import pprint
 from typing import Any, NamedTuple
@@ -16,21 +15,22 @@ import wandb
 from experiments.online_rl_hardware.train_policy import ModelBasedRLConfig
 from experiments.online_rl_hardware.train_policy import train_model_based_policy
 from experiments.online_rl_hardware.utils import (set_up_bnn_dynamics_model, set_up_dummy_sac_trainer,
-                                                  dump_trajectory_summary, execute)
+                                                  dump_trajectory_summary, execute,
+                                                  prepare_init_transitions_for_car_env, get_random_hash)
 from experiments.util import Logger, RESULT_DIR
 
 from sim_transfer.sims.envs import RCCarSimEnv
 from sim_transfer.sims.util import plot_rc_trajectory
 
-
-WANDB_ENTITY = 'jonasrothfuss'
-EULER_ENTITY = 'rojonas'
-WANDB_LOG_DIR_EULER = '/cluster/scratch/' + EULER_ENTITY
 PRIORS = {'none_FVSGD',
           'none_SVGD',
           'high_fidelity',
           'low_fidelity',
           'high_fidelity_no_aditive_GP',
+          'high_fidelity_grey_box',
+          'low_fidelity_grey_box',
+          'high_fidelity_sim',
+          'low_fidelity_sim'
           }
 
 
@@ -38,26 +38,28 @@ PRIORS = {'none_FVSGD',
 def _load_remote_config(machine: str):
     # load remote config
     with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'remote_config.json'), 'r') as f:
-        remote_config = json.load(f)
+        config = json.load(f)
 
     # choose machine
-    assert machine in remote_config, f'Machine {machine} not found in remote config. ' \
-                                     f'Available machines: {list(remote_config.keys())}'
-    remote_config = remote_config[machine]
+    assert machine in config['remote_machines'], \
+        f'Machine {machine} not found in remote config. Available machines: {list(config["remote_machines"].keys())}'
+    remote_config = config['remote_machines'][machine]
 
-    # create local director if it does not exist
+    assert 'user_config' in config, 'No user config found in remote config.'
+    user_config = config['user_config']
+    user_config['wandb_log_dir_euler'] = '/cluster/scratch/' + user_config['euler_entity']
+
+    # create local directory if it does not exist
     os.makedirs(remote_config['local_dir'], exist_ok=True)
 
     # print remote config
     print(f'Remote config [{machine}]:')
     pprint(remote_config)
-    print('')
 
-    return remote_config
+    print('\nUser config:')
+    pprint(user_config)
 
-
-def _get_random_hash() -> str:
-    return "%032x" % random.getrandbits(128)
+    return remote_config, user_config
 
 
 def train_model_based_policy_remote(*args,
@@ -82,14 +84,14 @@ def train_model_based_policy_remote(*args,
     if machine == 'local':
         # if not running remotely, just run the function locally and return the result
         return train_model_based_policy(*args, **kwargs)
-    rmt_cfg = _load_remote_config(machine=machine)
+    rmt_cfg, _ = _load_remote_config(machine=machine)
 
     # copy latest version of train_policy.py to remote and make sure remote directory exists
     execute(f'scp {rmt_cfg["local_script"]} {rmt_cfg["remote_machine"]}:{rmt_cfg["remote_script"]}', verbosity)
     execute(f'ssh {rmt_cfg["remote_machine"]} "mkdir -p {rmt_cfg["remote_dir"]}"', verbosity)
 
     # dump train_data to local pkl file
-    run_hash = _get_random_hash()
+    run_hash = get_random_hash()
     train_data_path_local = os.path.join(rmt_cfg['local_dir'], f'train_data_{run_hash}.pkl')
     with open(train_data_path_local, 'wb') as f:
         pickle.dump({'args': args, 'kwargs': kwargs}, f)
@@ -104,12 +106,11 @@ def train_model_based_policy_remote(*args,
 
     # run the train_policy.py script on the remote machine
     result_path_remote = os.path.join(rmt_cfg['remote_dir'], f'result_{run_hash}.pkl')
-    command = f'export PYTHONPATH={rmt_cfg["remote_pythonpath"]} && ' \
-              f'{rmt_cfg["remote_interpreter"]} {rmt_cfg["remote_script"]} ' \
+    command = f'{rmt_cfg["remote_interpreter"]} {rmt_cfg["remote_script"]} ' \
               f'--data_load_path {train_data_path_remote} --model_dump_path {result_path_remote}'
     if verbosity:
         print('[Local] Executing command:', command)
-    execute(f'ssh {rmt_cfg["remote_machine"]} "{command}"', verbosity)
+    execute(f'ssh -tt {rmt_cfg["remote_machine"]} "{rmt_cfg["remote_pre_cmd"]} {command}"', verbosity)
 
     # transfer result back to local
     result_path_local = os.path.join(rmt_cfg['local_dir'], f'result_{run_hash}.pkl')
@@ -139,6 +140,7 @@ class MainConfig(NamedTuple):
     include_aleatoric_noise: int = 1
     best_bnn_model: int = 1
     best_policy: int = 1
+    deterministic_policy: int = 1
     predict_difference: int = 1
     margin_factor: float = 20.0
     ctrl_cost_weight: float = 0.005
@@ -148,22 +150,47 @@ class MainConfig(NamedTuple):
     likelihood_exponent: float = 0.5
     data_batch_size: int = 32
     bandwidth_svgd: float = 0.2
-    length_scale_aditive_sim_gp: float = 10.0
+    length_scale_aditive_sim_gp: float = 5.0
     num_f_samples: int = 512
     num_measurement_points: int = 16
+    initial_state_fraction: float = 0.5
+    sim: int = 1
+    control_time_ms: float = 24.
+    num_sac_envs: int = 64
+    eval_only_on_init_states: int = 1
 
 
 def main(config: MainConfig = MainConfig(), encode_angle: bool = True,
          machine: str = 'local'):
     rng_key_env, rng_key_model, rng_key_rollouts = jax.random.split(jax.random.PRNGKey(config.seed), 3)
 
-    env = RCCarSimEnv(encode_angle=encode_angle,
-                      action_delay=config.delay,
-                      use_tire_model=True,
-                      use_obs_noise=True,
-                      ctrl_cost_weight=config.ctrl_cost_weight,
-                      margin_factor=config.margin_factor,
-                      )
+    _, user_cfg = _load_remote_config(machine=machine)
+
+    """Setup car reward kwargs"""
+    car_reward_kwargs = dict(encode_angle=encode_angle,
+                             ctrl_cost_weight=config.ctrl_cost_weight,
+                             margin_factor=config.margin_factor)
+    """Set up env"""
+    if bool(config.sim):
+        env = RCCarSimEnv(encode_angle=encode_angle,
+                          action_delay=config.delay,
+                          use_tire_model=True,
+                          use_obs_noise=True,
+                          ctrl_cost_weight=config.ctrl_cost_weight,
+                          margin_factor=config.margin_factor,
+                          )
+    else:
+        from sim_transfer.hardware.car_env import CarEnv
+        # We do not perform frame stacking in the env and do it manually here in the rollout function.
+        env = CarEnv(
+            encode_angle=encode_angle,
+            car_id=2,
+            control_time_ms=config.control_time_ms,
+            max_throttle=0.4,
+            car_reward_kwargs=car_reward_kwargs,
+            num_frame_stacks=0
+
+        )
 
     # initialize train_data as empty arrays
     train_data = {
@@ -176,16 +203,11 @@ def main(config: MainConfig = MainConfig(), encode_angle: bool = True,
     ################################################################################
     """Setup key"""
     key = jr.PRNGKey(config.seed)
-    key_bnn, key_run_episodes, key_dummy_sac_trainer = jr.split(key, 3)
-
-    """Setup car reward kwargs"""
-    car_reward_kwargs = dict(encode_angle=encode_angle,
-                             ctrl_cost_weight=config.ctrl_cost_weight,
-                             margin_factor=config.margin_factor)
+    key_bnn, key_run_episodes, key_dummy_sac_trainer, key = jr.split(key, 4)
 
     """Setup SAC config dict"""
     num_env_steps_between_updates = 16
-    num_envs = 64
+    num_envs = config.num_sac_envs
     sac_kwargs = dict(num_timesteps=config.sac_num_env_steps,
                       num_evals=20,
                       reward_scaling=10,
@@ -217,11 +239,13 @@ def main(config: MainConfig = MainConfig(), encode_angle: bool = True,
     total_config = sac_kwargs | config._asdict() | car_reward_kwargs
 
     """ WANDB & Logging configuration """
-    wandb_config = {'project': config.project_name, 'entity': WANDB_ENTITY, 'resume': 'allow',
-                    'dir': WANDB_LOG_DIR_EULER if os.path.isdir(WANDB_LOG_DIR_EULER) else '/tmp/',
+    wandb_config = {'project': config.project_name, 'entity': user_cfg['wandb_entity'], 'resume': 'allow',
+                    'dir': user_cfg['wandb_log_dir_euler'] if os.path.isdir(user_cfg['wandb_log_dir_euler']) \
+                        else '/tmp/',
                     'config': total_config, 'settings': {'_service_wait': 300}}
     wandb.init(**wandb_config)
-    wandb_config['id'] = wandb.run.id
+    run_id = wandb.run.id
+    wandb_config['id'] = run_id
     remote_training = not (machine == 'local')
 
     dump_dir = os.path.join(RESULT_DIR, 'online_rl_hardware', wandb_config['id'])
@@ -229,12 +253,10 @@ def main(config: MainConfig = MainConfig(), encode_angle: bool = True,
     log_path = os.path.join(dump_dir, f"{wandb_config['id']}.log")
 
     if machine == 'euler':
-        wandb_config_remote = wandb_config | {'dir': '/cluster/scratch/' + EULER_ENTITY}
+        wandb_config_remote = wandb_config | {'dir': '/cluster/scratch/' + user_cfg['euler_entity']}
     else:
         wandb_config_remote = wandb_config | {'dir': '/tmp/'}
 
-    if remote_training:
-        wandb.finish()
     sys.stdout = Logger(log_path, stream=sys.stdout)
     sys.stderr = Logger(log_path, stream=sys.stderr)
     print(f'\nDumping trajectories and logs to {dump_dir}\n')
@@ -257,29 +279,55 @@ def main(config: MainConfig = MainConfig(), encode_angle: bool = True,
         bnn_training_test_ratio=0.2,
         max_num_episodes=100)
 
+    initial_states_fraction = max(min(config.initial_state_fraction, 0.9999), 0.0)
+
+    def init_state_points(true_buffer_points):
+        desired_points = int(initial_states_fraction * true_buffer_points
+                             / (1 - initial_states_fraction))
+        return min(desired_points, config.max_replay_size_true_data_buffer)
+
     """ Set up dummy SAC trainer for getting the policy from policy params """
     dummy_sac_trainer = set_up_dummy_sac_trainer(main_config=config, mbrl_config=mbrl_config, key=key)
+
+    key, key_eval_buffer = jr.split(key)
+    if config.eval_only_on_init_states:
+        eval_buffer_transitions = prepare_init_transitions_for_car_env(key=key_eval_buffer,
+                                                                       number_of_samples=1000,
+                                                                       num_frame_stack=config.num_stacked_actions)
+    else:
+        eval_buffer_transitions = None
 
     """ Main loop over episodes """
     for episode_id in range(1, config.num_episodes + 1):
 
-        if remote_training:
-            wandb.init(**wandb_config)
         sys.stdout = Logger(log_path, stream=sys.stdout)
         sys.stderr = Logger(log_path, stream=sys.stderr)
         print('\n\n------- Episode', episode_id)
 
         key, key_episode = jr.split(key)
+        key_episode, key_init_buffer = jr.split(key_episode)
 
+        num_points = train_data['x_train'].shape[0]
+        num_init_state_points = init_state_points(num_points)
+        if num_init_state_points > 0:
+            init_transitions = prepare_init_transitions_for_car_env(key=key_init_buffer,
+                                                                    number_of_samples=num_init_state_points,
+                                                                    num_frame_stack=config.num_stacked_actions)
+        else:
+            init_transitions = None
         # train model & policy
+        if remote_training:
+            wandb_config_remote['id'] = f'{run_id}_{episode_id}'
         policy_params, bnn = train_model_based_policy_remote(
             train_data=train_data, bnn_model=bnn, config=mbrl_config, key=key_episode,
             episode_idx=episode_id, machine=machine, wandb_config=wandb_config_remote,
-            remote_training=remote_training)
+            remote_training=remote_training, reset_buffer_transitions=init_transitions,
+            eval_buffer_transitions=eval_buffer_transitions)
 
         # get  allable policy from policy params
-        def policy(x):
-            return dummy_sac_trainer.make_policy(policy_params, deterministic=True)(x, jr.PRNGKey(0))[0]
+        def policy(x, key: jr.PRNGKey = jr.PRNGKey(0)):
+            return dummy_sac_trainer.make_policy(policy_params,
+                                                 deterministic=bool(config.deterministic_policy))(x, key)[0]
 
         # perform policy rollout on the car
         stacked_actions = jnp.zeros(shape=(config.num_stacked_actions * mbrl_config.u_dim,))
@@ -288,7 +336,7 @@ def main(config: MainConfig = MainConfig(), encode_angle: bool = True,
         actions, rewards, pure_obs = [], [], []
         for i in range(config.num_env_steps):
             rng_key_rollouts, rng_key_act = jr.split(rng_key_rollouts)
-            act = policy(obs)
+            act = policy(obs, rng_key_act)
             obs, reward, _, _ = env.step(act)
             rewards.append(reward)
             actions.append(act)
@@ -300,7 +348,7 @@ def main(config: MainConfig = MainConfig(), encode_angle: bool = True,
 
         # logging and saving
         trajectory, actions, rewards, pure_obs = map(lambda arr: jnp.array(arr),
-                                                    [trajectory, actions, rewards, pure_obs])
+                                                     [trajectory, actions, rewards, pure_obs])
 
         traj_summary = {'episode_id': episode_id, 'trajectory': trajectory, 'actions': actions, 'rewards': rewards,
                         'obs': pure_obs, 'return': jnp.sum(rewards)}
@@ -318,9 +366,6 @@ def main(config: MainConfig = MainConfig(), encode_angle: bool = True,
         train_data['y_train'] = jnp.concatenate([train_data['y_train'], trajectory[1:, :mbrl_config.x_dim]], axis=0)
         print(f'Size of train_data in episode {episode_id}:', train_data['x_train'].shape[0])
 
-        if remote_training:
-            wandb.finish()
-
 
 if __name__ == '__main__':
     import argparse
@@ -328,12 +373,20 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Meta-BO run')
     parser.add_argument('--seed', type=int, default=914)
     parser.add_argument('--project_name', type=str, default='OnlineRL_RCCar')
-    parser.add_argument('--machine', type=str, default='optimality')
+    parser.add_argument('--machine', type=str, default='euler')
     parser.add_argument('--gpu', type=int, default=1)
+    parser.add_argument('--sim', type=int, default=1)
+    parser.add_argument('--control_time_ms', type=float, default=24.)
 
     parser.add_argument('--prior', type=str, default='none_FVSGD')
-    parser.add_argument('--num_env_steps', type=int, default=200, help='number of steps in the environment per episode')
+    parser.add_argument('--num_env_steps', type=int, default=200)
+    parser.add_argument('--bnn_train_steps', type=int, default=40_000)
+    parser.add_argument('--sac_num_env_steps', type=int, default=1_000_000)
+    parser.add_argument('--num_sac_envs', type=int, default=64)
     parser.add_argument('--reset_bnn', type=int, default=0)
+    parser.add_argument('--deterministic_policy', type=int, default=1)
+    parser.add_argument('--num_f_samples', type=int, default=512)
+    parser.add_argument('--initial_state_fraction', type=float, default=0.5)
     args = parser.parse_args()
 
     if not args.gpu:
@@ -345,5 +398,14 @@ if __name__ == '__main__':
                            seed=args.seed,
                            project_name=args.project_name,
                            num_env_steps=args.num_env_steps,
-                           reset_bnn=args.reset_bnn),
+                           reset_bnn=args.reset_bnn,
+                           sim=args.sim,
+                           control_time_ms=args.control_time_ms,
+                           deterministic_policy=args.deterministic_policy,
+                           initial_state_fraction=args.initial_state_fraction,
+                           bnn_train_steps=args.bnn_train_steps,
+                           sac_num_env_steps=args.sac_num_env_steps,
+                           num_sac_envs=args.num_sac_envs,
+                           num_f_samples=args.num_f_samples,
+                           ),
          machine=args.machine)

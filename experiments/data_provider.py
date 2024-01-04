@@ -198,9 +198,10 @@ def get_rccar_recorded_data_new(encode_angle: bool = True, skip_first_n_points: 
         num_train_traj = 8
         recordings_dir = [os.path.join(DATA_DIR, 'recordings_rc_car_v1')]
     elif car_id == 2:
-        num_train_traj = 10
+        num_train_traj = 12
         recordings_dir = [os.path.join(DATA_DIR, 'recordings_rc_car_v2'),
-                          os.path.join(DATA_DIR, 'recordings_rc_car_v3')]
+                          os.path.join(DATA_DIR, 'recordings_rc_car_v3'),
+                          os.path.join(DATA_DIR, 'recordings_rc_car_v4')]
     else:
         raise ValueError(f"Unknown car id {car_id}")
     files = [sorted(glob.glob(rd + '/*.pickle')) for rd in recordings_dir]
@@ -210,14 +211,20 @@ def get_rccar_recorded_data_new(encode_angle: bool = True, skip_first_n_points: 
 
     # load and shuffle transitions
     transitions = _load_transitions(file_names)
-    indices = jax.random.permutation(key=jax.random.PRNGKey(9345), x=jnp.arange(0, len(transitions)))
-    transitions = [transitions[idx] for idx in indices]
+    # indices = jax.random.permutation(key=jax.random.PRNGKey(9345), x=jnp.arange(0, len(transitions)))
+    # transitions = [transitions[idx] for idx in indices]
 
     # transform transitions into supervised learning datasets
     prep_fn = partial(_rccar_transitions_to_dataset, encode_angles=encode_angle, skip_first_n=skip_first_n_points,
                       action_delay=action_delay, action_stacking=action_stacking)
-    x_train, y_train = map(lambda x: jnp.concatenate(x, axis=0), zip(*map(prep_fn, transitions[:num_train_traj])))
-    x_test, y_test = map(lambda x: jnp.concatenate(x, axis=0), zip(*map(prep_fn, transitions[num_train_traj:])))
+    x, y = map(lambda x: jnp.concatenate(x, axis=0), zip(*map(prep_fn, transitions)))
+    # x_test, y_test = map(lambda x: jnp.concatenate(x, axis=0), zip(*map(prep_fn, transitions[num_train_traj:])))
+    indices = jnp.arange(start=0, stop=x.shape[0], step=1)
+    indices = jax.random.shuffle(key=jax.random.PRNGKey(9345), x=indices)
+    x, y = x[indices], y[indices]
+    num_test_points = 20_000
+    x_train, y_train, x_test, y_test = x[:-num_test_points], y[:-num_test_points], \
+        x[-num_test_points:], y[-num_test_points:]
     return x_train, y_train, x_test, y_test
 
 
