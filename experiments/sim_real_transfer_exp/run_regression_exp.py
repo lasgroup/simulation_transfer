@@ -13,7 +13,7 @@ from typing import List, Union
 from experiments.util import hash_dict, NumpyArrayEncoder
 from experiments.data_provider import provide_data_and_sim, DATASET_CONFIGS
 from sim_transfer.models import BNN_SVGD, BNN_FSVGD, BNN_FSVGD_SimPrior, BNN_MMD_SimPrior, BNN_SVGD_DistillPrior
-from sim_transfer.sims.simulators import AdditiveSim, GaussianProcessSim
+from sim_transfer.sims.simulators import AdditiveSim, GaussianProcessSim, PredictStateChangeWrapper
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, BASE_DIR)
@@ -81,9 +81,15 @@ def regression_experiment(
     # provide data and sim
     x_train, y_train, x_test, y_test, sim_lf = provide_data_and_sim(
         data_source=data_source,
-        data_spec={'num_samples_train': num_samples_train,
-                   'pred_diff': bool(pred_diff)},
+        data_spec={'num_samples_train': num_samples_train},
         data_seed=data_seed)
+
+    # handle pred diff mode
+    if pred_diff:
+        assert x_train.shape[-1] == sim_lf.input_size and y_train.shape[-1] == sim_lf.output_size
+        y_train = y_train - x_train[..., :sim_lf.output_size]
+        y_test = y_test - x_test[..., :sim_lf.output_size]
+        sim_lf = PredictStateChangeWrapper(sim_lf)
 
     if model.endswith('_no_add_gp'):
         no_added_gp = True

@@ -15,6 +15,7 @@ def meta_learning_experiment(
         # data parameters
         model: str,
         data_source: str,
+        pred_diff: int,
         num_samples_train: int,
         data_seed: int = 981648,
         num_tasks: int = 200,
@@ -38,6 +39,11 @@ def meta_learning_experiment(
         data_spec={'num_samples_train': num_samples_train},
         data_seed=data_seed)
 
+    if bool(pred_diff):
+        assert x_train.shape[-1] == sim.input_size and y_train.shape[-1] == sim.output_size
+        y_train = y_train - x_train[..., :sim.output_size]
+        y_test = y_test - x_test[..., :sim.output_size]
+
     meta_test_data = [tuple(map(lambda arr: np.array(arr), [x_train, y_train, x_test, y_test]))]
 
     # generate meta-training data from sim
@@ -47,6 +53,7 @@ def meta_learning_experiment(
         key_x, key_y = jax.random.split(key)
         x = sim.domain.sample_uniformly(key=key_x, sample_shape=500)
         y = sim.sample_function_vals(x=x, num_samples=1, rng_key=key_y)[0]
+        y = y - x[..., :sim.output_size]
         meta_training_data.append((np.array(x), np.array(y)))
 
     if model == 'PACOH':
@@ -190,6 +197,7 @@ if __name__ == '__main__':
     parser.add_argument('--model_seed', type=int, default=892616)
     parser.add_argument('--likelihood_std', type=float, default=None)
     parser.add_argument('--num_iter_meta_train', type=int, default=50000)
+    parser.add_argument('--pred_diff', type=int, default=1)
 
     # -- PACOH
     parser.add_argument('--prior_weight', type=float, default=1.0)
