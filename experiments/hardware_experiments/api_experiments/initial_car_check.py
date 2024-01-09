@@ -35,7 +35,7 @@ def main():
     else:
         env = CarEnv(encode_angle=ENCODE_ANGLE, max_throttle=0.4, control_time_ms=30.68,
                      num_frame_stacks=0, car_id=2)
-        obs, _ = env.reset()
+        obs = env.reset()
     env.step(np.zeros(2))
     t_prev = time.time()
     observations = []
