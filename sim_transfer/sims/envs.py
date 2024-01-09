@@ -231,6 +231,9 @@ class RCCarSimEnv:
         else:
             raise NotImplementedError(f'Car idx {self.car_id} not supported')
 
+    def close(self):
+        return
+
 
 if __name__ == '__main__':
     ENCODE_ANGLE = True
