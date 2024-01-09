@@ -4,7 +4,7 @@ from experiments.util import generate_run_commands, generate_base_command, dict_
 
 def main(args):
     _applicable_configs = {
-        'prior': ['none_FVSGD', 'high_fidelity', 'low_fidelity',
+        'prior': ['none_FSVGD', 'high_fidelity', 'low_fidelity',
                   'low_fidelity_grey_box'],
         'seed': list(range(5)),
         'machine': ['local'],

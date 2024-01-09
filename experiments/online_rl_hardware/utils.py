@@ -159,7 +159,7 @@ def set_up_bnn_dynamics_model(config: Any, key: jax.random.PRNGKey):
         'num_train_steps': config.bnn_train_steps,
     }
 
-    if config.sim_prior == 'none_FVSGD':
+    if config.sim_prior == 'none_FSVGD':
         bnn = BNN_FSVGD(
             **standard_params,
             domain=sim.domain,
