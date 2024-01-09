@@ -14,7 +14,7 @@ from sim_transfer.sims.simulators import RaceCarSim, StackedActionSimWrapper
 
 ENCODE_ANGLE = True
 ENTITY = 'trevenl'
-PRIORS = {'none_FVSGD',
+PRIORS = {'none_FSVGD',
           'none_SVGD',
           'high_fidelity',
           'low_fidelity',
@@ -158,7 +158,7 @@ def experiment(horizon_len: int,
 
     }
 
-    if sim_prior == 'none_FVSGD':
+    if sim_prior == 'none_FSVGD':
         bnn = BNN_FSVGD(
             **standard_params,
             domain=sim.domain,
