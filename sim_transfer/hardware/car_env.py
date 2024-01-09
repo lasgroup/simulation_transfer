@@ -90,6 +90,7 @@ class CarEnv(gym.Env):
                  encode_angle: bool = True,
                  max_throttle: float = 0.4,
                  car_reward_kwargs: dict = None,
+                 wait_for_user: bool = False,
                  ):
         super().__init__()
         sys.path.append("C:/Users/Panda/Desktop/rcCarInterface/rc-car-interface/build/src/libs/pyCarController")
@@ -103,6 +104,7 @@ class CarEnv(gym.Env):
         self.num_frame_stacks = num_frame_stacks
         self.port_number = port_number
         self.encode_angle = encode_angle
+        self.wait_for_user = wait_for_user
         if car_id == 1:
             mocap_id = 1003
         elif car_id == 2:
@@ -140,6 +142,14 @@ class CarEnv(gym.Env):
         self.state: np.array = np.zeros(shape=(self.state_dim,))
         self.stacked_last_actions: np.array = np.zeros(shape=(num_frame_stacks * self.action_dim))
         self.reset_policy = get_policy()
+
+    @property
+    def dim_state(self):
+        return (self.state_dim, )
+
+    @property
+    def dim_action(self):
+        return (self.action_dim, )
 
     def log_mocap_info(self):
         logs = self.controller.get_mocap_logs()
@@ -179,19 +189,22 @@ class CarEnv(gym.Env):
         if not self.initial_reset:
             self.log_mocap_info()
         self.initial_reset = False
-        if not self.controller_started:
-            self.controller.start()
-            print("Starting controller in ~3 sec")
-            time.sleep(3)
-            self.controller_started = True
-        answer = input("auto reset: press Y to continue the reset.")
-        if answer == 'Y' or answer == 'y':
-            self.reset_to_origin()
+        # if not self.controller_started:
+        #    self.controller.start()
+        #    print("Starting controller in ~3 sec")
+        #    time.sleep(3)
+        #    self.controller_started = True
+        # answer = input("auto reset: press Y to continue the reset.")
+        # if answer == 'Y' or answer == 'y':
+        #    self.reset_to_origin()
+        #    self.controller.stop()
+        #    self.controller_started = False
         self.env_steps = 0
 
         # dialogue with user
-        answer = input("Press Y to continue the reset.")
-        assert answer == 'Y' or answer == 'y', "environment execution aborted."
+        if self.wait_for_user:
+            answer = input("Press Y to continue the reset.")
+            assert answer == 'Y' or answer == 'y', "environment execution aborted."
         if not self.controller_started:
             self.controller.start()
             print("Starting controller in ~3 sec")
@@ -210,7 +223,7 @@ class CarEnv(gym.Env):
 
         state_with_last_acts = np.concatenate([self.state, self.stacked_last_actions], axis=-1)
         assert self.observation_space.shape == state_with_last_acts.shape
-        return state_with_last_acts, {}
+        return state_with_last_acts
 
     def close(self):
         self.controller.stop()
