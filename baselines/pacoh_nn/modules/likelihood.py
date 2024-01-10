@@ -89,7 +89,7 @@ class GaussianLikelihood(tf.Module):
 
         """
         tf.assert_equal(y_pred_mean.shape, y_true.shape)
-        return tf.sqrt(tf.reduce_mean(tf.square(y_pred_mean - y_true)))
+        return tf.sqrt(tf.reduce_mean(tf.reduce_sum((y_pred_mean - y_true) ** 2, axis=-1)))
 
 
 """ helper function """
