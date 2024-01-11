@@ -91,6 +91,7 @@ class CarEnv(gym.Env):
                  max_throttle: float = 0.4,
                  car_reward_kwargs: dict = None,
                  wait_for_user: bool = False,
+                 max_steps: int = 200,
                  ):
         super().__init__()
         sys.path.append("C:/Users/Panda/Desktop/rcCarInterface/rc-car-interface/build/src/libs/pyCarController")
@@ -137,6 +138,7 @@ class CarEnv(gym.Env):
 
         self.action_dim = 2
         self.state_dim = 7 if self.encode_angle else 6
+        self.max_steps = max_steps
 
         # init state
         self.state: np.array = np.zeros(shape=(self.state_dim,))

@@ -200,6 +200,7 @@ def main(config: MainConfig = MainConfig(), encode_angle: bool = True,
             car_reward_kwargs=car_reward_kwargs,
             num_frame_stacks=3,
             wait_for_user=False,
+            max_steps=config.num_env_steps,
 
         )
 
@@ -290,7 +291,10 @@ def main(config: MainConfig = MainConfig(), encode_angle: bool = True,
         predict_difference=bool(config.predict_difference),
         bnn_training_test_ratio=0.2,
         max_num_episodes=100)
-
+    if mbrl_config.bnn_training_test_ratio > 0:
+        num_dummy_points = np.ceil(1/mbrl_config.bnn_training_test_ratio)
+    else:
+        num_dummy_points = 1
     initial_states_fraction = max(min(config.initial_state_fraction, 0.9999), 0.0)
 
     def init_state_points(true_buffer_points):
@@ -309,7 +313,19 @@ def main(config: MainConfig = MainConfig(), encode_angle: bool = True,
     else:
         eval_buffer_transitions = None
 
+    obs = env.reset()
+    dummy_input = jnp.concatenate([obs, jnp.zeros(2)], axis=-1).reshape(1, -1)
+    dummy_output = obs[:env.dim_state[-1]].reshape(1, -1)
+    dummy_input = np.repeat(dummy_input, num_dummy_points, axis=0)
+    dummy_output = np.repeat(dummy_output, num_dummy_points, axis=0)
+    train_data['x_train'] = jnp.concatenate([train_data['x_train'],
+                                             dummy_input],
+                                            axis=0)
+    train_data['y_train'] = jnp.concatenate([train_data['y_train'], dummy_output], axis=0)
+    env.close()
+    del obs
     del env
+
     """ Main loop over episodes """
     for episode_id in range(1, config.num_episodes + 1):
 
@@ -368,7 +384,7 @@ def main(config: MainConfig = MainConfig(), encode_angle: bool = True,
                 car_reward_kwargs=car_reward_kwargs,
                 num_frame_stacks=3,
                 wait_for_user=False,
-
+                max_steps=config.num_env_steps,
             )
 
 
@@ -428,7 +444,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Meta-BO run')
     parser.add_argument('--seed', type=int, default=914)
-    parser.add_argument('--project_name', type=str, default='OnlineRL_RCCarHWRunF')
+    parser.add_argument('--project_name', type=str, default='test')
     parser.add_argument('--machine', type=str, default='minimax')
     parser.add_argument('--device', type=int, default=0)
     parser.add_argument('--gpu', type=int, default=1)
