@@ -21,7 +21,6 @@ class BayesianNeuralNetworkSVGD(RegressionModel):
                  normalization_stats=None):
 
         self.prior_weight = prior_weight
-        self.likelihood_std = likelihood_std
         self.batch_size = batch_size
         self.n_particles = n_particles
         self.sqrt_mode = sqrt_mode
@@ -55,9 +54,11 @@ class BayesianNeuralNetworkSVGD(RegressionModel):
 
         # Likelihood
         if normalize_likelihood_std:
-            likelihood_std = tf.convert_to_tensor(likelihood_std) / tf.reshape(self.y_std, (self.output_dim,))
+            self.likelihood_std = tf.convert_to_tensor(likelihood_std) / tf.reshape(self.y_std, (self.output_dim,))
+        else:
+            self.likelihood_std = likelihood_std
         self.likelihood = GaussianLikelihood(self.output_dim, n_particles,
-                                             trainable=learn_likelihood, std=likelihood_std)
+                                             trainable=learn_likelihood, std=self.likelihood_std)
 
         # setup particles
         if self.meta_learned_prior_mode:

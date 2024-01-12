@@ -34,6 +34,7 @@ def main(args):
     sweep_config = {
         'learn_likelihood_std': {'value': args.learn_likelihood_std},
         'data_source': {'value': args.data_source},
+        'pred_diff': {'value': args.pred_diff},
         'num_samples_train': DATASET_CONFIGS[args.data_source]['num_samples_train'],
         'model': {'value': args.model},
     }
@@ -84,6 +85,7 @@ if __name__ == '__main__':
 
     # data parameters
     parser.add_argument('--data_source', type=str, default='pendulum')
+    parser.add_argument('--pred_diff', type=int, default=1)
 
     # # standard BNN parameters
     parser.add_argument('--model', type=str, default='NP')

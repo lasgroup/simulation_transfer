@@ -10,9 +10,8 @@ from brax.training.types import Transition
 
 from experiments.util import load_csv_recordings
 from sim_transfer.sims.car_sim_config import OBS_NOISE_STD_SIM_CAR
-from sim_transfer.sims.simulators import PredictStateChangeWrapper, StackedActionSimWrapper
+from sim_transfer.sims.simulators import StackedActionSimWrapper
 from sim_transfer.sims.util import encode_angles as encode_angles_fn
-from sim_transfer.sims.util import decode_angles_numpy as decode_angles_fn
 
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
@@ -27,14 +26,12 @@ DEFAULTS_PENDULUM = {
     'obs_noise_std': 0.02,
     'x_support_mode_train': 'full',
     'param_mode': 'random',
-    'pred_diff': False
 }
 
 DEFAULTS_RACECAR = {
     'obs_noise_std': OBS_NOISE_STD_SIM_CAR,
     'x_support_mode_train': 'full',
     'param_mode': 'random',
-    'pred_diff': False
 }
 
 DEFAULTS_RACECAR_REAL = {
@@ -99,7 +96,7 @@ DATASET_CONFIGS.update({
         'likelihood_std': {'value': _RACECAR_NOISE_STD_ENCODED.tolist()},
         'num_samples_train': {'value': 200},
     } for name in ['real_racecar_new', 'real_racecar_new_only_pose', 'real_racecar_new_no_angvel',
-                   'real_racecar_new_actionstack']
+                   'real_racecar_new_actionstack', 'real_racecar_v2']
 })
 
 
@@ -190,18 +187,25 @@ def _rccar_transitions_to_dataset(transitions: Transition, encode_angles: bool =
 
 
 def get_rccar_recorded_data_new(encode_angle: bool = True, skip_first_n_points: int = 10,
+                                dataset: str = 'all',
                                 action_delay: int = 3, action_stacking: bool = False,
                                 car_id: int = 2):
 
     assert car_id in [1, 2]
     if car_id == 1:
-        num_train_traj = 8
+        assert dataset in ['all', 'v1']
         recordings_dir = [os.path.join(DATA_DIR, 'recordings_rc_car_v1')]
     elif car_id == 2:
-        num_train_traj = 12
-        recordings_dir = [os.path.join(DATA_DIR, 'recordings_rc_car_v2'),
-                          os.path.join(DATA_DIR, 'recordings_rc_car_v3'),
-                          os.path.join(DATA_DIR, 'recordings_rc_car_v4')]
+        if dataset == 'all':
+            recordings_dir = [os.path.join(DATA_DIR, 'recordings_rc_car_v2'),
+                              os.path.join(DATA_DIR, 'recordings_rc_car_v3'),
+                              os.path.join(DATA_DIR, 'recordings_rc_car_v4')]
+            num_test_points = 20_000
+        elif dataset in ['v2', 'v3', 'v4']:
+            recordings_dir = [os.path.join(DATA_DIR, f'recordings_rc_car_{dataset}')]
+            num_test_points = 10_000
+        else:
+            raise ValueError(f"Unknown dataset {dataset} for car_id {car_id}")
     else:
         raise ValueError(f"Unknown car id {car_id}")
     files = [sorted(glob.glob(rd + '/*.pickle')) for rd in recordings_dir]
@@ -211,18 +215,16 @@ def get_rccar_recorded_data_new(encode_angle: bool = True, skip_first_n_points: 
 
     # load and shuffle transitions
     transitions = _load_transitions(file_names)
-    # indices = jax.random.permutation(key=jax.random.PRNGKey(9345), x=jnp.arange(0, len(transitions)))
-    # transitions = [transitions[idx] for idx in indices]
 
     # transform transitions into supervised learning datasets
     prep_fn = partial(_rccar_transitions_to_dataset, encode_angles=encode_angle, skip_first_n=skip_first_n_points,
                       action_delay=action_delay, action_stacking=action_stacking)
     x, y = map(lambda x: jnp.concatenate(x, axis=0), zip(*map(prep_fn, transitions)))
-    # x_test, y_test = map(lambda x: jnp.concatenate(x, axis=0), zip(*map(prep_fn, transitions[num_train_traj:])))
     indices = jnp.arange(start=0, stop=x.shape[0], step=1)
     indices = jax.random.shuffle(key=jax.random.PRNGKey(9345), x=indices)
     x, y = x[indices], y[indices]
-    num_test_points = 20_000
+
+    # split into train and test
     x_train, y_train, x_test, y_test = x[:-num_test_points], y[:-num_test_points], \
         x[-num_test_points:], y[-num_test_points:]
     return x_train, y_train, x_test, y_test
@@ -244,11 +246,6 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
             sim_lf = PendulumSim(encode_angle=True, high_fidelity=False)
         else:
             sim_hf = sim_lf = PendulumSim(encode_angle=True, high_fidelity=True)
-        if data_spec.get('pred_diff', DEFAULTS_PENDULUM['pred_diff']):
-            # wrap sim in predict state change wrapper
-            print('[data_provider] Using PredictStateChangeWrapper')
-            sim_lf = PredictStateChangeWrapper(sim_lf)
-            sim_hf = PredictStateChangeWrapper(sim_hf)
         assert {'num_samples_train'} <= set(data_spec.keys()) <= {'num_samples_train'}.union(DEFAULTS_PENDULUM.keys())
     elif data_source == 'pendulum_bimodal' or data_source == 'pendulum_bimodal_hf':
         from sim_transfer.sims.simulators import PendulumBiModalSim
@@ -258,11 +255,6 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
             sim_lf = PendulumBiModalSim(encode_angle=True, high_fidelity=False)
         else:
             sim_hf = sim_lf = PendulumBiModalSim(encode_angle=True)
-        if data_spec.get('pred_diff', DEFAULTS_PENDULUM['pred_diff']):
-            # wrap sim in predict state change wrapper
-            print('[data_provider] Using PredictStateChangeWrapper')
-            sim_lf = PredictStateChangeWrapper(sim_lf)
-            sim_hf = PredictStateChangeWrapper(sim_hf)
         assert {'num_samples_train'} <= set(data_spec.keys()) <= {'num_samples_train'}.union(DEFAULTS_PENDULUM.keys())
     elif data_source.startswith('racecar'):
         from sim_transfer.sims.simulators import RaceCarSim
@@ -372,11 +364,6 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
             sim_hf = sim_lf = RaceCarSim(encode_angle=True, use_blend=True, only_pose=False)
         else:
             raise ValueError(f'Unknown data source {data_source}')
-        if data_spec.get('pred_diff', defaults['pred_diff']):
-            # wrap sim in predict state change wrapper
-            print('[data_provider] Using PredictStateChangeWrapper')
-            sim_lf = PredictStateChangeWrapper(sim_lf)
-            sim_hf = PredictStateChangeWrapper(sim_hf)
         assert {'num_samples_train'} <= set(data_spec.keys()) <= {'num_samples_train'}.union(DEFAULTS_RACECAR.keys())
     elif data_source.startswith('real_racecar'):
         from sim_transfer.sims.simulators import RaceCarSim
@@ -391,11 +378,6 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
         else:
             sim_lf = RaceCarSim(encode_angle=True, use_blend=use_hf_sim, car_id=car_id)
 
-        if data_spec.get('pred_diff', DEFAULTS_PENDULUM['pred_diff']):
-            # wrap sim in predict state change wrapper
-            print('[data_provider] Using PredictStateChangeWrapper')
-            sim_lf = PredictStateChangeWrapper(sim_lf)
-
         if data_source.startswith('real_racecar_new_actionstack'):
             x_train, y_train, x_test, y_test = get_rccar_recorded_data_new(encode_angle=True, action_stacking=True,
                                                                            action_delay=3, car_id=car_id)
@@ -403,13 +385,12 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
         elif data_source.startswith('real_racecar_new'):
             x_train, y_train, x_test, y_test = get_rccar_recorded_data_new(encode_angle=True, action_stacking=False,
                                                                            action_delay=3, car_id=car_id)
+        elif data_source.startswith('real_racecar_v2'):
+            x_train, y_train, x_test, y_test = get_rccar_recorded_data_new(encode_angle=True, action_stacking=False,
+                                                                           action_delay=3, car_id=car_id,
+                                                                           dataset='v2')
         else:
             x_train, y_train, x_test, y_test = get_rccar_recorded_data(encode_angle=True)
-
-        if data_spec.get('pred_diff', DEFAULTS_PENDULUM['pred_diff']):
-            # convert targets to the state difference
-            y_train = y_train - x_train[..., :7]
-            y_test = y_test - x_test[..., :7]
 
         num_train_available = x_train.shape[0]
         num_test_available = x_test.shape[0]

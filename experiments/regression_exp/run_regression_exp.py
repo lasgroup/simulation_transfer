@@ -15,6 +15,7 @@ from typing import Dict, List, Tuple, Union
 from experiments.util import Logger, hash_dict, NumpyArrayEncoder
 from experiments.data_provider import provide_data_and_sim, DATASET_CONFIGS
 from sim_transfer.models import BNN_SVGD, BNN_FSVGD, BNN_FSVGD_SimPrior, BNN_MMD_SimPrior, BNN_SVGD_DistillPrior
+from sim_transfer.sims.simulators import PredictStateChangeWrapper
 
 ACTIVATION_DICT = {
     'relu': jax.nn.relu,
@@ -73,9 +74,19 @@ def regression_experiment(
     # provide data and sim
     x_train, y_train, x_test, y_test, sim = provide_data_and_sim(
         data_source=data_source,
-        data_spec={'num_samples_train': num_samples_train,
-                   'pred_diff': bool(pred_diff)},
+        data_spec={'num_samples_train': 1000},
         data_seed=data_seed)
+
+    # only take num_samples_train datapoints
+    assert num_samples_train <= 1000
+    x_train, y_train = x_train[:num_samples_train], y_train[:num_samples_train]
+
+    # handle pred diff mode
+    if pred_diff:
+        assert x_train.shape[-1] == sim.input_size and y_train.shape[-1] == sim.output_size
+        y_train = y_train - x_train[..., :sim.output_size]
+        y_test = y_test - x_test[..., :sim.output_size]
+        sim = PredictStateChangeWrapper(sim)
 
     # setup standard model params
     standard_model_params = {
@@ -145,7 +156,7 @@ def regression_experiment(
         raise NotImplementedError('Model {model} not implemented')
 
     # train model
-    model.fit(x_train, y_train, x_test, y_test, log_to_wandb=use_wandb, log_period=1000)
+    model.fit(x_train, y_train, x_test, y_test, log_to_wandb=use_wandb, log_period=2000)
 
     # eval model
     eval_metrics = model.eval(x_test, y_test, per_dim_metrics=True)
@@ -161,6 +172,7 @@ def main(args):
     use_wandb = exp_params.pop('use_wandb')
     exp_name = exp_params.pop('exp_name')
     exp_hash = hash_dict(exp_params)
+
 
     if exp_result_folder is not None:
         os.makedirs(exp_result_folder, exist_ok=True)
@@ -231,10 +243,10 @@ if __name__ == '__main__':
     parser.add_argument('--data_source', type=str, default='racecar')
     parser.add_argument('--num_samples_train', type=int, default=10)
     parser.add_argument('--data_seed', type=int, default=77698)
-    parser.add_argument('--pred_diff', type=int, default=0)
+    parser.add_argument('--pred_diff', type=int, default=1)
 
     # standard BNN parameters
-    parser.add_argument('--model', type=str, default='BNN_FSVGD_SimPrior_ssge')
+    parser.add_argument('--model', type=str, default='BNN_FSVGD_SimPrior_gp')
     parser.add_argument('--model_seed', type=int, default=892616)
     parser.add_argument('--likelihood_std', type=float, default=None)
     parser.add_argument('--learn_likelihood_std', type=int, default=0)

@@ -294,7 +294,7 @@ if __name__ == '__main__':
 
     print('\nNUM_DIM_X:', NUM_DIM_X)
     print('NUM_DIM_Y:', NUM_DIM_Y)
-    print('SIM_TYPE:', SIM_TYPE)
+    print('sim_type:', SIM_TYPE)
 
     print('use_lr_schedule_sn:', args.lr_scheduler)
     print('lr:', args.lr)
