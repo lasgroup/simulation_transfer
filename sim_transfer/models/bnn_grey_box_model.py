@@ -54,6 +54,7 @@ class BNNGreyBox(AbstractRegressionModel):
         self.num_sim_model_train_steps = num_sim_model_train_steps
         sim_params, train_params = self.sim.sample_params(param_key)
         likelihood_std = -1. * jnp.ones(self.output_size)
+        self.init_likelihood_std = likelihood_std
         self.params_sim = {'sim_params': sim_params, 'likelihood_std': likelihood_std}
         self.init_sim_params = sim_params
         self.train_params = train_params
@@ -112,11 +113,34 @@ class BNNGreyBox(AbstractRegressionModel):
 
     @property
     def likelihood_std(self):
-        return self.base_bnn.likelihood_std
+        if self.use_base_bnn:
+            return self.base_bnn.likelihood_std
+        else:
+            return self.sim_likelihood_std
 
     @property
     def likelihood_std_unnormalized(self):
-        return self.base_bnn.likelihood_std_unnormalized
+        if self.use_base_bnn:
+            return self.base_bnn.likelihood_std_unnormalized
+        else:
+            return self.sim_likelihood_std_unnormalized
+
+    @property
+    def sim_likelihood_std(self):
+        if self.learn_likelihood_std:
+            likelihood_std = jnp.exp(self.params_sim['likelihood_std'])
+        else:
+            likelihood_std = jnp.exp(self.init_likelihood_std)
+        return likelihood_std
+
+    @property
+    def sim_likelihood_std_unnormalized(self):
+        likelihood_std = self.sim_likelihood_std
+        assert hasattr(self, '_y_std_sim') and self._y_std_sim is not None and self.normalize_data, \
+            'normalize_likelihood_std requires normalization'
+        assert self._y_std_sim.shape == (self.output_size,)
+        likelihood_std = likelihood_std * self._y_std_sim
+        return likelihood_std
 
     @property
     def learn_likelihood_std(self):
@@ -220,7 +244,8 @@ class BNNGreyBox(AbstractRegressionModel):
         normalized_sim_model_prediction = self._normalize_y_sim(sim_model_prediction)
         assert normalized_sim_model_prediction.shape == sim_model_prediction.shape
         # get likelihood std
-        likelihood_std = jnp.exp(params_sim['likelihood_std']) if self.learn_likelihood_std else self.likelihood_std
+        likelihood_std = jnp.exp(params_sim['likelihood_std']) if self.learn_likelihood_std \
+            else self.init_likelihood_std
 
         def _ll(pred, y):
             return tfd.MultivariateNormalDiag(pred, likelihood_std).log_prob(y)

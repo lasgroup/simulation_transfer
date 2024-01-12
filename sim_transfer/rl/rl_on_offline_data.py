@@ -370,7 +370,8 @@ class RLFromOfflineData:
                               action_delay=1/30 * self.num_frame_stack,
                               margin_factor=self.car_reward_kwargs['margin_factor'],
                               ctrl_cost_weight=self.car_reward_kwargs['ctrl_cost_weight'],
-                              ctrl_diff_weight=self.car_reward_kwargs['ctrl_diff_weight'])
+                              ctrl_diff_weight=self.car_reward_kwargs['ctrl_diff_weight'],
+                              max_steps=self.sac_kwargs['episode_length'])
             obs = sim.reset(key)
             done = False
             transitions_for_plotting = []

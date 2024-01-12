@@ -48,6 +48,7 @@ def experiment(horizon_len: int,
                input_from_recorded_data: int = 1,
                obtain_consecutive_data: int = 1,
                lr: float = 3e-4,
+               car_id: int = 2,
                ):
     bnn_train_steps = min(num_epochs * num_offline_collected_transitions, max_train_steps)
     bnn_train_steps = max(bnn_train_steps, min_train_steps)
@@ -76,7 +77,7 @@ def experiment(horizon_len: int,
                       num_evals=20,
                       reward_scaling=1,
                       episode_length=horizon_len,
-                      episode_length_eval=200,
+                      episode_length_eval=horizon_len,
                       action_repeat=1,
                       discounting=0.99,
                       lr_policy=1e-4,
@@ -133,6 +134,7 @@ def experiment(horizon_len: int,
                        input_from_recorded_data=input_from_recorded_data,
                        data_from_simulation=data_from_simulation,
                        likelihood_exponent=likelihood_exponent,
+                       car_id=car_id,
                        )
 
     total_config = SAC_KWARGS | config_dict | car_reward_kwargs
@@ -157,7 +159,8 @@ def experiment(horizon_len: int,
                 data_spec={'num_samples_train': 20_000,
                            'use_hf_sim': bool(high_fidelity),
                            'sampling': 'iid',
-                           'num_stacked_actions': num_frame_stack},
+                           'num_stacked_actions': num_frame_stack,
+                           'car_id': car_id},
                 data_seed=int(int_data_seed),
             )
 
@@ -344,6 +347,7 @@ def main(args):
         input_from_recorded_data=args.input_from_recorded_data,
         obtain_consecutive_data=args.obtain_consecutive_data,
         lr=args.lr,
+        car_id=args.car_id,
     )
 
 
@@ -384,5 +388,6 @@ if __name__ == '__main__':
     parser.add_argument('--input_from_recorded_data', type=int, default=1)
     parser.add_argument('--obtain_consecutive_data', type=int, default=1)
     parser.add_argument('--lr', type=float, default=3e-4)
+    parser.add_argument('--car_id', type=int, default=3)
     args = parser.parse_args()
     main(args)
