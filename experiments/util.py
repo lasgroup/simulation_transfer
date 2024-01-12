@@ -321,20 +321,14 @@ def collect_exp_results(exp_name: str, dir_tree_depth: int = 3, verbose: bool = 
 
 
 def ucb(row):
-    if row.shape[0] > 1:
-        return np.nan
     return np.quantile(row, q=0.95, axis=0)
 
 
 def lcb(row):
-    if row.shape[0] > 1:
-        return np.nan
     return np.quantile(row, q=0.05, axis=0)
 
 
 def median(row):
-    if row.shape[0] > 1:
-        return np.nan
     return np.quantile(row, q=0.5, axis=0)
 
 
