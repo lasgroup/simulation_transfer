@@ -1,0 +1,11 @@
+# racecar
+python experiments/lf_hf_transfer_exp/sweep_regression_exp.py --data_source racecar_hf --exp_name aug24_lfhf_diff --pred_diff 1 --model BNN_FSVGD_SimPrior_gp --num_hparam_samples 30 --yes &&
+python experiments/lf_hf_transfer_exp/sweep_regression_exp.py --data_source racecar_hf --exp_name aug24_lfhf_diff --pred_diff 1 --model BNN_FSVGD_SimPrior_gp_no_add_gp --num_hparam_samples 10 --yes &&
+python experiments/lf_hf_transfer_exp/sweep_regression_exp.py --data_source racecar_hf --exp_name aug24_lfhf_diff --pred_diff 1 --model BNN_FSVGD --num_hparam_samples 20 --yes &&
+python experiments/lf_hf_transfer_exp/sweep_regression_exp.py --data_source racecar_hf --exp_name aug24_lfhf_diff --pred_diff 1 --model BNN_SVGD --num_hparam_samples 10 --yes
+
+# pendulum
+python experiments/lf_hf_transfer_exp/sweep_regression_exp.py --data_source pendulum_hf --exp_name aug24_lfhf_diff --pred_diff 1 --model BNN_FSVGD_SimPrior_gp --num_hparam_samples 30 --yes &&
+python experiments/lf_hf_transfer_exp/sweep_regression_exp.py --data_source pendulum_hf --exp_name aug24_lfhf_diff --pred_diff 1 --model BNN_FSVGD_SimPrior_gp_no_add_gp --num_hparam_samples 10 --yes &&
+python experiments/lf_hf_transfer_exp/sweep_regression_exp.py --data_source pendulum_hf --exp_name aug24_lfhf_diff --pred_diff 1 --model BNN_FSVGD --num_hparam_samples 20 --yes &&
+python experiments/lf_hf_transfer_exp/sweep_regression_exp.py --data_source pendulum_hf --exp_name aug24_lfhf_diff --pred_diff 1 --model BNN_SVGD --num_hparam_samples 20 --yes
