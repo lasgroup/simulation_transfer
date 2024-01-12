@@ -1,0 +1,34 @@
+# racecar (fixed likelihood)
+python experiments/regression_exp/sweep_regression_exp_num_data.py --exp_name jan10_num_data --data_source pendulum --learn_likelihood_std 0 --model BNN_FSVGD_SimPrior_gp --gpu --yes --num_cpus 4 &&
+python experiments/regression_exp/sweep_regression_exp_num_data.py --exp_name jan10_num_data --data_source pendulum --learn_likelihood_std 0 --model BNN_FSVGD_SimPrior_nu-method --gpu --yes --num_cpus 4 &&
+python experiments/regression_exp/sweep_regression_exp_num_data.py --exp_name jan10_num_data --data_source pendulum --learn_likelihood_std 0 --model BNN_FSVGD_SimPrior_kde --gpu --yes --num_cpus 4 &&
+python experiments/regression_exp/sweep_regression_exp_num_data.py --exp_name jan10_num_data --data_source pendulum --learn_likelihood_std 0 --model BNN_FSVGD --yes --num_cpus 4 &&
+python experiments/regression_exp/sweep_regression_exp_num_data.py --exp_name jan10_num_data --data_source pendulum --learn_likelihood_std 0 --model BNN_SVGD --yes --num_cpus 4 &&
+python experiments/meta_learning_exp/sweep_regression_exp_num_data.py --exp_name jan10_num_data --data_source pendulum --learn_likelihood_std 0 --model PACOH  --yes --num_cpus 4
+python experiments/meta_learning_exp/sweep_regression_exp_num_data.py --exp_name jan10_num_data --data_source pendulum --learn_likelihood_std 0 --model NP  --yes --num_cpus 4 --gpu --long
+
+# racecar (learned likelihood)
+python experiments/regression_exp/sweep_regression_exp_num_data.py --exp_name jan10_num_data_std --data_source pendulum --learn_likelihood_std 1 --model BNN_FSVGD_SimPrior_gp --gpu --yes --num_cpus 4 &&
+python experiments/regression_exp/sweep_regression_exp_num_data.py --exp_name jan10_num_data_std --data_source pendulum --learn_likelihood_std 1 --model BNN_FSVGD_SimPrior_nu-method --gpu --yes --num_cpus 4 &&
+python experiments/regression_exp/sweep_regression_exp_num_data.py --exp_name jan10_num_data_std --data_source pendulum --learn_likelihood_std 1 --model BNN_FSVGD_SimPrior_kde --gpu --yes --num_cpus 4 &&
+python experiments/regression_exp/sweep_regression_exp_num_data.py --exp_name jan10_num_data_std --data_source pendulum --learn_likelihood_std 1 --model BNN_FSVGD --gpu --yes --num_cpus 4 &&
+python experiments/regression_exp/sweep_regression_exp_num_data.py --exp_name jan10_num_data_std --data_source pendulum --learn_likelihood_std 1 --model BNN_SVGD --gpu --yes --num_cpus 4
+
+
+
+# racecar (fixed likelihood)
+python experiments/regression_exp/sweep_regression_exp_num_data.py --exp_name jan10_num_data --data_source racecar --learn_likelihood_std 0 --model BNN_FSVGD_SimPrior_gp --gpu --yes --num_cpus 4 &&
+python experiments/regression_exp/sweep_regression_exp_num_data.py --exp_name jan10_num_data --data_source racecar --learn_likelihood_std 0 --model BNN_FSVGD_SimPrior_nu-method --gpu --yes --num_cpus 4 &&
+python experiments/regression_exp/sweep_regression_exp_num_data.py --exp_name jan10_num_data --data_source racecar --learn_likelihood_std 0 --model BNN_FSVGD_SimPrior_kde --gpu --yes --num_cpus 4 &&
+python experiments/regression_exp/sweep_regression_exp_num_data.py --exp_name jan10_num_data --data_source racecar --learn_likelihood_std 0 --model BNN_FSVGD --yes --num_cpus 4 &&
+python experiments/regression_exp/sweep_regression_exp_num_data.py --exp_name jan10_num_data --data_source racecar --learn_likelihood_std 0 --model BNN_SVGD --yes --num_cpus 4 &&
+python experiments/meta_learning_exp/sweep_regression_exp_num_data.py --exp_name jan10_num_data --data_source racecar --learn_likelihood_std 0 --model PACOH --yes --num_cpus 4
+python experiments/meta_learning_exp/sweep_regression_exp_num_data.py --exp_name jan10_num_data --data_source racecar --learn_likelihood_std 0 --model NP  --yes --num_cpus 4 --gpu --long
+
+
+# racecar (learned likelihood)
+python experiments/regression_exp/sweep_regression_exp_num_data.py --exp_name jan10_num_data_std --data_source racecar --learn_likelihood_std 1 --model BNN_FSVGD_SimPrior_gp --gpu --yes --num_cpus 4 &&
+python experiments/regression_exp/sweep_regression_exp_num_data.py --exp_name jan10_num_data_std --data_source racecar --learn_likelihood_std 1 --model BNN_FSVGD_SimPrior_nu-method --gpu --yes --num_cpus 4 &&
+python experiments/regression_exp/sweep_regression_exp_num_data.py --exp_name jan10_num_data_std --data_source racecar --learn_likelihood_std 1 --model BNN_FSVGD_SimPrior_kde --gpu --yes --num_cpus 4 &&
+python experiments/regression_exp/sweep_regression_exp_num_data.py --exp_name jan10_num_data_std --data_source racecar --learn_likelihood_std 1 --model BNN_FSVGD --gpu --yes --num_cpus 4 &&
+python experiments/regression_exp/sweep_regression_exp_num_data.py --exp_name jan10_num_data_std --data_source racecar --learn_likelihood_std 1 --model BNN_SVGD --gpu --yes --num_cpus 4
