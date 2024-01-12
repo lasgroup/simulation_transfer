@@ -74,11 +74,11 @@ def regression_experiment(
     # provide data and sim
     x_train, y_train, x_test, y_test, sim = provide_data_and_sim(
         data_source=data_source,
-        data_spec={'num_samples_train': 1000},
+        data_spec={'num_samples_train': 10000},
         data_seed=data_seed)
 
     # only take num_samples_train datapoints
-    assert num_samples_train <= 1000
+    assert num_samples_train <= 10000
     x_train, y_train = x_train[:num_samples_train], y_train[:num_samples_train]
 
     # handle pred diff mode
@@ -241,12 +241,12 @@ if __name__ == '__main__':
 
     # data parameters
     parser.add_argument('--data_source', type=str, default='racecar')
-    parser.add_argument('--num_samples_train', type=int, default=10)
+    parser.add_argument('--num_samples_train', type=int, default=100)
     parser.add_argument('--data_seed', type=int, default=77698)
     parser.add_argument('--pred_diff', type=int, default=1)
 
     # standard BNN parameters
-    parser.add_argument('--model', type=str, default='BNN_FSVGD_SimPrior_gp')
+    parser.add_argument('--model', type=str, default='BNN_SVGD')
     parser.add_argument('--model_seed', type=int, default=892616)
     parser.add_argument('--likelihood_std', type=float, default=None)
     parser.add_argument('--learn_likelihood_std', type=int, default=0)
@@ -273,7 +273,7 @@ if __name__ == '__main__':
     # FSVGD_SimPrior parameters
     parser.add_argument('--bandwidth_score_estim', type=float, default=10.)
     parser.add_argument('--ssge_kernel_type', type=str, default='IMQ')
-    parser.add_argument('--num_f_samples', type=int, default=64)
+    parser.add_argument('--num_f_samples', type=int, default=1024)
     parser.add_argument('--switch_score_estimator_frac', type=float, default=0.6667)
 
     # FSVGD_SimPrior parameters

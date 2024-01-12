@@ -4,3 +4,10 @@ python experiments/regression_exp/sweep_regression_exp.py --data_source pendulum
 python experiments/regression_exp/sweep_regression_exp.py --data_source pendulum --exp_name may15 --model BNN_FSVGD_SimPrior_ssge --num_hparam_samples 30 --yes &&
 python experiments/regression_exp/sweep_regression_exp.py --data_source pendulum --exp_name may15 --model BNN_FSVGD_SimPrior_kde --num_hparam_samples 20 --yes &&
 python experiments/regression_exp/sweep_regression_exp.py --data_source pendulum --exp_name may15 --model BNN_FSVGD_SimPrior_nu-method --num_hparam_samples 30  --gpu --yes --num_cpus 4
+
+
+python experiments/regression_exp/sweep_regression_exp.py --data_source racecar --exp_name jan09 --model BNN_SVGD --num_hparam_samples 10 --pred_diff 1 --yes &&
+python experiments/regression_exp/sweep_regression_exp.py --data_source racecar --exp_name jan09 --model BNN_FSVGD --num_hparam_samples 20 --pred_diff 1 --yes &&
+python experiments/regression_exp/sweep_regression_exp.py --data_source racecar --exp_name jan08 --model BNN_FSVGD_SimPrior_gp --num_hparam_samples 20 --yes
+
+python experiments/regression_exp/sweep_regression_exp.py --data_source racecar --exp_name jan09 --model BNN_FSVGD_SimPrior_kde --pred_diff 1 --num_hparam_samples 20 -gpu --yes --num_cpus 4
