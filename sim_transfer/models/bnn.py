@@ -420,8 +420,9 @@ class AbstractSVGD_BNN(AbstractParticleBNN):
                 self.batched_model.flatten_batch(params['nn_params_stacked'])))
             log_prior /= self.prior_dist.event_shape[0]
             if self.likelihood_reg > 0:
-                likelihood_penalty = self.likelihood_reg * self._likelihood_prior_logprob(params['likelihood_std_raw'])
-                log_prior += (num_train_points * self.likelihood_exponent) * likelihood_penalty
+                likelihood_penalty = - self.likelihood_reg * \
+                                     jnp.sum(self._likelihood_prior_logprob(params['likelihood_std_raw'])**2)
+                log_prior += likelihood_penalty
             stats = OrderedDict(train_nll_loss=nll, neg_log_prior=-log_prior)
             neg_log_post = nll - log_prior
         else:
