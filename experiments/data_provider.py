@@ -96,7 +96,7 @@ DATASET_CONFIGS.update({
         'likelihood_std': {'value': _RACECAR_NOISE_STD_ENCODED.tolist()},
         'num_samples_train': {'value': 200},
     } for name in ['real_racecar_new', 'real_racecar_new_only_pose', 'real_racecar_new_no_angvel',
-                   'real_racecar_new_actionstack', 'real_racecar_v2']
+                   'real_racecar_new_actionstack', 'real_racecar_v2', 'real_racecar_v3', 'real_racecar_v4']
 })
 
 
@@ -391,10 +391,10 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
         elif data_source.startswith('real_racecar_new'):
             x_train, y_train, x_test, y_test = get_rccar_recorded_data_new(encode_angle=True, action_stacking=False,
                                                                            action_delay=3, car_id=car_id)
-        elif data_source.startswith('real_racecar_v2'):
+        elif data_source.startswith('real_racecar_v3'):
             x_train, y_train, x_test, y_test = get_rccar_recorded_data_new(encode_angle=True, action_stacking=False,
                                                                            action_delay=3, car_id=car_id,
-                                                                           dataset='v2')
+                                                                           dataset='v3')
         else:
             x_train, y_train, x_test, y_test = get_rccar_recorded_data(encode_angle=True)
 
@@ -417,7 +417,7 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
         elif sampling_scheme == 'consecutive':
             # sample random sub-trajectory (datapoints are adjacent in time -> highly correlated)
             offset_train = jax.random.choice(key_train, jnp.arange(num_train_available - num_train))
-            offset_test = jax.random.choice(key_test, jnp.arange(num_test_available - num_test))
+            offset_test = jax.random.choice(key_test, jnp.arange(num_test_available - num_test + 1))
             idx_train = jnp.arange(num_train) + offset_train
             idx_test = jnp.arange(num_test) + offset_test
         else:

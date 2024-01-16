@@ -11,27 +11,27 @@ import os
 MODEL_SPECIFIC_CONFIG = {
     'BNN_SVGD': {
         'bandwidth_svgd': {'distribution': 'log_uniform', 'min': -1., 'max': 4.},
-        'num_train_steps': {'values': [5000, 10000, 20000]},
-        'likelihood_reg': {'distribution': 'log_uniform_10', 'min': 0.0, 'max': 1.5}
+        'num_train_steps': {'values': [20000]},
+        'likelihood_reg': {'values': [0., 1.]},
     },
     'BNN_FSVGD': {
-        'bandwidth_svgd': {'distribution': 'log_uniform_10', 'min': -1.0, 'max': 0.0},
+        'bandwidth_svgd': {'values': [10.]},
         'bandwidth_gp_prior': {'distribution': 'log_uniform', 'min': -2., 'max': 0.},
-        'num_train_steps': {'values': [5000, 10000, 20000]},
-        'num_measurement_points': {'values': [64]},
-        'likelihood_reg': {'distribution': 'log_uniform_10', 'min': 0.0, 'max': 1.5},
+        'num_train_steps': {'values': [20000]},
+        'num_measurement_points': {'values': [32]},
+        'likelihood_reg':  {'values': [0., 1.]},
     },
     'BNN_FSVGD_SimPrior_gp': {
-        'bandwidth_svgd': {'distribution': 'log_uniform_10', 'min': -1.0, 'max': 0.0},
+        'bandwidth_svgd': {'values': [10.]},
         'num_train_steps': {'values': [40000]},
         'num_measurement_points': {'values': [32]},
         'num_f_samples': {'values': [1024]},
-        'added_gp_lengthscale': {'distribution': 'log_uniform_10', 'min': -1., 'max': 0.5},   # racecar: 4 - 8
-        'added_gp_outputscale': {'distribution': 'uniform', 'min': 0.5, 'max': 4.0},   # racecar: 4 - 8
+        'added_gp_lengthscale': {'distribution': 'uniform', 'min': 0., 'max': 20.},   # racecar: 4 - 8
+        'added_gp_outputscale': {'distribution': 'uniform', 'min': 0., 'max': 10.},   # racecar: 4 - 8
     },
     'BNN_FSVGD_SimPrior_nu-method': {
-        'bandwidth_svgd': {'distribution': 'log_uniform_10', 'min': -1.0, 'max': 0.0},
-        'num_train_steps': {'values': [40000]},
+        'bandwidth_svgd': {'values': [0.2]},
+        'num_train_steps': {'values': [60000]},
         'num_measurement_points': {'values': [32]},
         'num_f_samples': {'values': [512]},
         'bandwidth_score_estim': {'distribution': 'uniform', 'min': 0.8, 'max': 2.0},
@@ -45,31 +45,20 @@ MODEL_SPECIFIC_CONFIG = {
         'num_f_samples': {'values': [512]},
         'bandwidth_score_estim': {'distribution': 'log_uniform_10', 'min': -0.5, 'max': 1.},
     },
-    'BNN_FSVGD_SimPrior_gp+nu-method': {
-        'bandwidth_svgd': {'distribution': 'log_uniform_10', 'min': -1.0, 'max': 0.0},
-        'num_train_steps': {'values': [40000]},
-        'num_measurement_points': {'values': [16, 32]},
-        'num_f_samples': {'values': [512]},
-        'switch_score_estimator_frac': {'values': [0.6667]},
-        'bandwidth_score_estim': {'distribution': 'log_uniform_10', 'min': 0.0, 'max': 0.5},
-    },
     'BNN_FSVGD_SimPrior_kde': {
         'bandwidth_svgd': {'distribution': 'log_uniform', 'min': -2., 'max': 2.},
         'num_train_steps': {'values': [40000]},
         'num_measurement_points': {'values': [8, 16, 32]},
         'num_f_samples': {'values': [512, 1024, 2056]},
     },
-    'BNN_MMD_SimPrior': {
-        'num_train_steps': {'values': [20000, 40000]},
-        'num_measurement_points': {'values': [8, 16, 32, 64]},
-        'num_f_samples': {'values': [64, 128, 256, 512]},
+    'SysID': {
     },
-    'BNN_SVGD_DistillPrior': {
-        'bandwidth_svgd': {'distribution': 'log_uniform', 'min': -2., 'max': 2.},
-        'num_train_steps': {'values': [20000, 40000]},
-        'num_measurement_points': {'values': [8, 16, 32]},
-        'num_f_samples': {'values': [64, 128, 256]},
-        'num_distill_steps': {'values': [30000, 60000]},
+    'GreyBox': {
+        'bandwidth_svgd': {'values': [0.2]},
+        'bandwidth_gp_prior': {'distribution': 'log_uniform', 'min': -2., 'max': 0.},
+        'num_train_steps': {'values': [20000]},
+        'num_measurement_points': {'values': [64]},
+        'likelihood_reg': {'values': [0., 1.]},
     },
 }
 
@@ -124,7 +113,7 @@ if __name__ == '__main__':
     # sweep args
     parser.add_argument('--num_hparam_samples', type=int, default=20)
     parser.add_argument('--num_model_seeds', type=int, default=3, help='number of model seeds per hparam')
-    parser.add_argument('--num_data_seeds', type=int, default=4, help='number of model seeds per hparam')
+    parser.add_argument('--num_data_seeds', type=int, default=3, help='number of model seeds per hparam')
     parser.add_argument('--num_cpus', type=int, default=1, help='number of cpus to use')
     parser.add_argument('--run_mode', type=str, default='euler')
 
@@ -135,11 +124,11 @@ if __name__ == '__main__':
     parser.add_argument('--yes', default=False, action='store_true')
 
     # data parameters
-    parser.add_argument('--data_source', type=str, default='pendulum')
-    parser.add_argument('--pred_diff', type=int, default=0)
+    parser.add_argument('--data_source', type=str, default='real_racecar_v3')
+    parser.add_argument('--pred_diff', type=int, default=1)
 
     # # standard BNN parameters
-    parser.add_argument('--model', type=str, default='BNN_SVGD')
+    parser.add_argument('--model', type=str, default='BNN_FSVGD')
     parser.add_argument('--learn_likelihood_std', type=int, default=0)
 
     args = parser.parse_args()

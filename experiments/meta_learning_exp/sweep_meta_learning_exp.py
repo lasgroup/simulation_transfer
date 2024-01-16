@@ -11,15 +11,16 @@ import os
 MODEL_SPECIFIC_CONFIG = {
     'PACOH': {
         'prior_weight': {'distribution': 'log_uniform_10', 'min': -1., 'max': 0.},
-        'num_iter_meta_train': {'values': [20000, 30000, 40000]},
-        'meta_batch_size': {'values': [4, 8, 16]},
-        'bandwidth': {'distribution': 'log_uniform_10', 'min': 0., 'max': 2.},
-        'lr': {'distribution': 'log_uniform_10', 'min': -4., 'max': -3}
+        'hyper_prior_weight': {'distribution': 'log_uniform_10', 'min': -4., 'max': 0.},
+        'num_iter_meta_train': {'values': [40000]},
+        'meta_batch_size': {'values': [4]},
+        'bandwidth': {'values': [10.]},
+        'lr': {'distribution': 'log_uniform_10', 'min': -3.5, 'max': -3}
     },
     'NP': {
-        'num_iter_meta_train': {'values': [60000]},
+        'num_iter_meta_train': {'values': [60000, 100000]},
         'latent_dim': {'values': [64, 128, 256]},
-        'hidden_dim': {'values': [32, 64, 128]},
+        'hidden_dim': {'values': [128, 256, 512]},
         'lr': {'distribution': 'log_uniform_10', 'min': -4., 'max': -3},
     },
 }
