@@ -348,20 +348,26 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
             y_test = sim_for_sampling_data._typical_f(x_test)
             return x_train, y_train, x_test, y_test, sim
         elif data_source == 'racecar_hf':
-            sim_hf = RaceCarSim(encode_angle=True, use_blend=True, only_pose=False)
-            sim_lf = RaceCarSim(encode_angle=True, use_blend=False, only_pose=False)
+            car_id = data_spec.get('car_id', 2)
+            sim_hf = RaceCarSim(encode_angle=True, use_blend=True, only_pose=False, car_id=car_id)
+            sim_lf = RaceCarSim(encode_angle=True, use_blend=False, only_pose=False, car_id=car_id)
         elif data_source == 'racecar_hf_only_pose':
-            sim_hf = RaceCarSim(encode_angle=True, use_blend=True, only_pose=True)
-            sim_lf = RaceCarSim(encode_angle=True, use_blend=False, only_pose=True)
+            car_id = data_spec.get('car_id', 2)
+            sim_hf = RaceCarSim(encode_angle=True, use_blend=True, only_pose=True, car_id=car_id)
+            sim_lf = RaceCarSim(encode_angle=True, use_blend=False, only_pose=True, car_id=car_id)
         elif data_source == 'racecar_hf_no_angvel':
-            sim_hf = RaceCarSim(encode_angle=True, use_blend=True, no_angular_velocity=True)
-            sim_lf = RaceCarSim(encode_angle=True, use_blend=False, no_angular_velocity=True)
+            car_id = data_spec.get('car_id', 2)
+            sim_hf = RaceCarSim(encode_angle=True, use_blend=True, no_angular_velocity=True, car_id=car_id)
+            sim_lf = RaceCarSim(encode_angle=True, use_blend=False, no_angular_velocity=True, car_id=car_id)
         elif data_source == 'racecar_only_pose':
-            sim_hf = sim_lf = RaceCarSim(encode_angle=True, use_blend=True, only_pose=True)
+            car_id = data_spec.get('car_id', 2)
+            sim_hf = sim_lf = RaceCarSim(encode_angle=True, use_blend=True, only_pose=True, car_id=car_id)
         elif data_source == 'racecar_no_angvel':
-            sim_hf = sim_lf = RaceCarSim(encode_angle=True, use_blend=True, no_angular_velocity=True)
+            car_id = data_spec.get('car_id', 2)
+            sim_hf = sim_lf = RaceCarSim(encode_angle=True, use_blend=True, no_angular_velocity=True, car_id=car_id)
         elif data_source == 'racecar':
-            sim_hf = sim_lf = RaceCarSim(encode_angle=True, use_blend=True, only_pose=False)
+            car_id = data_spec.get('car_id', 2)
+            sim_hf = sim_lf = RaceCarSim(encode_angle=True, use_blend=True, only_pose=False, car_id=car_id)
         else:
             raise ValueError(f'Unknown data source {data_source}')
         assert {'num_samples_train'} <= set(data_spec.keys()) <= {'num_samples_train'}.union(DEFAULTS_RACECAR.keys())

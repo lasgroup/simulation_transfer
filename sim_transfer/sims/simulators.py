@@ -759,7 +759,7 @@ class RaceCarSim(FunctionSimulator):
                                    output_size=_output_size)
 
         # set car id
-        assert car_id in [1, 2]
+        assert car_id in [1, 2, 3]
         self.car_id = car_id
         self._set_default_params()
 
@@ -918,7 +918,10 @@ class RaceCarSim(FunctionSimulator):
         from sim_transfer.sims.car_sim_config import (DEFAULT_PARAMS_BICYCLE_CAR1, DEFAULT_PARAMS_BLEND_CAR1,
                                                       BOUNDS_PARAMS_BICYCLE_CAR1, BOUNDS_PARAMS_BLEND_CAR1,
                                                       DEFAULT_PARAMS_BICYCLE_CAR2, DEFAULT_PARAMS_BLEND_CAR2,
-                                                      BOUNDS_PARAMS_BICYCLE_CAR2, BOUNDS_PARAMS_BLEND_CAR2)
+                                                      BOUNDS_PARAMS_BICYCLE_CAR2, BOUNDS_PARAMS_BLEND_CAR2,
+                                                      DEFAULT_PARAMS_BICYCLE_CAR3, DEFAULT_PARAMS_BLEND_CAR3,
+                                                      BOUNDS_PARAMS_BICYCLE_CAR3, BOUNDS_PARAMS_BLEND_CAR3,
+                                                      )
         if self.car_id == 1:
             self._default_car_model_params_bicycle = DEFAULT_PARAMS_BICYCLE_CAR1
             self._bounds_car_model_params_bicycle = BOUNDS_PARAMS_BICYCLE_CAR1
@@ -929,6 +932,11 @@ class RaceCarSim(FunctionSimulator):
             self._bounds_car_model_params_bicycle = BOUNDS_PARAMS_BICYCLE_CAR2
             self._default_car_model_params_blend = DEFAULT_PARAMS_BLEND_CAR2
             self._bounds_car_model_params_blend = BOUNDS_PARAMS_BLEND_CAR2
+        elif self.car_id == 3:
+            self._default_car_model_params_bicycle = DEFAULT_PARAMS_BICYCLE_CAR3
+            self._bounds_car_model_params_bicycle = BOUNDS_PARAMS_BICYCLE_CAR3
+            self._default_car_model_params_blend = DEFAULT_PARAMS_BLEND_CAR3
+            self._bounds_car_model_params_blend = BOUNDS_PARAMS_BLEND_CAR3
         else:
             raise ValueError(f'Car id {self.car_id} not supported.')
 
