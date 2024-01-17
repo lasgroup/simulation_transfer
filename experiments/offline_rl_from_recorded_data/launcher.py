@@ -1,11 +1,11 @@
 import exp
 from experiments.util import generate_run_commands, generate_base_command, dict_permutations
 
-PROJECT_NAME = 'OfflineRLRunsGreyHW'
+PROJECT_NAME = 'OfflineRLSim_Jan12'
 
 _applicable_configs = {
-    'horizon_len': [200],
-    'seed': list(range(5)),
+    'horizon_len': [100],
+    'seed': list(range(10)),
     'project_name': [PROJECT_NAME],
     'sac_num_env_steps': [2_000_000],
     'num_epochs': [50],
@@ -26,13 +26,14 @@ _applicable_configs = {
     'bnn_batch_size': [32],
     'likelihood_exponent': [0.5],
     'train_sac_only_from_init_states': [0],
-    'data_from_simulation': [0],
+    'data_from_simulation': [1],
     'num_frame_stack': [3],
     'bandwidth_svgd': [0.2],
     'length_scale_aditive_sim_gp': [5.0],
     'input_from_recorded_data': [1],
     'obtain_consecutive_data': [1],
     'lr': [3e-4],
+    'car_id': [2],
 }
 
 _applicable_configs_no_sim_prior = {'use_sim_prior': [0],
@@ -90,7 +91,9 @@ _applicable_configs_sim_model_low_fidelity = {'use_sim_prior': [0],
 sim_flags = dict_permutations(_applicable_configs_no_sim_prior) + dict_permutations(
     _applicable_configs_high_fidelity) + dict_permutations(_applicable_configs_low_fidelity) + \
             dict_permutations(_applicable_configs_grey_box_low_fidelity) + \
-            dict_permutations(_applicable_configs_sim_model_low_fidelity)
+            dict_permutations(_applicable_configs_sim_model_low_fidelity) + \
+            dict_permutations(_applicable_configs_grey_box_high_fidelity) + \
+            dict_permutations(_applicable_configs_sim_model_high_fidelity)
 
 hw_flags = dict_permutations(_applicable_configs_no_sim_prior) + dict_permutations(
     _applicable_configs_high_fidelity) + dict_permutations(_applicable_configs_low_fidelity) + \

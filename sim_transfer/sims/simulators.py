@@ -347,6 +347,23 @@ class SinusoidsSim(FunctionSimulator):
     def _f2(self, amp, freq, slope, x):
         return amp * jnp.cos(freq * x) - slope * x
 
+    def sample_function(self, rng_key: jax.random.PRNGKey) -> Callable:
+        key1, key2, key3, key4 = jax.random.split(rng_key, 4)
+        freq = jax.random.uniform(key1, minval=self.freq1_mid - self.freq1_spread,
+                                  maxval=self.freq1_mid + self.freq1_spread)
+        amp = self.amp_mean + self.amp_std * jax.random.normal(key2)
+        slope = self.slope_mean + self.slope_std * jax.random.normal(key3)
+        f = lambda x: self._f1(amp, freq, slope, x)
+        if self.output_size == 1:
+            return f
+        elif self.output_size == 2:
+            freq2 = jax.random.uniform(key4, minval=self.freq2_mid - self.freq2_spread,
+                                       maxval=self.freq2_mid + self.freq2_spread)
+            f2 = lambda x: self._f2(amp, freq2, slope, x)
+            return lambda x: jnp.concatenate([f(x)[:, None], f2(x)[:, None]], axis=-1)
+        else:
+            raise NotImplementedError
+
     def _typical_f(self, x: jnp.array) -> jnp.array:
         assert x.ndim == 2 and x.shape[-1] == self.input_size
         f = self._f1(self.amp_mean, self.freq1_mid, self.slope_mean, x)
@@ -759,7 +776,7 @@ class RaceCarSim(FunctionSimulator):
                                    output_size=_output_size)
 
         # set car id
-        assert car_id in [1, 2]
+        assert car_id in [1, 2, 3]
         self.car_id = car_id
         self._set_default_params()
 
@@ -918,7 +935,10 @@ class RaceCarSim(FunctionSimulator):
         from sim_transfer.sims.car_sim_config import (DEFAULT_PARAMS_BICYCLE_CAR1, DEFAULT_PARAMS_BLEND_CAR1,
                                                       BOUNDS_PARAMS_BICYCLE_CAR1, BOUNDS_PARAMS_BLEND_CAR1,
                                                       DEFAULT_PARAMS_BICYCLE_CAR2, DEFAULT_PARAMS_BLEND_CAR2,
-                                                      BOUNDS_PARAMS_BICYCLE_CAR2, BOUNDS_PARAMS_BLEND_CAR2)
+                                                      BOUNDS_PARAMS_BICYCLE_CAR2, BOUNDS_PARAMS_BLEND_CAR2,
+                                                      DEFAULT_PARAMS_BICYCLE_CAR3, DEFAULT_PARAMS_BLEND_CAR3,
+                                                      BOUNDS_PARAMS_BICYCLE_CAR3, BOUNDS_PARAMS_BLEND_CAR3,
+                                                      )
         if self.car_id == 1:
             self._default_car_model_params_bicycle = DEFAULT_PARAMS_BICYCLE_CAR1
             self._bounds_car_model_params_bicycle = BOUNDS_PARAMS_BICYCLE_CAR1
@@ -929,6 +949,11 @@ class RaceCarSim(FunctionSimulator):
             self._bounds_car_model_params_bicycle = BOUNDS_PARAMS_BICYCLE_CAR2
             self._default_car_model_params_blend = DEFAULT_PARAMS_BLEND_CAR2
             self._bounds_car_model_params_blend = BOUNDS_PARAMS_BLEND_CAR2
+        elif self.car_id == 3:
+            self._default_car_model_params_bicycle = DEFAULT_PARAMS_BICYCLE_CAR3
+            self._bounds_car_model_params_bicycle = BOUNDS_PARAMS_BICYCLE_CAR3
+            self._default_car_model_params_blend = DEFAULT_PARAMS_BLEND_CAR3
+            self._bounds_car_model_params_blend = BOUNDS_PARAMS_BLEND_CAR3
         else:
             raise ValueError(f'Car id {self.car_id} not supported.')
 

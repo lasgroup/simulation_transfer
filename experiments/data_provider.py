@@ -96,7 +96,7 @@ DATASET_CONFIGS.update({
         'likelihood_std': {'value': _RACECAR_NOISE_STD_ENCODED.tolist()},
         'num_samples_train': {'value': 200},
     } for name in ['real_racecar_new', 'real_racecar_new_only_pose', 'real_racecar_new_no_angvel',
-                   'real_racecar_new_actionstack', 'real_racecar_v2']
+                   'real_racecar_new_actionstack', 'real_racecar_v2', 'real_racecar_v3', 'real_racecar_v4']
 })
 
 
@@ -348,20 +348,26 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
             y_test = sim_for_sampling_data._typical_f(x_test)
             return x_train, y_train, x_test, y_test, sim
         elif data_source == 'racecar_hf':
-            sim_hf = RaceCarSim(encode_angle=True, use_blend=True, only_pose=False)
-            sim_lf = RaceCarSim(encode_angle=True, use_blend=False, only_pose=False)
+            car_id = data_spec.get('car_id', 2)
+            sim_hf = RaceCarSim(encode_angle=True, use_blend=True, only_pose=False, car_id=car_id)
+            sim_lf = RaceCarSim(encode_angle=True, use_blend=False, only_pose=False, car_id=car_id)
         elif data_source == 'racecar_hf_only_pose':
-            sim_hf = RaceCarSim(encode_angle=True, use_blend=True, only_pose=True)
-            sim_lf = RaceCarSim(encode_angle=True, use_blend=False, only_pose=True)
+            car_id = data_spec.get('car_id', 2)
+            sim_hf = RaceCarSim(encode_angle=True, use_blend=True, only_pose=True, car_id=car_id)
+            sim_lf = RaceCarSim(encode_angle=True, use_blend=False, only_pose=True, car_id=car_id)
         elif data_source == 'racecar_hf_no_angvel':
-            sim_hf = RaceCarSim(encode_angle=True, use_blend=True, no_angular_velocity=True)
-            sim_lf = RaceCarSim(encode_angle=True, use_blend=False, no_angular_velocity=True)
+            car_id = data_spec.get('car_id', 2)
+            sim_hf = RaceCarSim(encode_angle=True, use_blend=True, no_angular_velocity=True, car_id=car_id)
+            sim_lf = RaceCarSim(encode_angle=True, use_blend=False, no_angular_velocity=True, car_id=car_id)
         elif data_source == 'racecar_only_pose':
-            sim_hf = sim_lf = RaceCarSim(encode_angle=True, use_blend=True, only_pose=True)
+            car_id = data_spec.get('car_id', 2)
+            sim_hf = sim_lf = RaceCarSim(encode_angle=True, use_blend=True, only_pose=True, car_id=car_id)
         elif data_source == 'racecar_no_angvel':
-            sim_hf = sim_lf = RaceCarSim(encode_angle=True, use_blend=True, no_angular_velocity=True)
+            car_id = data_spec.get('car_id', 2)
+            sim_hf = sim_lf = RaceCarSim(encode_angle=True, use_blend=True, no_angular_velocity=True, car_id=car_id)
         elif data_source == 'racecar':
-            sim_hf = sim_lf = RaceCarSim(encode_angle=True, use_blend=True, only_pose=False)
+            car_id = data_spec.get('car_id', 2)
+            sim_hf = sim_lf = RaceCarSim(encode_angle=True, use_blend=True, only_pose=False, car_id=car_id)
         else:
             raise ValueError(f'Unknown data source {data_source}')
         assert {'num_samples_train'} <= set(data_spec.keys()) <= {'num_samples_train'}.union(DEFAULTS_RACECAR.keys())
@@ -385,10 +391,10 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
         elif data_source.startswith('real_racecar_new'):
             x_train, y_train, x_test, y_test = get_rccar_recorded_data_new(encode_angle=True, action_stacking=False,
                                                                            action_delay=3, car_id=car_id)
-        elif data_source.startswith('real_racecar_v2'):
+        elif data_source.startswith('real_racecar_v3'):
             x_train, y_train, x_test, y_test = get_rccar_recorded_data_new(encode_angle=True, action_stacking=False,
                                                                            action_delay=3, car_id=car_id,
-                                                                           dataset='v2')
+                                                                           dataset='v3')
         else:
             x_train, y_train, x_test, y_test = get_rccar_recorded_data(encode_angle=True)
 
@@ -411,7 +417,7 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
         elif sampling_scheme == 'consecutive':
             # sample random sub-trajectory (datapoints are adjacent in time -> highly correlated)
             offset_train = jax.random.choice(key_train, jnp.arange(num_train_available - num_train))
-            offset_test = jax.random.choice(key_test, jnp.arange(num_test_available - num_test))
+            offset_test = jax.random.choice(key_test, jnp.arange(num_test_available - num_test + 1))
             idx_train = jnp.arange(num_train) + offset_train
             idx_test = jnp.arange(num_test) + offset_test
         else:
