@@ -13,7 +13,8 @@ ENTITY = 'sukhijab'
 
 
 def experiment(horizon_len: int,
-               seed: int,
+               model_seed: int,
+               data_seed: int,
                project_name: str,
                sac_num_env_steps: int,
                learnable_likelihood_std: str,
@@ -102,7 +103,8 @@ def experiment(horizon_len: int,
                       )
 
     config_dict = dict(horizon_len=horizon_len,
-                       seed=seed,
+                       model_seed=model_seed,
+                       data_seed=data_seed,
                        bnn_train_steps=bnn_train_steps,
                        sac_num_env_steps=sac_num_env_steps,
                        ll_std=learnable_likelihood_std,
@@ -145,8 +147,9 @@ def experiment(horizon_len: int,
     )
 
     # Deal with randomness
-    key = jr.PRNGKey(seed)
-    key, key_data_seed = jr.split(key, 2)
+    model_key = jr.PRNGKey(model_seed)
+    data_key = jr.PRNGKey(data_seed)
+
     int_data_seed = jr.randint(key_data_seed, (), minval=0, maxval=2 ** 13 - 1)
     assert num_offline_collected_transitions <= 20_000, "Cannot have more than 20_000 points for training"
     if bool(obtain_consecutive_data):
