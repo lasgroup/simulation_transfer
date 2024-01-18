@@ -4,7 +4,6 @@ from jax import vmap
 from jax.lax import cond
 import argparse
 
-
 import wandb
 from sim_transfer.models.bnn_fsvgd_sim_prior import BNN_FSVGD_SimPrior
 from sim_transfer.sims import LinearBimodalSim
@@ -62,10 +61,21 @@ def experiment(score_estimator: str, seed: int, project_name: str):
     for i in range(10):
         bnn.fit(x_train, y_train, x_eval=x_test, y_eval=y_test, num_steps=2000, log_to_wandb=True)
         if NUM_DIM_X == 1:
-            bnn.plot_1d(x_train, y_train, true_fun=v_fun,
+            bnn.plot_1d(x_train, y_train,
+                        true_fun=v_fun,
                         title=f'FSVGD SimPrior {score_estimator}, iter {(i + 1) * 2000}',
-                        domain_l=domain.l[0], domain_u=domain.u[0], log_to_wandb=True)
+                        domain_l=domain.l[0],
+                        domain_u=domain.u[0],
+                        log_to_wandb=True)
 
+    # Final plot, save data as well
+    bnn.plot_1d(x_train, y_train,
+                true_fun=v_fun,
+                title=f'FSVGD SimPrior {score_estimator}, final plot',
+                domain_l=domain.l[0],
+                domain_u=domain.u[0],
+                log_to_wandb=True,
+                save_plot_dict=True)
 
 def main(args):
     experiment(args.score_estimator, args.seed, args.project_name)

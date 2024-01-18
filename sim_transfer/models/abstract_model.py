@@ -1,18 +1,22 @@
 import copy
 import logging
+import os
+import pickle
 import time
 from typing import Optional, Tuple, Callable, Dict, List, Union
-from jaxtyping import PyTree
+
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
+import optax
 import tensorflow as tf
 import tensorflow_datasets as tfds
 import tensorflow_probability.substrates.jax.distributions as tfd
 import wandb
+from jaxtyping import PyTree
 from tensorflow_probability.substrates import jax as tfp
-import optax
+
 from sim_transfer.modules.distribution import AffineTransform
 from sim_transfer.modules.metrics import _check_dist_and_sample_shapes, _get_mean_std_from_dist
 from sim_transfer.modules.nn_modules import BatchedMLP
@@ -246,11 +250,20 @@ class AbstractRegressionModel(RngKeyMixin):
         eval_stats = {name: float(val) for name, val in eval_stats.items()}
         return eval_stats
 
-    def plot_1d(self, x_train: jnp.ndarray, y_train: jnp.ndarray,
-                domain_l: Optional[float] = None, domain_u: Optional[float] = None,
-                true_fun: Optional[Callable] = None, title: Optional[str] = '', show: bool = True,
-                plot_posterior_samples: bool = False, log_to_wandb: bool = False):
+    def plot_1d(self,
+                x_train: jnp.ndarray,
+                y_train: jnp.ndarray,
+                domain_l: Optional[float] = None,
+                domain_u: Optional[float] = None,
+                true_fun: Optional[Callable] = None,
+                title: Optional[str] = '',
+                show: bool = True,
+                plot_posterior_samples: bool = False,
+                log_to_wandb: bool = False,
+                save_plot_dict: bool = False):
         assert self.input_size == 1, 'Can only plot if input_size = 1'
+
+        plot_data = dict()
 
         # determine plotting domain
         x_min, x_max = jnp.min(x_train, axis=0), jnp.max(x_train, axis=0)
@@ -269,24 +282,40 @@ class AbstractRegressionModel(RngKeyMixin):
         if self.output_size == 1:
             ax = [ax]
         for i in range(self.output_size):
-            ax[i].scatter(x_train.flatten(), y_train[:, i], label='train points')
+            plot_data_dim = dict()
+            plot_data_dim['Train points'] = (x_train.flatten(), y_train[:, i])
+            ax[i].scatter(*plot_data_dim['Train points'], label='train points')
             if true_fun is not None:
-                ax[i].plot(x_plot, true_fun(x_plot)[:, i], label='true fun')
-            ax[i].plot(x_plot.flatten(), pred_mean[:, i], label='pred mean')
-            ax[i].fill_between(x_plot.flatten(), pred_mean[:, i] - pred_std[:, i],
-                               pred_mean[:, i] + pred_std[:, i], alpha=0.3)
+                plot_data_dim['True function'] = (x_plot, true_fun(x_plot)[:, i])
+                ax[i].plot(*plot_data_dim['True function'], label='true fun')
+
+            plot_data_dim['Mean prediction'] = (x_plot.flatten(), pred_mean[:, i])
+            plot_data_dim['Fill between std'] = (x_plot.flatten(), pred_mean[:, i] - pred_std[:, i],
+                                                 pred_mean[:, i] + pred_std[:, i])
+            ax[i].plot(*plot_data_dim['Mean prediction'], label='pred mean')
+            ax[i].fill_between(*plot_data_dim['Fill between std'], alpha=0.3)
 
             if hasattr(self, 'predict_post_samples') and plot_posterior_samples:
                 y_post_samples = self.predict_post_samples(x_plot)
+                plot_data_dim['Sample predictions'] = (x_plot, y_post_samples[..., i])
                 for y in y_post_samples:
                     ax[i].plot(x_plot, y[:, i], linewidth=0.2, color='green')
 
             if title is not None:
                 ax[i].set_title(f'Output dimension {i}')
             ax[i].legend()
+            plot_data[f'Dimension_{i}'] = plot_data_dim
         fig.suptitle(title)
         if log_to_wandb:
             wandb.log({title: wandb.Image(fig)})
+            if save_plot_dict:
+                directory = os.path.join(wandb.run.dir, 'data')
+                if not os.path.exists(directory):
+                    os.makedirs(directory)
+                data_path = os.path.join('data', 'plot_data.pkl')
+                with open(os.path.join(wandb.run.dir, data_path), 'wb') as handle:
+                    pickle.dump(data_path, handle)
+                wandb.save(os.path.join(wandb.run.dir, data_path), wandb.run.dir)
         if show:
             fig.show()
 
