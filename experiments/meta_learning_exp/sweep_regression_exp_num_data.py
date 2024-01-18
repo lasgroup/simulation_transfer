@@ -12,13 +12,13 @@ MODEL_SPECIFIC_CONFIG = {
     'PACOH': {
         'prior_weight': {'values': [0.1]},
         'hyper_prior_weight': {'values': [1e-3]},
-        'num_iter_meta_train': {'values': [40000]},
+        'num_iter_meta_train': {'values': [100_000]},
         'meta_batch_size': {'values': [4]},
         'bandwidth': {'values': [10.]},
         'lr': {'values': [5e-4]},
     },
     'NP': {
-        'num_iter_meta_train': {'values': [50000]},
+        'num_iter_meta_train': {'values': [100_000]},
         'latent_dim': {'values': [256]},
         'hidden_dim': {'values': [128]},
         'lr': {'values': [5e-4]},
