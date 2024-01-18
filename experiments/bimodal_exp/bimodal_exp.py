@@ -66,7 +66,9 @@ def experiment(score_estimator: str, seed: int, project_name: str):
                         title=f'FSVGD SimPrior {score_estimator}, iter {(i + 1) * 2000}',
                         domain_l=domain.l[0],
                         domain_u=domain.u[0],
-                        log_to_wandb=True)
+                        plot_posterior_samples=True,
+                        log_to_wandb=True,
+                        )
 
     # Final plot, save data as well
     bnn.plot_1d(x_train, y_train,
@@ -74,8 +76,10 @@ def experiment(score_estimator: str, seed: int, project_name: str):
                 title=f'FSVGD SimPrior {score_estimator}, final plot',
                 domain_l=domain.l[0],
                 domain_u=domain.u[0],
+                plot_posterior_samples=True,
                 log_to_wandb=True,
-                save_plot_dict=True)
+                save_plot_dict=True,
+                )
 
 def main(args):
     experiment(args.score_estimator, args.seed, args.project_name)

@@ -314,7 +314,7 @@ class AbstractRegressionModel(RngKeyMixin):
                     os.makedirs(directory)
                 data_path = os.path.join('data', 'plot_data.pkl')
                 with open(os.path.join(wandb.run.dir, data_path), 'wb') as handle:
-                    pickle.dump(data_path, handle)
+                    pickle.dump(plot_data, handle)
                 wandb.save(os.path.join(wandb.run.dir, data_path), wandb.run.dir)
         if show:
             fig.show()
