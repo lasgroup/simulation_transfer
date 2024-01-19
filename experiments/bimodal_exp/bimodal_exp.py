@@ -1,15 +1,20 @@
-import jax
-import jax.numpy as jnp
-from jax import vmap
-from jax.lax import cond
 import argparse
 
+import jax
+import jax.numpy as jnp
+import jax.random as jr
 import wandb
+from jax import vmap
+from jax.lax import cond
+
 from sim_transfer.models.bnn_fsvgd_sim_prior import BNN_FSVGD_SimPrior
 from sim_transfer.sims import LinearBimodalSim
 
 
-def experiment(score_estimator: str, seed: int, project_name: str):
+def experiment(score_estimator: str,
+               seed: int,
+               data_seed: int,
+               project_name: str):
     def key_iter():
         key = jax.random.PRNGKey(seed)
         while True:
@@ -35,7 +40,7 @@ def experiment(score_estimator: str, seed: int, project_name: str):
     domain = sim.domain
 
     num_train_points = 3
-    x_train = jax.random.uniform(key=next(key_iter), shape=(num_train_points,),
+    x_train = jax.random.uniform(key=jr.PRNGKey(data_seed), shape=(num_train_points,),
                                  minval=domain.l, maxval=jnp.array([0.0])).reshape(-1, 1)
     y_train = v_fun(x_train)
 
@@ -81,13 +86,18 @@ def experiment(score_estimator: str, seed: int, project_name: str):
                 save_plot_dict=True,
                 )
 
+
 def main(args):
-    experiment(args.score_estimator, args.seed, args.project_name)
+    experiment(score_estimator=args.score_estimator,
+               seed=args.seed,
+               data_seed=args.data_seed,
+               project_name=args.project_name)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--data_seed', type=int, default=0)
     parser.add_argument('--score_estimator', type=str, default='gp')
     parser.add_argument('--project_name', type=str, default='LinearBimodal')
     args = parser.parse_args()
