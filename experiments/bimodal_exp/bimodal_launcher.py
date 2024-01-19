@@ -1,7 +1,7 @@
 import bimodal_exp
 from experiments.util import generate_run_commands, generate_base_command
 
-PROJECT_NAME = 'LinearBimodalSimPrior_18Jan_N3'
+PROJECT_NAME = 'LinearBimodalSimPrior_19Jan_N1'
 
 applicable_configs = {
     'score_estimator': ['gp', 'ssge', 'nu-method', 'kde'],
