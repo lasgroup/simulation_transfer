@@ -429,6 +429,7 @@ class AbstractSVGD_BNN(AbstractParticleBNN):
             stats = OrderedDict(train_nll_loss=nll)
         if self.learn_likelihood_std:
             stats['likelihood_std'] = jnp.mean(self._likelihood_std_transform(params['likelihood_std_raw']))
+            stats['likelihood_std_min'] = jnp.min(self._likelihood_std_transform(params['likelihood_std_raw']))
         if self.likelihood_reg > 0:
             stats['likelihood_penalty'] = likelihood_penalty
         return neg_log_post, stats
