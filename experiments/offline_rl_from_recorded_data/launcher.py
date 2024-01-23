@@ -5,7 +5,8 @@ PROJECT_NAME = 'OfflineRLSim_Jan12'
 
 _applicable_configs = {
     'horizon_len': [100],
-    'seed': list(range(10)),
+    'model_seed': list(range(5)),
+    'data_seed': list(range(5)),
     'project_name': [PROJECT_NAME],
     'sac_num_env_steps': [2_000_000],
     'num_epochs': [50],

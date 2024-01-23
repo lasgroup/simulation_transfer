@@ -40,7 +40,7 @@ def different_method_plot(df_agg: pd.DataFrame, metric: str = 'nll', display: bo
     return best_rows_df, fig
 
 
-def main(args, drop_nan=False):
+def main(args, drop_nan=False, fig=None, show_legend=True):
     df_full, param_names = collect_exp_results(exp_name=args.exp_name)
     df_full = df_full[df_full['data_source'] == args.data_source]
     #df_full = df_full[df_full['model'] == args.data_source]
@@ -80,7 +80,7 @@ def main(args, drop_nan=False):
         df_full[column] = df_full[column].fillna('N/A')
 
     # first take mean over the data seeds
-    df_mean = df_full.groupby(by=groupby_names + ['model_seed'], axis=0).mean()
+    df_mean = df_full.groupby(by=groupby_names + ['model_seed'], axis=0).mean(numeric_only=True)
     df_mean.reset_index(drop=False, inplace=True)
 
     # then compute the stats over the model seeds
@@ -91,35 +91,61 @@ def main(args, drop_nan=False):
     # filter all the rows where the count is less than 3
     df_agg = df_agg[df_agg['rmse']['count'] >= 3]
 
-    available_models = set(df_agg['model'])
-    for metric in ['nll', 'rmse']:
-        fig, ax = plt.subplots()
+    available_models = sorted(list(set(df_agg['model'])))
+    if fig is None:
+        fig, axs = plt.subplots(1, 2)
+    else:
+        axs = fig.subplots(1, 2)
+    for idx, metric in enumerate(['nll', 'rmse']):
         for model in available_models:
             df_model = df_agg[df_agg['model'] == model].sort_values(by=[('num_samples_train', '')], ascending=True)
             if args.quantile_cis:
-                ax.plot(df_model[('num_samples_train', '')], df_model[(metric, 'median')], label=model)
+                axs[idx].plot(df_model[('num_samples_train', '')], df_model[(metric, 'median')], label=model)
                 lower_ci = df_model[(metric, 'lcb')]
                 upper_ci = df_model[(metric, 'ucb')]
             else:
-                ax.plot(df_model[('num_samples_train', '')], df_model[(metric, 'mean')], label=model)
+                axs[idx].plot(df_model[('num_samples_train', '')], df_model[(metric, 'mean')], label=model)
                 CI_width = 2 * np.sqrt(df_model[(metric, 'count')])
                 lower_ci = df_model[(metric, 'mean')] - CI_width * df_model[(metric, 'std')]
                 upper_ci = df_model[(metric, 'mean')] + CI_width * df_model[(metric, 'std')]
-            ax.fill_between(df_model[('num_samples_train', '')], lower_ci, upper_ci, alpha=0.3)
-        ax.set_title(f'{args.data_source} - {metric}')
-        #ax.set_xscale('log')
+            axs[idx].fill_between(df_model[('num_samples_train', '')], lower_ci, upper_ci, alpha=0.3)
+        axs[idx].set_title(f'{args.data_source} - {metric}')
+        # ax.set_xscale('log')
         #ax.set_ylim((-3.8, -2.))
 
-        ax.legend()
-        fig.show()
+    handles, labels = plt.gca().get_legend_handles_labels()
+    by_label = dict(zip(labels, handles))
+    if show_legend:
+        fig.legend(by_label.values(), by_label.keys(), ncols=4, loc='lower center',
+                   bbox_to_anchor=(0.5, 0), fontsize=10)
+        # fig.tight_layout(rect=[0, 0.1, 1, 1])
+
+    # plt.show()
     print('Models:', set(df_agg['model']))
 
 
 
 if __name__ == '__main__':
+    figure = plt.figure(figsize=(10, 7))
+    subfigs = figure.subfigures(2, 1, hspace=-0.1)
+
+
+    parser = argparse.ArgumentParser(description='Inspect results of a regression experiment.')
+    parser.add_argument('--exp_name', type=str, default='jan10_num_data')
+    parser.add_argument('--quantile_cis', type=int, default=1)
+    parser.add_argument('--data_source', type=str, default='racecar')
+    args = parser.parse_args()
+
+
+    main(args, fig=subfigs[0], show_legend=False)
+
     parser = argparse.ArgumentParser(description='Inspect results of a regression experiment.')
     parser.add_argument('--exp_name', type=str, default='jan10_num_data')
     parser.add_argument('--quantile_cis', type=int, default=1)
     parser.add_argument('--data_source', type=str, default='pendulum')
     args = parser.parse_args()
-    main(args)
+
+    main(args, fig=subfigs[1])
+    plt.tight_layout(rect=[0, 0.2, 1, 0.9])
+    plt.savefig('regression_exp.pdf')
+    plt.show()

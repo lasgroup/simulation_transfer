@@ -191,7 +191,7 @@ def get_rccar_recorded_data_new(encode_angle: bool = True, skip_first_n_points: 
                                 action_delay: int = 3, action_stacking: bool = False,
                                 car_id: int = 2):
 
-    assert car_id in [1, 2]
+    assert car_id in [1, 2, 3]
     if car_id == 1:
         assert dataset in ['all', 'v1']
         recordings_dir = [os.path.join(DATA_DIR, 'recordings_rc_car_v1')]

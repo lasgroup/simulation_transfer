@@ -168,3 +168,4 @@ Temporary Items
 
 # exlcluded files
 plotting_scripts/plots
+/experiments/1d_visualization/plot_dicts/

@@ -38,10 +38,8 @@ def join_group_names_and_prepare_statistics_mean(data: pd.DataFrame):
 
 def join_group_names_and_prepare_statistics(data: pd.DataFrame):
     summary_rewards = data.groupby('Group')[reward_column].agg(['median',
-                                                                lambda x: x.quantile(0.2),
-                                                                # 0.2 quantile
-                                                                lambda x: x.quantile(0.8)
-                                                                # 0.8 quantile
+                                                                lambda x: x.quantile(0.2),  # 0.2 quantile
+                                                                lambda x: x.quantile(0.8)  # 0.8 quantile
                                                                 ])
 
     summary = pd.concat([summary_rewards], axis=1)

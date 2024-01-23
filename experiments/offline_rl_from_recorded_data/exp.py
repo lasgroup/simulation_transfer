@@ -152,7 +152,7 @@ def experiment(horizon_len: int,
     model_key = jr.PRNGKey(model_seed)
     data_key = jr.PRNGKey(data_seed)
 
-    int_data_seed = jr.randint(key_data_seed, (), minval=0, maxval=2 ** 13 - 1)
+    int_data_seed = jr.randint(data_key, (), minval=0, maxval=2 ** 13 - 1)
     assert num_offline_collected_transitions <= 20_000, "Cannot have more than 20_000 points for training"
     if bool(obtain_consecutive_data):
         if bool(data_from_simulation):
@@ -201,9 +201,7 @@ def experiment(horizon_len: int,
                            },
                 data_seed=int(int_data_seed), )
 
-    # Deal with randomness
-    key = jr.PRNGKey(seed)
-    key_bnn, key_offline_rl, key_evaluation_trained_bnn, key_evaluation_pretrained_bnn = jr.split(key, 4)
+    key_bnn, key_offline_rl, key_evaluation_trained_bnn, key_evaluation_pretrained_bnn = jr.split(model_key, 4)
 
     standard_params = {
         'input_size': sim.input_size,
@@ -315,7 +313,8 @@ def experiment(horizon_len: int,
 
 def main(args):
     experiment(
-        seed=args.seed,
+        model_seed=args.model_seed,
+        data_seed=args.data_seed,
         project_name=args.project_name,
         horizon_len=args.horizon_len,
         sac_num_env_steps=args.sac_num_env_steps,
@@ -356,10 +355,11 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--model_seed', type=int, default=0)
+    parser.add_argument('--data_seed', type=int, default=0)
     parser.add_argument('--horizon_len', type=int, default=200)
     parser.add_argument('--sac_num_env_steps', type=int, default=10_000)
-    parser.add_argument('--project_name', type=str, default='RaceCarPPO')
+    parser.add_argument('--project_name', type=str, default='RaceCarTestExperiments')
     parser.add_argument('--learnable_likelihood_std', type=str, default='yes')
     parser.add_argument('--include_aleatoric_noise', type=int, default=1)
     parser.add_argument('--best_bnn_model', type=int, default=1)
@@ -388,7 +388,7 @@ if __name__ == '__main__':
     parser.add_argument('--max_train_steps', type=int, default=10_000)
     parser.add_argument('--min_train_steps', type=int, default=10_000)
     parser.add_argument('--length_scale_aditive_sim_gp', type=float, default=1.0)
-    parser.add_argument('--input_from_recorded_data', type=int, default=1)
+    parser.add_argument('--input_from_recorded_data', type=int, default=0)
     parser.add_argument('--obtain_consecutive_data', type=int, default=1)
     parser.add_argument('--lr', type=float, default=3e-4)
     parser.add_argument('--car_id', type=int, default=3)
