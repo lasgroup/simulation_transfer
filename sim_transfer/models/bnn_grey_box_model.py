@@ -128,9 +128,9 @@ class BNNGreyBox(AbstractRegressionModel):
     @property
     def sim_likelihood_std(self):
         if self.learn_likelihood_std:
-            likelihood_std = jnp.exp(self.params_sim['likelihood_std'])
+            likelihood_std = jax.nn.softplus(self.params_sim['likelihood_std'])
         else:
-            likelihood_std = jnp.exp(self.init_likelihood_std)
+            likelihood_std = jax.nn.softplus(self.init_likelihood_std)
         return likelihood_std
 
     @property
@@ -244,8 +244,8 @@ class BNNGreyBox(AbstractRegressionModel):
         normalized_sim_model_prediction = self._normalize_y_sim(sim_model_prediction)
         assert normalized_sim_model_prediction.shape == sim_model_prediction.shape
         # get likelihood std
-        likelihood_std = jnp.exp(params_sim['likelihood_std']) if self.learn_likelihood_std \
-            else self.init_likelihood_std
+        likelihood_std = jax.nn.softplus(params_sim['likelihood_std']) if self.learn_likelihood_std \
+            else jax.nn.softplus(self.init_likelihood_std)
 
         def _ll(pred, y):
             return tfd.MultivariateNormalDiag(pred, likelihood_std).log_prob(y)
