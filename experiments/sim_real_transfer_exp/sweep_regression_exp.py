@@ -11,23 +11,24 @@ import os
 MODEL_SPECIFIC_CONFIG = {
     'BNN_SVGD': {
         'bandwidth_svgd': {'distribution': 'log_uniform', 'min': -1., 'max': 4.},
-        'num_train_steps': {'values': [20000]},
-        'likelihood_reg': {'values': [0., 1.]},
+        'min_train_steps': {'values': [2000]},
+        'num_epochs': {'values': [60]},
+        'likelihood_reg': {'values': [1.]},
     },
     'BNN_FSVGD': {
         'bandwidth_svgd': {'values': [10.]},
         'bandwidth_gp_prior': {'distribution': 'log_uniform', 'min': -2., 'max': 0.},
         'num_train_steps': {'values': [20000]},
         'num_measurement_points': {'values': [32]},
-        'likelihood_reg':  {'values': [0., 1.]},
+        'likelihood_reg':  {'values': [1.]},
     },
     'BNN_FSVGD_SimPrior_gp': {
         'bandwidth_svgd': {'values': [10.]},
         'num_train_steps': {'values': [40000]},
         'num_measurement_points': {'values': [32]},
         'num_f_samples': {'values': [1024]},
-        'added_gp_lengthscale': {'distribution': 'uniform', 'min': 0., 'max': 20.},   # racecar: 4 - 8
-        'added_gp_outputscale': {'distribution': 'uniform', 'min': 0., 'max': 10.},   # racecar: 4 - 8
+        'added_gp_lengthscale': {'distribution': 'uniform', 'min': 10., 'max': 40.},   # racecar: 4 - 8
+        'added_gp_outputscale': {'distribution': 'uniform', 'min': 0., 'max': 40.},   # racecar: 4 - 8
     },
     'BNN_FSVGD_SimPrior_nu-method': {
         'bandwidth_svgd': {'values': [0.2]},
@@ -77,6 +78,7 @@ def main(args):
         'learn_likelihood_std': {'value': args.learn_likelihood_std},
         'num_particles': {'value': 20},
         'data_batch_size': {'value': 8},
+        'use_hf_sim': {'value': args.use_hf_sim},
     }
     # update with model specific sweep ranges
     model_name = args.model.replace('_no_add_gp', '')
@@ -130,6 +132,7 @@ if __name__ == '__main__':
     # # standard BNN parameters
     parser.add_argument('--model', type=str, default='BNN_FSVGD')
     parser.add_argument('--learn_likelihood_std', type=int, default=0)
+    parser.add_argument('--use_hf_sim', type=int, default=0)
 
     args = parser.parse_args()
     main(args)

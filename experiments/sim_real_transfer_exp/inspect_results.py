@@ -95,82 +95,35 @@ def main(args, drop_nan=False):
 
     print('Models:', set(df_agg['model']))
 
-    different_method_plot(df_agg, metric='nll')
-    different_method_plot(df_agg, metric='mae_pose')
+    different_method_plot(df_agg, metric='nll', filter_std_higher_than=20.)
+    different_method_plot(df_agg, metric='rmse')
 
-    df_method = df_agg[(df_agg['model'] == 'BNN_FSVGD_SimPrior_gp_no_add_gp')]
+    df_method = df_agg[(df_agg['model'] == 'BNN_FSVGD_SimPrior_gp')]
 
     #df_method = df_method[df_method['bandwidth_score_estim'] > 0.1]
 
     metric = 'nll'
-    for param in ['num_measurement_points', 'added_gp_lengthscale', 'added_gp_outputscale']:# ['num_f_samples', 'bandwidth_score_estim', 'bandwidth_svgd', 'num_measurement_points']:
+    for param in [
+        'added_gp_lengthscale',
+        'added_gp_outputscale',
+        # 'bandwidth_svgd',
+        # 'likelihood_reg',
+        #'bandwidth_svgd'
+    ]:
+        # ['num_f_samples', 'bandwidth_score_estim', 'bandwidth_svgd', 'num_measurement_points']:
         plt.scatter(df_method[param], df_method[(metric, 'mean')])
         plt.xlabel(param)
         plt.xscale('log')
         plt.ylabel(metric)
         #plt.scatter(5., -7, color='red')
-        #plt.ylim(-8, 0)
+        plt.ylim(-10, -6)
         plt.show()
 
-    plt.scatter(df_method['added_gp_lengthscale'], df_method['added_gp_outputscale'], c=df_method[(metric, 'mean')],
-                cmap='viridis')
-    plt.xlabel('added_gp_lengthscale')
-    plt.ylabel('added_gp_outputscale')
-    plt.colorbar(label=metric)
-    plt.show()
-
-    plt.scatter(df_method['added_gp_lengthscale'], df_method['added_gp_outputscale'], s=df_method[(metric, 'mean')])
-
-    QUANTILE_BASED_CI = True
-    METHODS = ['random_search', 'hill_search']
-    METRICS = ['x_diff', 'f_diff']
-    PLOT_N_BEST = 2
-    n_metrics = len(METRICS)
-
-    fig, axes = plt.subplots(ncols=n_metrics, nrows=1, figsize=(n_metrics * 4, 4))
-    for k, method in enumerate(METHODS):
-        df_plot = df_agg.loc[df_agg['method'] == method]
-        df_plot.sort_values(by=('x_diff', 'mean'), ascending=True, inplace=True)
-
-        if df_plot.empty:
-            continue
-
-        for i, metric in enumerate(METRICS):
-            for j in range(PLOT_N_BEST):
-                row = df_plot.iloc[j]
-                num_seeds = row[(metric, 'count')]
-                ci_factor = 1 / np.sqrt(num_seeds)
-
-                if QUANTILE_BASED_CI:
-                    metric_median = row[(metric, 'median')]
-                    axes[i].scatter(k, metric_median, label=f'{method}_{j}')
-                    lower_err = - (row[(metric, 'lcb')] - metric_median) * ci_factor
-                    upper_err = (row[(metric, 'ucb')] - metric_median) * ci_factor
-                    axes[i].errorbar(k, metric_median, yerr=np.array([[lower_err, upper_err]]).T,
-                                        capsize=5)
-                else:
-                    metric_mean = row[(metric, 'mean')]
-                    metric_std = row[(metric, 'std')]
-                    axes[i].scatter(k, metric_mean, label=f'{method}_{j}')
-                    axes[i].errorbar(k, metric_mean, yerr=2 * metric_std * ci_factor)
-
-                if i == 0:
-                    print(f'{method}_{j}', row['exp_result_folder'][0])
-            if k == 0:
-                axes[i].set_ylabel(metric)
-            axes[i].set_xticks(np.arange(len(METHODS)))
-            axes[i].set_xticklabels(METHODS)
-            axes[i].set_xlim((-0.5, len(METHODS) - 0.5))
-            axes[i].set_yscale('log')
-
-    plt.legend()
-    plt.tight_layout()
-    plt.show()
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Inspect results of a regression experiment.')
-    parser.add_argument('--exp_name', type=str, default='sep12_str_std')
-    parser.add_argument('--data_source', type=str, default='real_racecar_new')
+    parser.add_argument('--exp_name', type=str, default='jan17_std_hf')
+    parser.add_argument('--data_source', type=str, default='real_racecar_v3')
     args = parser.parse_args()
     main(args)

@@ -8,49 +8,56 @@ import itertools
 import argparse
 import os
 
-MODEL_SPECIFIC_CONFIG = {
-    'BNN_SVGD': {
-        'bandwidth_svgd': {'values': [10.]},
-        'num_train_steps': {'values': [20000]},
-        'likelihood_reg': {'values': [0.0]},
-    },
-    'BNN_FSVGD': {
-        'bandwidth_svgd': {'values': [10.]},
-        'bandwidth_gp_prior': {'values': [0.4]},
-        'num_train_steps': {'values': [20000]},
-        'num_measurement_points': {'values': [32]},
-        'likelihood_reg': {'values': [0.0]},
-    },
-    'BNN_FSVGD_SimPrior_gp': {
-        'bandwidth_svgd': {'values': [10.]},
-        'num_train_steps': {'values': [40000]},
-        'num_measurement_points': {'values': [32]},
-        'num_f_samples': {'values': [1024]},
-        'added_gp_lengthscale': {'values': [10.]},
-        'added_gp_outputscale': {'values': [2.]},
-    },
-    # 'BNN_FSVGD_SimPrior_nu-method': {
-    #     'bandwidth_svgd': {'values': [10.]},
-    #     'num_train_steps': {'values': [60000]},
-    #     'num_measurement_points': {'values': [32]},
-    #     'num_f_samples': {'values': [512]},
-    #     'bandwidth_score_estim': {'distribution': 'uniform', 'min': 0.8, 'max': 2.0},
-    #     'added_gp_lengthscale': {'distribution': 'uniform', 'min': 5., 'max': 10.0},
-    #     'added_gp_outputscale': {'distribution': 'uniform', 'min': 0.5, 'max': 2.0},  # racecar: 4 - 8
-    # },
-    'SysID': {
-    },
-    'GreyBox': {
-        'bandwidth_svgd': {'values': [10.]},
-        'bandwidth_gp_prior': {'values': [0.4]},
-        'num_train_steps': {'values': [20000]},
-        'num_measurement_points': {'values': [64]},
-        'likelihood_reg': {'values': [0.0]},
-    },
-}
-
 
 def main(args):
+    MODEL_SPECIFIC_CONFIG = {
+        'BNN_SVGD': {
+            'min_train_steps': {'values': [1000]},
+            'num_epochs': {'values': [60]},
+            'bandwidth_svgd': {'values': [10.]},
+            #'likelihood_reg': {'values': [10.0]},
+        },
+        'BNN_FSVGD': {
+            'min_train_steps': {'values': [1000]},
+            'num_epochs': {'values': [60]},
+            'bandwidth_svgd': {'values': [10.]},
+            'bandwidth_gp_prior': {'values': [0.4]},
+            'num_measurement_points': {'values': [32]},
+            'likelihood_reg': {'values': [10.0]},
+
+        },
+        'BNN_FSVGD_SimPrior_gp': {
+            'min_train_steps': {'values': [5000]},
+            'num_epochs': {'values': [75]},
+            'bandwidth_svgd': {'values': [10.]},
+            'num_measurement_points': {'values': [32]},
+            'num_f_samples': {'values': [1024]},
+            'added_gp_lengthscale': {'values': [10.]},
+            'added_gp_outputscale': {'values': [2. if args.use_hf_sim else 4.]},
+        },
+        # 'BNN_FSVGD_SimPrior_nu-method': {
+        #     'bandwidth_svgd': {'values': [10.]},
+        #     'num_train_steps': {'values': [60000]},
+        #     'num_measurement_points': {'values': [32]},
+        #     'num_f_samples': {'values': [512]},
+        #     'bandwidth_score_estim': {'distribution': 'uniform', 'min': 0.8, 'max': 2.0},
+        #     'added_gp_lengthscale': {'distribution': 'uniform', 'min': 5., 'max': 10.0},
+        #     'added_gp_outputscale': {'distribution': 'uniform', 'min': 0.5, 'max': 2.0},  # racecar: 4 - 8
+        # },
+        'SysID': {
+            'likelihood_reg': {'values': [10.0]},
+        },
+        'GreyBox': {
+            'min_train_steps': {'values': [1000]},
+            'num_epochs': {'values': [60]},
+            'bandwidth_svgd': {'values': [10.]},
+            'bandwidth_gp_prior': {'values': [0.4]},
+            'outputscale_gp_prior': {'values': [0.05]},
+            'num_measurement_points': {'values': [64]},
+            'likelihood_reg': {'values': [10.0]},
+        },
+    }
+
     # setup random seeds
     rds = np.random.RandomState(args.seed)
     model_seeds = list(rds.randint(0, 10**6, size=(100,)))
@@ -63,6 +70,7 @@ def main(args):
         'pred_diff': {'value': args.pred_diff},
         'num_particles': {'value': 20},
         'data_batch_size': {'value': 8},
+        'use_hf_sim': {'value': args.use_hf_sim},
     }
     # update with model specific sweep ranges
     model_name = args.model.replace('_no_add_gp', '')
@@ -73,7 +81,7 @@ def main(args):
     exp_base_path = os.path.join(RESULT_DIR, args.exp_name)
     exp_path = os.path.join(exp_base_path, f'{args.data_source}_{args.model}')
 
-    N_SAMPLES_LIST = [50, 100, 200, 400, 800, 1600, 3200, 6400]
+    N_SAMPLES_LIST = [50, 200, 800, 1600, 3200, 6400]
     command_list = []
     output_file_list = []
     for _ in range(args.num_hparam_samples):
@@ -104,8 +112,8 @@ if __name__ == '__main__':
 
     # sweep args
     parser.add_argument('--num_hparam_samples', type=int, default=1)
-    parser.add_argument('--num_model_seeds', type=int, default=5, help='number of model seeds per hparam')
-    parser.add_argument('--num_data_seeds', type=int, default=5, help='number of model seeds per hparam')
+    parser.add_argument('--num_model_seeds', type=int, default=3, help='number of model seeds per hparam')
+    parser.add_argument('--num_data_seeds', type=int, default=3, help='number of model seeds per hparam')
     parser.add_argument('--num_cpus', type=int, default=1, help='number of cpus to use')
     parser.add_argument('--run_mode', type=str, default='euler')
 
@@ -116,12 +124,13 @@ if __name__ == '__main__':
     parser.add_argument('--yes', default=False, action='store_true')
 
     # data parameters
-    parser.add_argument('--data_source', type=str, default='pendulum')
-    parser.add_argument('--pred_diff', type=int, default=0)
+    parser.add_argument('--data_source', type=str, default='real_racecar_v3')
+    parser.add_argument('--pred_diff', type=int, default=1)
 
     # # standard BNN parameters
-    parser.add_argument('--model', type=str, default='BNN_SVGD')
-    parser.add_argument('--learn_likelihood_std', type=int, default=0)
+    parser.add_argument('--model', type=str, default='SysID')
+    parser.add_argument('--learn_likelihood_std', type=int, default=1)
+    parser.add_argument('--use_hf_sim', type=int, default=1)
 
     args = parser.parse_args()
     main(args)
