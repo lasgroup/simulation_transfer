@@ -247,12 +247,8 @@ class BNNGreyBox(AbstractRegressionModel):
         likelihood_std = jnp.exp(params_sim['likelihood_std']) if self.learn_likelihood_std \
             else self.init_likelihood_std
 
-        def _ll(pred, y):
-            return tfd.MultivariateNormalDiag(pred, likelihood_std).log_prob(y)
-
-        ll = jax.vmap(_ll)
-        nll = - num_train_points * self.likelihood_exponent * jnp.mean(
-            ll(normalized_sim_model_prediction, y_batch), axis=0)
+        ll = tfd.MultivariateNormalDiag(sim_model_prediction, likelihood_std).log_prob(y_batch)
+        nll = - num_train_points * self.likelihood_exponent * jnp.mean(ll, axis=0)
         return nll
 
     def _sim_step(self, opt_state_sim: optax.OptState, params_sim: Dict,
@@ -338,10 +334,19 @@ class BNNGreyBox(AbstractRegressionModel):
         """
         # make predictions
         x, y = self._ensure_atleast_2d_float(x, y)
-        pred_y = self.sim_model_step(x, self.params_sim['sim_params'])
 
-        rmse = jnp.sqrt(jnp.mean(jnp.sum((pred_y - y) ** 2, axis=-1)))
-        eval_stats = {'rmse': rmse}
+        if self.use_base_bnn:
+            pred_y = self.sim_model_step(x, self.params_sim['sim_params'])
+            rmse = jnp.sqrt(jnp.mean(jnp.sum((pred_y - y) ** 2, axis=-1)))
+            eval_stats = {'rmse': rmse}
+        else:
+            pred_dist = self.predict_dist(x, include_noise=True)
+            nll = - jnp.mean(pred_dist.log_prob(y))
+            rmse = jnp.sqrt(jnp.mean(jnp.sum((pred_dist.mean - y) ** 2, axis=-1)))
+            avg_likelihood_std = jnp.mean(self.likelihood_std_unnormalized)
+            eval_stats = {'rmse': rmse, 'nll': nll, 'likelihood_std': avg_likelihood_std}
+
+            print('likelihood_stds', self.likelihood_std_unnormalized)
 
         # compute per-dimension MAE
         if per_dim_metrics:
