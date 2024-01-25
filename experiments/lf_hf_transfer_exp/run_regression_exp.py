@@ -34,58 +34,74 @@ OUTPUTSCALES_RCCAR = [0.008, 0.008, 0.01, 0.01, 0.08, 0.08, 0.5]
 
 
 def regression_experiment(
-                          # data parameters
-                          data_source: str,
-                          num_samples_train: int,
-                          data_seed: int = 981648,
-                          pred_diff: bool = False,
+        # data parameters
+        data_source: str,
+        num_samples_train: int,
+        data_seed: int = 981648,
+        pred_diff: bool = False,
 
-                          # logging parameters
-                          use_wandb: bool = False,
+        # logging parameters
+        use_wandb: bool = False,
 
-                          # standard BNN parameters
-                          model: str = 'BNN_SVGD',
-                          model_seed: int = 892616,
-                          likelihood_std: Union[List[float], float] = 0.1,
-                          data_batch_size: int = 8,
-                          min_train_steps: int = 2500,
-                          num_epochs: int = 60,
-                          lr: float = 1e-3,
-                          hidden_activation: str = 'leaky_relu',
-                          num_layers: int = 3,
-                          layer_size: int = 64,
-                          normalize_likelihood_std: bool = False,
-                          learn_likelihood_std: bool = False,
-                          likelihood_exponent: float = 1.0,
-                          likelihood_reg: float = 0.0,
-                          # SVGD parameters
-                          num_particles: int = 20,
-                          bandwidth_svgd: float = 10.0,
-                          weight_prior_std: float = 0.5,
-                          bias_prior_std: float = 1e1,
+        # standard BNN parameters
+        model: str = 'BNN_SVGD',
+        model_seed: int = 892616,
+        likelihood_std: Union[List[float], float] = 0.1,
+        data_batch_size: int = 8,
+        min_train_steps: int = 2500,
+        num_epochs: int = 60,
+        max_train_steps: int = 100_000,
+        num_sim_model_train_steps: int = 5_000,
+        lr: float = 1e-3,
+        hidden_activation: str = 'leaky_relu',
+        num_layers: int = 3,
+        layer_size: int = 64,
+        normalize_likelihood_std: bool = False,
+        learn_likelihood_std: bool = False,
+        likelihood_exponent: float = 1.0,
+        likelihood_reg: float = 0.0,
+        # SVGD parameters
+        num_particles: int = 20,
+        bandwidth_svgd: float = 10.0,
+        weight_prior_std: float = 0.5,
+        bias_prior_std: float = 1e1,
 
-                          # FSVGD parameters
-                          bandwidth_gp_prior: float = 0.4,
-                          num_measurement_points: int = 32,
+        # FSVGD parameters
+        bandwidth_gp_prior: float = 0.4,
+        num_measurement_points: int = 32,
 
-                          # FSVGD_Sim_Prior parameters
-                          bandwidth_score_estim: float = None,
-                          ssge_kernel_type: str = 'IMQ',
-                          num_f_samples: int = 128,
+        # FSVGD_Sim_Prior parameters
+        bandwidth_score_estim: float = None,
+        ssge_kernel_type: str = 'IMQ',
+        num_f_samples: int = 128,
 
-                          switch_score_estimator_frac: float = 0.75,
-                          added_gp_lengthscale: float = 5.,
-                          added_gp_outputscale: Union[List[float], float] = 0.05,
+        switch_score_estimator_frac: float = 0.75,
+        added_gp_lengthscale: float = 5.,
+        added_gp_outputscale: Union[List[float], float] = 0.05,
 
-                          # BNN_SVGD_DistillPrior
-                          num_distill_steps: int = 500000,
-                          ):
-    num_train_steps = num_epochs // data_batch_size * num_samples_train + min_train_steps
+        # BNN_SVGD_DistillPrior
+        num_distill_steps: int = 500000,
+):
+    num_train_steps = min(num_epochs * num_samples_train // data_batch_size + min_train_steps, max_train_steps)
     # provide data and sim
-    x_train, y_train, x_test, y_test, sim_lf = provide_data_and_sim(
-        data_source=data_source,
-        data_spec={'num_samples_train': num_samples_train},
-        data_seed=data_seed)
+    if 'hf' in model:
+        use_hf_sim = True
+    else:
+        use_hf_sim = False
+    if 'real_racecar' in data_source:
+        x_train, y_train, x_test, y_test, sim_lf = provide_data_and_sim(
+            data_source=data_source,
+            data_spec={'num_samples_train': num_samples_train, 'sampling': 'iid',
+                       'use_hf_sim': use_hf_sim, 'num_samples_test': 6000},
+            data_seed=data_seed)
+        x_train = x_train[:num_samples_train]
+        y_train = y_train[:num_samples_train]
+    else:
+
+        x_train, y_train, x_test, y_test, sim_lf = provide_data_and_sim(
+            data_source=data_source,
+            data_spec={'num_samples_train': num_samples_train},
+            data_seed=data_seed)
 
     # handle pred diff mode
     if pred_diff:
@@ -126,7 +142,7 @@ def regression_experiment(
         'num_train_steps': num_train_steps,
         'lr': lr,
         'hidden_activation': ACTIVATION_DICT[hidden_activation],
-        'hidden_layer_sizes': [layer_size]*num_layers,
+        'hidden_layer_sizes': [layer_size] * num_layers,
         'normalize_likelihood_std': normalize_likelihood_std,
         'learn_likelihood_std': bool(learn_likelihood_std),
         'likelihood_exponent': likelihood_exponent,
@@ -173,7 +189,7 @@ def regression_experiment(
             base_bnn=base_bnn,
             sim=sim,
             use_base_bnn=(model == 'GreyBox'),
-            num_sim_model_train_steps=5_000,
+            num_sim_model_train_steps=num_sim_model_train_steps,
         )
     elif model == 'BNN_MMD_SimPrior':
         model = BNN_MMD_SimPrior(domain=sim.domain,
@@ -220,9 +236,11 @@ def main(args):
     if 'added_gp_outputscale' in exp_params:
         if exp_params['added_gp_outputscale'] < 0:
             if 'racecar' in exp_params['data_source']:
-                exp_params['added_gp_outputscale'] = OUTPUTSCALES_RCCAR
+                exp_params['added_gp_outputscale'] = OUTPUTSCALES_RCCAR  # [2 * x for x in OUTPUTSCALES_RCCAR]
                 print(f"Setting added_gp_outputscale to data_source default value from DATASET_CONFIGS "
                       f"which is {exp_params['added_gp_outputscale']}")
+            elif 'pendulum' in exp_params['data_source']:
+                exp_params['added_gp_outputscale'] = [0.05, 0.05, 0.5]
             else:
                 raise AssertionError('passed negative value for added_gp_outputscale')
 
@@ -305,20 +323,22 @@ if __name__ == '__main__':
     parser.add_argument('--use_wandb', type=bool, default=False)
 
     # data parameters
-    parser.add_argument('--data_source', type=str, default='racecar_hf')
+    parser.add_argument('--data_source', type=str, default='real_racecar_v3')
     parser.add_argument('--pred_diff', type=int, default=1)
     parser.add_argument('--num_samples_train', type=int, default=5000)
     parser.add_argument('--data_seed', type=int, default=77698)
 
     # standard BNN parameters
-    parser.add_argument('--model', type=str, default='BNN_FSVGD')
+    parser.add_argument('--model', type=str, default='BNN_FSVGD_SimPrior_hf_gp')
     parser.add_argument('--model_seed', type=int, default=892616)
     parser.add_argument('--likelihood_std', type=float, default=None)
     parser.add_argument('--learn_likelihood_std', type=int, default=0)
-    parser.add_argument('--likelihood_reg', type=float, default=-1.0)
+    parser.add_argument('--likelihood_reg', type=float, default=0.0)
     parser.add_argument('--data_batch_size', type=int, default=8)
     parser.add_argument('--min_train_steps', type=int, default=2500)
     parser.add_argument('--num_epochs', type=int, default=60)
+    parser.add_argument('--max_train_steps', type=int, default=100_000)
+    parser.add_argument('--num_sim_model_train_steps', type=int, default=5_000)
     parser.add_argument('--lr', type=float, default=1e-3)
     parser.add_argument('--hidden_activation', type=str, default='leaky_relu')
     parser.add_argument('--num_layers', type=int, default=3)

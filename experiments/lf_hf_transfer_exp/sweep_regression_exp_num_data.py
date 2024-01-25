@@ -13,53 +13,55 @@ import jax.numpy as jnp
 MODEL_SPECIFIC_CONFIG = {
     'BNN_SVGD': {
         'bandwidth_svgd': {'values': [10.]},
-        'min_train_steps': {'values': [2500]},
-        'num_epochs': {'values': [60]},
-        'lr': {'values': [3e-4]}
-        # 'likelihood_reg': {'values': [0.0]},
+        'min_train_steps': {'values': [4000]},
+        'num_epochs': {'values': [100]},
+        'lr': {'values': [3e-4]},
+        'likelihood_reg': {'values': [10.0]},
     },
     'BNN_FSVGD': {
-        'bandwidth_svgd': {'values': [0.2]},
+        'bandwidth_svgd': {'values': [0.4]},
         'bandwidth_gp_prior': {'values': [0.4]},
-        'min_train_steps': {'values': [2500]},
-        'num_epochs': {'values': [60]},
+        'min_train_steps': {'values': [4000]},
+        'num_epochs': {'values': [100]},
         'num_measurement_points': {'values': [8]},
-        'lr': {'values': [3e-4]}
-        # 'likelihood_reg': {'values': [0.0]},
+        'lr': {'values': [3e-4]},
+        'likelihood_reg': {'values': [10.0]},
     },
 
     'BNN_FSVGD_SimPrior_gp': {
-        'bandwidth_svgd': {'values': [0.2]},
-        'min_train_steps': {'values': [2500]},
-        'num_epochs': {'values': [60]},
-        'num_measurement_points': {'values': [8]},
-        'num_f_samples': {'values': [256]},
-        'added_gp_lengthscale': {'values': [5.]},
-        'added_gp_outputscale': {'values': [-1]},
-        'lr': {'values': [3e-4]}
-    },
-
-    'BNN_FSVGD_SimPrior_no_add_gp': {
-        'bandwidth_svgd': {'values': [0.2]},
-        'min_train_steps': {'values': [2500]},
-        'num_epochs': {'values': [60]},
+        'bandwidth_svgd': {'values': [0.4]},
+        'min_train_steps': {'values': [4000]},
+        'num_epochs': {'values': [100]},
         'num_measurement_points': {'values': [8]},
         'num_f_samples': {'values': [256]},
         'added_gp_lengthscale': {'values': [5.]},
         'added_gp_outputscale': {'values': [-1]},
         'lr': {'values': [3e-4]},
+        'likelihood_reg': {'values': [10.0]},
+    },
+
+    'BNN_FSVGD_SimPrior_no_add_gp': {
+        'bandwidth_svgd': {'values': [0.4]},
+        'min_train_steps': {'values': [4000]},
+        'num_epochs': {'values': [100]},
+        'num_measurement_points': {'values': [8]},
+        'num_f_samples': {'values': [256]},
+        'added_gp_lengthscale': {'values': [5.]},
+        'added_gp_outputscale': {'values': [-1]},
+        'lr': {'values': [3e-4]},
+        'likelihood_reg': {'values': [10.0]},
     },
 
     'SysID': {
     },
     'GreyBox': {
-        'bandwidth_svgd': {'values': [0.2]},
+        'bandwidth_svgd': {'values': [0.4]},
         'bandwidth_gp_prior': {'values': [0.4]},
-        'min_train_steps': {'values': [2500]},
-        'num_epochs': {'values': [60]},
+        'min_train_steps': {'values': [4000]},
+        'num_epochs': {'values': [100]},
         'num_measurement_points': {'values': [8]},
         'lr': {'values': [3e-4]},
-        # 'likelihood_reg': {'values': [0.0]},
+        'likelihood_reg': {'values': [10.0]},
     },
 }
 
@@ -82,6 +84,7 @@ def main(args):
     }
     # update with model specific sweep ranges
     model_name = args.model.replace('_no_add_gp', '')
+    model_name = model_name.replace('_hf', '')
     assert model_name in MODEL_SPECIFIC_CONFIG
     sweep_config.update(MODEL_SPECIFIC_CONFIG[model_name])
 
@@ -90,9 +93,11 @@ def main(args):
     exp_path = os.path.join(exp_base_path, f'{args.data_source}_{args.model}')
 
     if args.data_source == 'racecar_hf':
+        N_SAMPLES_LIST = [50, 100, 200, 400, 800, 1600, 3200, 6400, 12800, 25600]
+    elif args.data_source == 'pendulum_hf':
+        N_SAMPLES_LIST = [10, 20, 40, 80, 160, 320, 640, 1280]
+    elif args.data_source == 'real_racecar_v3':
         N_SAMPLES_LIST = [50, 100, 200, 400, 800, 1600, 3200, 6400]
-    elif args.data_source == 'pendulum':
-        N_SAMPLES_LIST = [10, 20, 40, 80, 160, 320, 640]
     else:
         raise NotImplementedError(f'Unknown data source {args.data_source}.')
 
@@ -124,15 +129,15 @@ if __name__ == '__main__':
 
     # sweep args
     parser.add_argument('--num_hparam_samples', type=int, default=1)
-    parser.add_argument('--num_model_seeds', type=int, default=3, help='number of model seeds per hparam')
-    parser.add_argument('--num_data_seeds', type=int, default=3, help='number of model seeds per hparam')
-    parser.add_argument('--num_cpus', type=int, default=1, help='number of cpus to use')
+    parser.add_argument('--num_model_seeds', type=int, default=5, help='number of model seeds per hparam')
+    parser.add_argument('--num_data_seeds', type=int, default=5, help='number of model seeds per hparam')
+    parser.add_argument('--num_cpus', type=int, default=4, help='number of cpus to use')
     parser.add_argument('--run_mode', type=str, default='euler')
 
     # general args
     parser.add_argument('--exp_name', type=str, default=f'test_{current_date}')
     parser.add_argument('--seed', type=int, default=94563)
-    parser.add_argument('--gpu', default=False, action='store_true')
+    parser.add_argument('--gpu', default=True, action='store_true')
     parser.add_argument('--yes', default=False, action='store_true')
 
     # data parameters
