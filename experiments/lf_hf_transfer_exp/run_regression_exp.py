@@ -30,7 +30,8 @@ ACTIVATION_DICT = {
     'swish': jax.nn.swish,
 }
 
-OUTPUTSCALES_RCCAR = [0.008, 0.008, 0.01, 0.01, 0.08, 0.08, 0.5]
+OUTPUTSCALES_RCCAR = [0.008, 0.008, 0.03, 0.03, 0.3, 0.3, 1.5]
+OUTPUTSCALES_RCCAR_HF = [0.008, 0.008, 0.01, 0.01, 0.08, 0.08, 0.5]
 
 
 def regression_experiment(
@@ -92,7 +93,8 @@ def regression_experiment(
         x_train, y_train, x_test, y_test, sim_lf = provide_data_and_sim(
             data_source=data_source,
             data_spec={'num_samples_train': num_samples_train, 'sampling': 'iid',
-                       'use_hf_sim': use_hf_sim, 'num_samples_test': 6000},
+                       'use_hf_sim': use_hf_sim, 'num_samples_test': 6000,
+                       'num_stacked_actions': 3},
             data_seed=data_seed)
         x_train = x_train[:num_samples_train]
         y_train = y_train[:num_samples_train]
@@ -114,7 +116,7 @@ def regression_experiment(
         no_added_gp = True
         model = model.replace('_no_add_gp', '')
         added_gp_outputscale = 0.
-    elif model in ['GreyBox', 'SysID']:
+    elif model in ['GreyBox', 'SysID', 'GreyBox_hf', 'SysID_hf']:
         no_added_gp = True
     else:
         no_added_gp = False
@@ -177,7 +179,7 @@ def regression_experiment(
                                    score_estimator=score_estimator,
                                    switch_score_estimator_frac=switch_score_estimator_frac,
                                    **standard_model_params)
-    elif model in ['GreyBox', 'SysID']:
+    elif model in ['GreyBox', 'SysID', 'GreyBox_hf', 'SysID_hf']:
         base_bnn = BNN_FSVGD(domain=sim.domain,
                              num_particles=num_particles,
                              bandwidth_svgd=bandwidth_svgd,
@@ -231,19 +233,28 @@ def main(args):
 
     if exp_result_folder is not None:
         os.makedirs(exp_result_folder, exist_ok=True)
-
-    # set likelihood_std to default value if not specified
     if 'added_gp_outputscale' in exp_params:
-        if exp_params['added_gp_outputscale'] < 0:
-            if 'racecar' in exp_params['data_source']:
-                exp_params['added_gp_outputscale'] = OUTPUTSCALES_RCCAR  # [2 * x for x in OUTPUTSCALES_RCCAR]
-                print(f"Setting added_gp_outputscale to data_source default value from DATASET_CONFIGS "
-                      f"which is {exp_params['added_gp_outputscale']}")
-            elif 'pendulum' in exp_params['data_source']:
-                exp_params['added_gp_outputscale'] = [0.05, 0.05, 0.5]
+        factor = 1
+        if exp_params['added_gp_outputscale'] > 0:
+            factor = exp_params['added_gp_outputscale']
+        if 'racecar' in exp_params['data_source']:
+            if 'hf' in exp_params['model']:
+                outputscales = OUTPUTSCALES_RCCAR_HF
             else:
-                raise AssertionError('passed negative value for added_gp_outputscale')
-
+                outputscales = OUTPUTSCALES_RCCAR
+            outputscales_racecar = factor * jnp.array(outputscales)
+            if 'no_angvel' in exp_params['data_source']:
+                outputscales_racecar = outputscales_racecar[:-1]
+            elif 'only_pose' in exp_params['data_source']:
+                outputscales_racecar = outputscales_racecar[:-3]
+            exp_params['added_gp_outputscale'] = outputscales_racecar.tolist()
+            print(f"Setting added_gp_outputscale to data_source default value from DATASET_CONFIGS "
+                  f"which is {exp_params['added_gp_outputscale']}")
+        elif 'pendulum' in exp_params['data_source']:
+            exp_params['added_gp_outputscale'] = [factor * 0.05, 0.05, 0.5]
+        else:
+            raise AssertionError('passed negative value for added_gp_outputscale')
+    # set likelihood_std to default value if not specified
     if exp_params['likelihood_std'] is None:
         likelihood_std = DATASET_CONFIGS[args.data_source]['likelihood_std']['value']
         if 'no_angvel' in exp_params['data_source']:
@@ -254,16 +265,7 @@ def main(args):
         print(f"Setting likelihood_std to data_source default value from DATASET_CONFIGS "
               f"which is {exp_params['likelihood_std']}")
 
-    # custom gp outputscale for racecar_hf
-    if 'real_racecar' in exp_params['data_source']:
-        outputscales_racecar = exp_params['added_gp_outputscale'] * jnp.array(OUTPUTSCALES_RCCAR)
-        if 'no_angvel' in exp_params['data_source']:
-            outputscales_racecar = outputscales_racecar[:-1]
-        elif 'only_pose' in exp_params['data_source']:
-            outputscales_racecar = outputscales_racecar[:-3]
-        exp_params['added_gp_outputscale'] = outputscales_racecar.tolist()
-        print(f'For {exp_params["data_source"]}, multiplying likelihood_std by OUTPUTSCALES_RCCAR. '
-              f'Resulting added_gp_outputscale parameter: {exp_params["added_gp_outputscale"]}')
+
 
     from pprint import pprint
     print('\nExperiment parameters:')

@@ -1,5 +1,5 @@
 from sim_transfer.sims.simulators import SinusoidsSim, QuadraticSim, LinearSim, ShiftedSinusoidsSim
-from sim_transfer.models import BNN_FSVGD_SimPrior, BNN_SVGD, BNN_FSVGD
+from sim_transfer.models import BNN_FSVGD_SimPrior, BNN_SVGD, BNN_FSVGD, BNNGreyBox
 from matplotlib import pyplot as plt
 
 import pickle
@@ -65,6 +65,14 @@ def main(sim_type: str = 'SinusoidsSim', model: str = 'BNN_FSVGD_SimPrior_gp', n
         bnn = BNN_SVGD(**common_kwargs, bandwidth_svgd=10., num_train_steps=2)
     elif model == 'BNN_FSVGD':
         bnn = BNN_FSVGD(**common_kwargs, domain=sim.domain, bandwidth_svgd=0.5, num_measurement_points=8)
+    elif model == 'GreyBox':
+        base_bnn = BNN_FSVGD(**common_kwargs, domain=sim.domain, bandwidth_svgd=0.5, num_measurement_points=8)
+        bnn = BNNGreyBox(
+                base_bnn=base_bnn,
+                sim=sim,
+                use_base_bnn=True,
+                num_sim_model_train_steps=1000,
+            )
     elif model == 'BNN_FSVGD_SimPrior_gp':
         bnn = BNN_FSVGD_SimPrior(**common_kwargs, domain=sim.domain, function_sim=sim,
                                  num_train_steps=20000, num_f_samples=256, num_measurement_points=8,
@@ -137,10 +145,11 @@ def main(sim_type: str = 'SinusoidsSim', model: str = 'BNN_FSVGD_SimPrior_gp', n
 if __name__ == '__main__':
     for num_train_points in [2]: #, 3, 5]:
         for model in [
+            'GreyBox',
             'BNN_SVGD',
             'BNN_FSVGD',
             'BNN_FSVGD_SimPrior_gp',
             'BNN_FSVGD_SimPrior_nu-method',
             'BNN_FSVGD_SimPrior_kde'
         ]:
-            main(model=model, num_train_points=num_train_points)
+            main(model='GreyBox', num_train_points=num_train_points)

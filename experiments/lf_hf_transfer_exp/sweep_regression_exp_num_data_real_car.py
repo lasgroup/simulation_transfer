@@ -12,14 +12,14 @@ import jax.numpy as jnp
 
 MODEL_SPECIFIC_CONFIG = {
     'BNN_SVGD': {
-        'bandwidth_svgd': {'values': [10.]},
+        'bandwidth_svgd': {'values': [20.]},
         'min_train_steps': {'values': [5_000]},
         'num_epochs': {'values': [60]},
         'lr': {'values': [1e-3]},
         # 'likelihood_reg': {'values': [10.0]},
     },
     'BNN_FSVGD': {
-        'bandwidth_svgd': {'values': [2.0]},
+        'bandwidth_svgd': {'values': [10.0]},
         'bandwidth_gp_prior': {'values': [0.4]},
         'min_train_steps': {'values': [5_000]},
         'num_epochs': {'values': [60]},
@@ -29,7 +29,7 @@ MODEL_SPECIFIC_CONFIG = {
     },
 
     'BNN_FSVGD_SimPrior_gp': {
-        'bandwidth_svgd': {'values': [2.0]},
+        'bandwidth_svgd': {'values': [10.0]},
         'min_train_steps': {'values': [5_000]},
         'num_epochs': {'values': [60]},
         'num_measurement_points': {'values': [32]},
@@ -41,7 +41,7 @@ MODEL_SPECIFIC_CONFIG = {
     },
 
     'BNN_FSVGD_SimPrior_no_add_gp': {
-        'bandwidth_svgd': {'values': [2.0]},
+        'bandwidth_svgd': {'values': [10.0]},
         'min_train_steps': {'values': [5_000]},
         'num_epochs': {'values': [60]},
         'num_measurement_points': {'values': [32]},
@@ -55,7 +55,43 @@ MODEL_SPECIFIC_CONFIG = {
     'SysID': {
     },
     'GreyBox': {
-        'bandwidth_svgd': {'values': [2.0]},
+        'bandwidth_svgd': {'values': [10.0]},
+        'bandwidth_gp_prior': {'values': [0.4]},
+        'min_train_steps': {'values': [5_000]},
+        'num_epochs': {'values': [60]},
+        'num_measurement_points': {'values': [32]},
+        'lr': {'values': [1e-3]},
+        'likelihood_reg': {'values': [10.0]},
+    },
+
+    'BNN_FSVGD_SimPrior_hf_gp': {
+        'bandwidth_svgd': {'values': [10.0]},
+        'min_train_steps': {'values': [5_000]},
+        'num_epochs': {'values': [60]},
+        'num_measurement_points': {'values': [32]},
+        'num_f_samples': {'values': [1028]},
+        'added_gp_lengthscale': {'values': [10.]},
+        'added_gp_outputscale': {'values': [0.5]},
+        'lr': {'values': [1e-3]},
+        'likelihood_reg': {'values': [10.0]},
+    },
+
+    'BNN_FSVGD_SimPrior_hf_no_add_gp': {
+        'bandwidth_svgd': {'values': [10.0]},
+        'min_train_steps': {'values': [5_000]},
+        'num_epochs': {'values': [60]},
+        'num_measurement_points': {'values': [32]},
+        'num_f_samples': {'values': [1028]},
+        'added_gp_lengthscale': {'values': [10.]},
+        'added_gp_outputscale': {'values': [0.5]},
+        'lr': {'values': [1e-3]},
+        'likelihood_reg': {'values': [10.0]},
+    },
+    'SysID_hf': {
+    },
+
+    'GreyBox_hf': {
+        'bandwidth_svgd': {'values': [10.0]},
         'bandwidth_gp_prior': {'values': [0.4]},
         'min_train_steps': {'values': [5_000]},
         'num_epochs': {'values': [60]},
