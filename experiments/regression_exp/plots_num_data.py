@@ -105,7 +105,7 @@ def main(args, drop_nan=False, fig=None, show_legend=True):
                 upper_ci = df_model[(metric, 'ucb')]
             else:
                 axs[idx].plot(df_model[('num_samples_train', '')], df_model[(metric, 'mean')], label=model)
-                CI_width = 2 * np.sqrt(df_model[(metric, 'count')])
+                CI_width = 2 / np.sqrt(df_model[(metric, 'count')])
                 lower_ci = df_model[(metric, 'mean')] - CI_width * df_model[(metric, 'std')]
                 upper_ci = df_model[(metric, 'mean')] + CI_width * df_model[(metric, 'std')]
             axs[idx].fill_between(df_model[('num_samples_train', '')], lower_ci, upper_ci, alpha=0.3)
