@@ -53,9 +53,9 @@ class BNNGreyBox(AbstractRegressionModel):
         param_key = self._next_rng_key()
         self.num_sim_model_train_steps = num_sim_model_train_steps
         sim_params, train_params = self.sim.sample_params(param_key)
-        likelihood_std = -1. * jnp.ones(self.output_size)
-        self.init_likelihood_std = likelihood_std
-        self.params_sim = {'sim_params': sim_params, 'likelihood_std': likelihood_std}
+        likelihood_std_raw = -1. * jnp.ones(self.output_size)
+        self.init_likelihood_std_raw = likelihood_std_raw
+        self.params_sim = {'sim_params': sim_params, 'likelihood_std_raw': likelihood_std_raw}
         self.init_sim_params = sim_params
         self.train_params = train_params
         self.optim_sim = None
@@ -97,10 +97,10 @@ class BNNGreyBox(AbstractRegressionModel):
         self.base_bnn.reinit(key_model)
         self._rng_key = key_rng  # reinitialize rng_key
         sim_params, train_params = self.sim.sample_params(param_key)
-        likelihood_std = -1. * jnp.ones(self.output_size)
+        likelihood_std_raw = -1. * jnp.ones(self.output_size)
         self.init_sim_params = sim_params
         self.train_params = train_params
-        self.params_sim = {'sim_params': sim_params, 'likelihood_std': likelihood_std}
+        self.params_sim = {'sim_params': sim_params, 'likelihood_std_raw': likelihood_std_raw}
         self._init_optim()  # reinitialize optimizer
 
     @property
@@ -128,9 +128,9 @@ class BNNGreyBox(AbstractRegressionModel):
     @property
     def sim_likelihood_std(self):
         if self.learn_likelihood_std:
-            likelihood_std = jnp.exp(self.params_sim['likelihood_std'])
+            likelihood_std = jax.nn.softplus(self.params_sim['likelihood_std_raw'])
         else:
-            likelihood_std = jnp.exp(self.init_likelihood_std)
+            likelihood_std = jax.nn.softplus(self.init_likelihood_std_raw)
         return likelihood_std
 
     @property
@@ -244,15 +244,11 @@ class BNNGreyBox(AbstractRegressionModel):
         normalized_sim_model_prediction = self._normalize_y_sim(sim_model_prediction)
         assert normalized_sim_model_prediction.shape == sim_model_prediction.shape
         # get likelihood std
-        likelihood_std = jnp.exp(params_sim['likelihood_std']) if self.learn_likelihood_std \
-            else self.init_likelihood_std
+        likelihood_std = jax.nn.softplus(params_sim['likelihood_std_raw']) if self.learn_likelihood_std \
+            else jax.nn.softplus(self.init_likelihood_std_raw)
 
-        def _ll(pred, y):
-            return tfd.MultivariateNormalDiag(pred, likelihood_std).log_prob(y)
-
-        ll = jax.vmap(_ll)
-        nll = - num_train_points * self.likelihood_exponent * jnp.mean(
-            ll(normalized_sim_model_prediction, y_batch), axis=0)
+        ll = tfd.MultivariateNormalDiag(sim_model_prediction, likelihood_std).log_prob(y_batch)
+        nll = - num_train_points * self.likelihood_exponent * jnp.mean(ll, axis=0)
         return nll
 
     def _sim_step(self, opt_state_sim: optax.OptState, params_sim: Dict,
@@ -338,10 +334,19 @@ class BNNGreyBox(AbstractRegressionModel):
         """
         # make predictions
         x, y = self._ensure_atleast_2d_float(x, y)
-        pred_y = self.sim_model_step(x, self.params_sim['sim_params'])
 
-        rmse = jnp.sqrt(jnp.mean(jnp.sum((pred_y - y) ** 2, axis=-1)))
-        eval_stats = {'rmse': rmse}
+        if self.use_base_bnn:
+            pred_y = self.sim_model_step(x, self.params_sim['sim_params'])
+            rmse = jnp.sqrt(jnp.mean(jnp.sum((pred_y - y) ** 2, axis=-1)))
+            eval_stats = {'rmse': rmse}
+        else:
+            pred_dist = self.predict_dist(x, include_noise=True)
+            nll = - jnp.mean(pred_dist.log_prob(y))
+            rmse = jnp.sqrt(jnp.mean(jnp.sum((pred_dist.mean - y) ** 2, axis=-1)))
+            avg_likelihood_std = jnp.mean(self.likelihood_std_unnormalized)
+            eval_stats = {'rmse': rmse, 'nll': nll, 'likelihood_std': avg_likelihood_std}
+
+            print('likelihood_stds', self.likelihood_std_unnormalized)
 
         # compute per-dimension MAE
         if per_dim_metrics:

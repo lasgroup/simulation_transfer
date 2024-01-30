@@ -203,7 +203,7 @@ def get_rccar_recorded_data_new(encode_angle: bool = True, skip_first_n_points: 
             num_test_points = 20_000
         elif dataset in ['v2', 'v3', 'v4']:
             recordings_dir = [os.path.join(DATA_DIR, f'recordings_rc_car_{dataset}')]
-            num_test_points = 10_000
+            num_test_points = 6_000
         else:
             raise ValueError(f"Unknown dataset {dataset} for car_id {car_id}")
     else:

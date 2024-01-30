@@ -67,6 +67,7 @@ class BNN_FSVGD(AbstractFSVGD_BNN):
         stats = OrderedDict(train_nll_loss=nll, neg_log_prior=neg_log_prior)
         if self.learn_likelihood_std:
             stats['likelihood_std'] = jnp.mean(likelihood_std)
+            stats['likelihood_std_min'] = jnp.min(likelihood_std)
         if self.likelihood_reg > 0:
             stats['likelihood_penalty'] = likelihood_penalty
         return neg_log_post, stats

@@ -347,6 +347,34 @@ class SinusoidsSim(FunctionSimulator):
     def _f2(self, amp, freq, slope, x):
         return amp * jnp.cos(freq * x) - slope * x
 
+    def sample_params(self, rng_key: jax.random.PRNGKey):
+        freq_key, amp_key, slope_key, rng_key = jax.random.split(rng_key, 4)
+        sim_params = {
+            'freq': jax.random.uniform(freq_key, minval=self.freq1_mid - self.freq1_spread,
+                                  maxval=self.freq1_mid + self.freq1_spread),
+            'amp': self.amp_mean + self.amp_std * jax.random.normal(amp_key),
+            'slope': self.slope_mean + self.slope_std * jax.random.normal(slope_key),
+        }
+        if self.output_size == 2:
+            freq2 = jax.random.uniform(rng_key, minval=self.freq2_mid - self.freq2_spread,
+                                       maxval=self.freq2_mid + self.freq2_spread)
+            sim_params['freq_2'] = freq2
+
+        from collections import namedtuple
+        sim_params = namedtuple('params', sim_params.keys())(*sim_params.values())
+        train_params = jtu.tree_map(lambda x: 1, sim_params)
+        return sim_params, train_params
+
+    def evaluate_sim(self, x: jnp.array, params: NamedTuple) -> jnp.array:
+        f = self._f1(amp=params.amp, freq=params.freq, slope=params.slope,x=x)
+        if self.output_size == 1:
+            return f
+        elif self.output_size == 2:
+            f2 = self._f2(params.amp, params.freq2, params.slope, x)
+            return jnp.concatenate([f[:, None], f2[:, None]], axis=-1)
+        else:
+            raise NotImplementedError
+
     def sample_function(self, rng_key: jax.random.PRNGKey) -> Callable:
         key1, key2, key3, key4 = jax.random.split(rng_key, 4)
         freq = jax.random.uniform(key1, minval=self.freq1_mid - self.freq1_spread,
