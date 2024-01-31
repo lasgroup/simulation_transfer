@@ -25,8 +25,30 @@ METHODS = ['SVGD',
            'FSVGD[SimPrior=SSGE]',
            'Sampled Prior Functions',
            'NP',
-           'PACOH'
+           'PACOH',
+
+           'FSVGD[SimPrior[HF + GP]=GP]',
+           'FSVGD[SimPrior[LF + GP]=GP]',
+           'FSVGD[SimPrior[LF]=GP]',
+           'GreyBox[LF] + FSVGD',
+           'SysID[HF]',
+           'FSVGD[SimPrior[HF]=GP]',
+           'SysID[LF]',
+           'GreyBox[HF] + FSVGD',
            ]
+
+plot_real_regression_method_name_transfer = {
+    'BNN_FSVGD_SimPrior_hf_gp': METHODS[11],
+     'BNN_FSVGD': METHODS[1],
+     'BNN_FSVGD_SimPrior_gp': METHODS[12],
+     'BNN_FSVGD_SimPrior_gp_no_add_gp': METHODS[13],
+     'GreyBox': METHODS[14],
+     'SysID_hf': METHODS[15],
+     'BNN_FSVGD_SimPrior_hf_gp_no_add_gp': METHODS[16],
+     'BNN_SVGD': METHODS[0],
+     'SysID': METHODS[17],
+     'GreyBox_hf': METHODS[18],
+}
 
 COLORS = {'SVGD': '#228B22',
           'FSVGD': '#9BCD4C',
@@ -36,7 +58,16 @@ COLORS = {'SVGD': '#228B22',
           'FSVGD[SimPrior=KDE]': '#daa520',
           'FSVGD[SimPrior=Nu-Method]': '#8486E0',
           'NP': '#654321',
-          'PACOH': '#808080'
+          'PACOH': '#808080',
+
+          'FSVGD[SimPrior[HF + GP]=GP]': '#e60049',
+          'FSVGD[SimPrior[LF + GP]=GP]': "#0bb4ff",
+          'FSVGD[SimPrior[LF]=GP]': "#e6d800",
+          'GreyBox[LF] + FSVGD': "#9b19f5",
+          'SysID[HF]': "#ffa300",
+          'FSVGD[SimPrior[HF]=GP]': "#dc0ab4",
+          'SysID[LF]': "#b3d4ff",
+          'GreyBox[HF] + FSVGD': "#00bfa0",
           }
 
 LINE_STYLES = {'SVGD': linestyle_tuple['densely dashdotdotted'],
@@ -47,17 +78,36 @@ LINE_STYLES = {'SVGD': linestyle_tuple['densely dashdotdotted'],
                'FSVGD[SimPrior=KDE]': linestyle_tuple['dotted'],
                'FSVGD[SimPrior=Nu-Method]': linestyle_tuple['densely dashed'],
                'NP': linestyle_tuple['dashed'],
-               'PACOH': linestyle_tuple['loosely dashed']
+               'PACOH': linestyle_tuple['loosely dashed'],
+
+               'FSVGD[SimPrior[HF + GP]=GP]': linestyle_tuple['dashed'],
+               'FSVGD[SimPrior[LF + GP]=GP]': linestyle_tuple['densely dashed'],
+               'FSVGD[SimPrior[LF]=GP]': linestyle_tuple['dotted'],
+               'GreyBox[LF] + FSVGD': linestyle_tuple['dashdotted'],
+               'SysID[HF]': linestyle_tuple['densely dashdotted'],
+               'FSVGD[SimPrior[HF]=GP]': linestyle_tuple['dashdotdotted'],
+               'SysID[LF]': linestyle_tuple['long dash with offset'],
+               'GreyBox[HF] + FSVGD': linestyle_tuple['densely dotted'],
                }
 
 plot_num_data_data_source_transfer = {
-    'pendulum': 'Pendulum[HF simulator][LF prior]',
-    'racecar': 'Racecar[HF simulator][LF prior]'
+    'pendulum': 'Pendulum[HF simulator]',
+    'racecar': 'Racecar[HF simulator]'
 }
 
 plot_num_data_metrics_transfer = {
     'nll': 'NLL',
     'rmse': 'RMSE'
+}
+
+plot_real_regression_data_source_transfer = {
+    'real_racecar_v3': 'Racecar[Hardware]',
+    'racecar_hf': 'Racecar[HF simulator]',
+    'pendulum_hf': 'Pendulum[HF simulator]',
+}
+
+plot_real_regression_data_metrics_transfer = {
+    'nll': 'NLL',
 }
 
 plot_num_data_name_transfer = {
