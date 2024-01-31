@@ -7,15 +7,22 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.stats import gaussian_kde
 import matplotlib as mpl
-import matplotlib.gridspec as gridspec
 from plotting_hyperdata import plotting_constants
 
-TITLE_FONT_SIZE = 20
-TABLE_FONT_SIZE = 20
-LEGEND_FONT_SIZE = 20
-LABEL_FONT_SIZE = 18
-TICKS_SIZE = 20
-OBSERVATION_SIZE = 200
+TITLE_FONT_SIZE = 26
+TABLE_FONT_SIZE = 26
+LEGEND_FONT_SIZE = 26
+LABEL_FONT_SIZE = 26
+TICKS_SIZE = 24
+OBSERVATION_SIZE = 300
+
+plt.rc('text', usetex=True)
+plt.rc('text.latex', preamble=
+r'\usepackage{amsmath}'
+r'\usepackage{bm}'
+r'\def\vx{{\bm{x}}}'
+r'\def\vf{{\bm{f}}}')
+
 
 mpl.rcParams['xtick.labelsize'] = TICKS_SIZE
 mpl.rcParams['ytick.labelsize'] = TICKS_SIZE
@@ -189,12 +196,12 @@ def prepare_plot_multimodal(ax,
         ax.legend(fontsize=LEGEND_FONT_SIZE)
 
     if add_x_label:
-        ax.set_xlabel(r'$x$', fontsize=LABEL_FONT_SIZE)
+        ax.set_xlabel(r'$\vx$', fontsize=LABEL_FONT_SIZE)
     if add_y_label:
-        ax.set_ylabel(r'$f(x)$', fontsize=LABEL_FONT_SIZE)
+        ax.set_ylabel(r'$\vf(\vx)$', fontsize=LABEL_FONT_SIZE)
     if title is not None:
         ax.set_title(title, fontsize=TITLE_FONT_SIZE)
-
+    ax.set_ylim((-4, 4))
 
 def prepare_prior_plot(ax,
                        xs: np.ndarray,
@@ -213,9 +220,9 @@ def prepare_prior_plot(ax,
                 linewidth=plotting_constants.SAMPLES_LINE_WIDTH, )
 
     if add_x_label:
-        ax.set_xlabel(r'$x$', fontsize=LABEL_FONT_SIZE)
+        ax.set_xlabel(r'$\vx$', fontsize=LABEL_FONT_SIZE)
     if add_y_label:
-        ax.set_ylabel(r'$f(x)$', fontsize=LABEL_FONT_SIZE)
+        ax.set_ylabel(r'$\vf(\vx)$', fontsize=LABEL_FONT_SIZE)
     if title is not None:
         ax.set_title(title, fontsize=TITLE_FONT_SIZE)
 
@@ -291,7 +298,7 @@ def two_rows_plot_with_table():
         prior_data = pickle.load(handle)
 
     # Create a figure
-    fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(20, 10))
+    fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(20, 10), sharex=True, sharey=True)
 
     # First row: two subplots with a dummy subplot to center them
     ax0 = axes[0, 0]
@@ -397,10 +404,13 @@ def two_rows_plot_with_table():
     # Add the legend with handles and labels, specify the location and number of columns
     handles, labels = plt.gca().get_legend_handles_labels()
     by_label = dict(zip(labels, handles))
-    fig.legend(by_label.values(), by_label.keys(), ncols=4, loc='lower center',
-               bbox_to_anchor=(0.5, 0), fontsize=LEGEND_FONT_SIZE)
+    fig.legend(by_label.values(), by_label.keys(),
+               ncols=4,
+               loc='upper center',
+               fontsize=LEGEND_FONT_SIZE,
+               frameon=False)
 
-    plt.tight_layout(rect=[0, 0.06, 1, 1])
+    fig.tight_layout(rect=[0, 0, 1, 0.92])
     plt.savefig('multimodal_example.pdf')
     plt.show()
 
