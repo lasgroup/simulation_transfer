@@ -30,9 +30,9 @@ PLOT_DICT_DIR = os.path.join(PLOTS_1D_DIR, 'plot_dicts')
 PLOT_DICT_PATHS = [
     (plotting_constants.METHODS[0], 'SinusoidsSim_BNN_SVGD_2.pkl'),
     (plotting_constants.METHODS[1], 'SinusoidsSim_BNN_FSVGD_2.pkl'),
-    (plotting_constants.METHODS[2], 'SinusoidsSim_GreyBox_2.pkl'),
-    (plotting_constants.METHODS[4], 'SinusoidsSim_BNN_FSVGD_SimPrior_gp_2.pkl'),
-    (plotting_constants.METHODS[6], 'SinusoidsSim_BNN_FSVGD_SimPrior_nu-method_2.pkl'),
+    (plotting_constants.METHODS[14], 'SinusoidsSim_GreyBox_2.pkl'),
+    (plotting_constants.METHODS[7], 'SinusoidsSim_BNN_FSVGD_SimPrior_gp_2.pkl'),
+    (plotting_constants.METHODS[9], 'SinusoidsSim_BNN_FSVGD_SimPrior_nu-method_2.pkl'),
 ]
 PLOT_DICT_PATHS = map(lambda x: (x[0], os.path.join(PLOT_DICT_DIR, x[1])), PLOT_DICT_PATHS)
 
@@ -58,7 +58,7 @@ for i, (model, load_path) in enumerate(PLOT_DICT_PATHS):
                             linestyle=plotting_constants.SAMPLES_LINE_STYLE,
                             linewidth=plotting_constants.SAMPLES_LINE_WIDTH,
                             alpha=plotting_constants.SAMPLES_ALPHA)
-        axes[0][0].set_title(plotting_constants.METHODS[8], fontsize=TITLE_FONT_SIZE)
+        axes[0][0].set_title(plotting_constants.METHODS[3], fontsize=TITLE_FONT_SIZE)
         axes[0][0].set_ylim((-14, 14))
         axes[0][0].set_ylabel(r'$\vf(\vx)$', fontsize=LABEL_FONT_SIZE)
 

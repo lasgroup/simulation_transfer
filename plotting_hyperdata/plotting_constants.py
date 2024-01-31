@@ -17,78 +17,116 @@ linestyle_tuple = {
 
 METHODS = ['SVGD',
            'FSVGD',
-           'GreyBox + FSVGD',
            'Sim Model',
-           'FSVGD[SimPrior=GP]',
-           'FSVGD[SimPrior=KDE]',
-           'FSVGD[SimPrior=Nu-Method]',
-           'FSVGD[SimPrior=SSGE]',
            'Sampled Prior Functions',
            'NP',
            'PACOH',
 
-           'FSVGD[SimPrior[HF + GP]=GP]',
-           'FSVGD[SimPrior[LF + GP]=GP]',
            'FSVGD[SimPrior[LF]=GP]',
-           'GreyBox[LF] + FSVGD',
-           'SysID[HF]',
            'FSVGD[SimPrior[HF]=GP]',
-           'SysID[LF]',
+
+           'FSVGD[SimPrior[HF]=KDE]',
+           'FSVGD[SimPrior[HF]=Nu-Method]',
+           'FSVGD[SimPrior[HF]=SSGE]',
+
+           'FSVGD[SimPrior[LF + GP]=GP]',
+           'FSVGD[SimPrior[HF + GP]=GP]',
+
+           'GreyBox[LF] + FSVGD',
            'GreyBox[HF] + FSVGD',
+
+           'SysID[LF]',
+           'SysID[HF]',
            ]
 
-plot_real_regression_method_name_transfer = {
-    'BNN_FSVGD_SimPrior_hf_gp': METHODS[11],
-     'BNN_FSVGD': METHODS[1],
-     'BNN_FSVGD_SimPrior_gp': METHODS[12],
-     'BNN_FSVGD_SimPrior_gp_no_add_gp': METHODS[13],
-     'GreyBox': METHODS[14],
-     'SysID_hf': METHODS[15],
-     'BNN_FSVGD_SimPrior_hf_gp_no_add_gp': METHODS[16],
-     'BNN_SVGD': METHODS[0],
-     'SysID': METHODS[17],
-     'GreyBox_hf': METHODS[18],
-}
-
-COLORS = {'SVGD': '#228B22',
-          'FSVGD': '#9BCD4C',
-          'GreyBox + FSVGD': '#CB3E3E',
-          'Sim Model': '#AF5227',
-          'FSVGD[SimPrior=GP]': '#DC6A73',
-          'FSVGD[SimPrior=KDE]': '#daa520',
-          'FSVGD[SimPrior=Nu-Method]': '#8486E0',
-          'NP': '#654321',
-          'PACOH': '#808080',
-
-          'FSVGD[SimPrior[HF + GP]=GP]': '#e60049',
-          'FSVGD[SimPrior[LF + GP]=GP]': "#0bb4ff",
-          'FSVGD[SimPrior[LF]=GP]': "#e6d800",
-          'GreyBox[LF] + FSVGD': "#9b19f5",
-          'SysID[HF]': "#ffa300",
-          'FSVGD[SimPrior[HF]=GP]': "#dc0ab4",
-          'SysID[LF]': "#b3d4ff",
-          'GreyBox[HF] + FSVGD': "#00bfa0",
-          }
+# METHODS = ['SVGD',
+#            'FSVGD',
+#            'GreyBox + FSVGD',
+#            'Sim Model',
+#            'FSVGD[SimPrior=GP]',
+#            'FSVGD[SimPrior=KDE]',
+#            'FSVGD[SimPrior=Nu-Method]',
+#            'FSVGD[SimPrior=SSGE]',
+#            'Sampled Prior Functions',
+#            'NP',
+#            'PACOH',
+#
+#            'FSVGD[SimPrior[HF + GP]=GP]',
+#            'FSVGD[SimPrior[LF + GP]=GP]',
+#            'FSVGD[SimPrior[LF]=GP]',
+#            'GreyBox[LF] + FSVGD',
+#            'SysID[HF]',
+#            'FSVGD[SimPrior[HF]=GP]',
+#            'SysID[LF]',
+#            'GreyBox[HF] + FSVGD',
+#            ]
 
 LINE_STYLES = {'SVGD': linestyle_tuple['densely dashdotdotted'],
                'FSVGD': linestyle_tuple['dashdot'],
-               'GreyBox + FSVGD': linestyle_tuple['dashdotdotted'],
                'Sim Model': linestyle_tuple['densely dashdotted'],
-               'FSVGD[SimPrior=GP]': linestyle_tuple['dashdotted'],
-               'FSVGD[SimPrior=KDE]': linestyle_tuple['dotted'],
-               'FSVGD[SimPrior=Nu-Method]': linestyle_tuple['densely dashed'],
                'NP': linestyle_tuple['dashed'],
                'PACOH': linestyle_tuple['loosely dashed'],
 
+               'FSVGD[SimPrior[LF]=GP]': linestyle_tuple['dotted'],
+               'FSVGD[SimPrior[HF]=GP]': linestyle_tuple['dashdotdotted'],
+
+               'FSVGD[SimPrior[HF]=KDE]': linestyle_tuple['dotted'],
+               'FSVGD[SimPrior[HF]=Nu-Method]': linestyle_tuple['densely dashed'],
+
                'FSVGD[SimPrior[HF + GP]=GP]': linestyle_tuple['dashed'],
                'FSVGD[SimPrior[LF + GP]=GP]': linestyle_tuple['densely dashed'],
-               'FSVGD[SimPrior[LF]=GP]': linestyle_tuple['dotted'],
+
                'GreyBox[LF] + FSVGD': linestyle_tuple['dashdotted'],
-               'SysID[HF]': linestyle_tuple['densely dashdotted'],
-               'FSVGD[SimPrior[HF]=GP]': linestyle_tuple['dashdotdotted'],
-               'SysID[LF]': linestyle_tuple['long dash with offset'],
                'GreyBox[HF] + FSVGD': linestyle_tuple['densely dotted'],
+
+               'SysID[LF]': linestyle_tuple['long dash with offset'],
+               'SysID[HF]': linestyle_tuple['densely dashdotted'],
                }
+
+COLORS = {'SVGD': '#228B22',
+          'FSVGD': '#9BCD4C',
+          'Sim Model': '#AF5227',
+          'NP': '#654321',
+          'PACOH': '#808080',
+
+          'FSVGD[SimPrior[LF]=GP]': "#e6d800",
+          'FSVGD[SimPrior[HF]=GP]': "#dc0ab4",
+
+          'FSVGD[SimPrior[HF]=KDE]': '#daa520',
+          'FSVGD[SimPrior[HF]=Nu-Method]': '#8486E0',
+
+          'FSVGD[SimPrior[HF + GP]=GP]': '#e60049',
+          'FSVGD[SimPrior[LF + GP]=GP]': "#0bb4ff",
+
+          'GreyBox[LF] + FSVGD': "#9b19f5",
+          'GreyBox[HF] + FSVGD': "#00bfa0",
+
+          'SysID[HF]': "#ffa300",
+          'SysID[LF]': "#b3d4ff",
+          }
+
+plot_num_data_name_transfer = {
+    'BNN_FSVGD': METHODS[1],
+    'BNN_FSVGD_SimPrior_gp': METHODS[7],
+    'BNN_FSVGD_SimPrior_kde': METHODS[8],
+    'BNN_FSVGD_SimPrior_nu-method': METHODS[9],
+    'BNN_SVGD': METHODS[0],
+    'NP': METHODS[4],
+    'PACOH': METHODS[5]
+}
+
+plot_real_regression_method_name_transfer = {
+    'BNN_FSVGD_SimPrior_hf_gp': METHODS[12],
+    'BNN_FSVGD': METHODS[1],
+    'BNN_FSVGD_SimPrior_gp': METHODS[11],
+    'BNN_FSVGD_SimPrior_gp_no_add_gp': METHODS[6],
+    'GreyBox': METHODS[13],
+    'SysID_hf': METHODS[16],
+    'BNN_FSVGD_SimPrior_hf_gp_no_add_gp': METHODS[7],
+    'BNN_SVGD': METHODS[0],
+    'SysID': METHODS[15],
+    'GreyBox_hf': METHODS[14],
+}
 
 plot_num_data_data_source_transfer = {
     'pendulum': 'Pendulum[HF simulator]',
@@ -108,16 +146,6 @@ plot_real_regression_data_source_transfer = {
 
 plot_real_regression_data_metrics_transfer = {
     'nll': 'NLL',
-}
-
-plot_num_data_name_transfer = {
-    'BNN_FSVGD': METHODS[1],
-    'BNN_FSVGD_SimPrior_gp': METHODS[4],
-    'BNN_FSVGD_SimPrior_kde': METHODS[5],
-    'BNN_FSVGD_SimPrior_nu-method': METHODS[6],
-    'BNN_SVGD': METHODS[0],
-    'NP': METHODS[9],
-    'PACOH': METHODS[10]
 }
 
 TRUE_FUNCTION_COLOR = 'black'

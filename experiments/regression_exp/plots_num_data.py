@@ -191,17 +191,17 @@ if __name__ == '__main__':
     subfigs = figure.subfigures(1, 2, wspace=-0.05)
 
     parser = argparse.ArgumentParser(description='Inspect results of a regression experiment.')
-    parser.add_argument('--exp_name', type=str, default='jan31')
+    parser.add_argument('--exp_name', type=str, default='jan10_num_data')
     parser.add_argument('--quantile_cis', type=int, default=1)
-    parser.add_argument('--data_source', type=str, default='racecar_hf')
+    parser.add_argument('--data_source', type=str, default='racecar')
     args = parser.parse_args()
 
     main(args, fig=subfigs[0], show_legend=False, log_scale=True)
 
     parser = argparse.ArgumentParser(description='Inspect results of a regression experiment.')
-    parser.add_argument('--exp_name', type=str, default='jan31')
+    parser.add_argument('--exp_name', type=str, default='jan10_num_data')
     parser.add_argument('--quantile_cis', type=int, default=1)
-    parser.add_argument('--data_source', type=str, default='pendulum_hf')
+    parser.add_argument('--data_source', type=str, default='pendulum')
     args = parser.parse_args()
 
     main(args, fig=subfigs[1], show_legend=False, log_scale=True)

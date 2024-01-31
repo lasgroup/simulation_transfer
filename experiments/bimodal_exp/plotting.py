@@ -23,7 +23,6 @@ r'\usepackage{bm}'
 r'\def\vx{{\bm{x}}}'
 r'\def\vf{{\bm{f}}}')
 
-
 mpl.rcParams['xtick.labelsize'] = TICKS_SIZE
 mpl.rcParams['ytick.labelsize'] = TICKS_SIZE
 
@@ -203,6 +202,7 @@ def prepare_plot_multimodal(ax,
         ax.set_title(title, fontsize=TITLE_FONT_SIZE)
     ax.set_ylim((-4, 4))
 
+
 def prepare_prior_plot(ax,
                        xs: np.ndarray,
                        fs: np.ndarray,
@@ -280,7 +280,7 @@ def two_rows_plot_with_table():
     filenames = ['gp.pkl', 'kde.pkl', 'nu_method.pkl', 'ssge.pkl']
 
     # names = ['GP', 'KDE', 'Nu-Method', 'SSGE']
-    names = [plotting_constants.METHODS[i] for i in [4, 5, 6, 7]]
+    names = [plotting_constants.METHODS[i] for i in [7, 8, 9, 10]]
 
     # We join the folder path with models
     filenames = [os.path.join(path_to_data_folder, name) for name in filenames]
