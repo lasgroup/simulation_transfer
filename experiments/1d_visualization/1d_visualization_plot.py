@@ -8,13 +8,19 @@ import pickle
 import jax
 
 PLOT_POST_SAMPLES = True
-LEGEND_FONT_SIZE = 20
-TITLE_FONT_SIZE = 20
+LEGEND_FONT_SIZE = 26
+TITLE_FONT_SIZE = 26
 TABLE_FONT_SIZE = 20
-LEGEND_FONT_SIZE = 20
-LABEL_FONT_SIZE = 18
-TICKS_SIZE = 20
-OBSERVATION_SIZE = 200
+LABEL_FONT_SIZE = 26
+TICKS_SIZE = 24
+OBSERVATION_SIZE = 300
+
+plt.rc('text', usetex=True)
+plt.rc('text.latex', preamble=
+r'\usepackage{amsmath}'
+r'\usepackage{bm}'
+r'\def\vx{{\bm{x}}}'
+r'\def\vf{{\bm{f}}}')
 
 mpl.rcParams['xtick.labelsize'] = TICKS_SIZE
 mpl.rcParams['ytick.labelsize'] = TICKS_SIZE
@@ -24,16 +30,16 @@ PLOT_DICT_DIR = os.path.join(PLOTS_1D_DIR, 'plot_dicts')
 PLOT_DICT_PATHS = [
     (plotting_constants.METHODS[0], 'SinusoidsSim_BNN_SVGD_2.pkl'),
     (plotting_constants.METHODS[1], 'SinusoidsSim_BNN_FSVGD_2.pkl'),
+    (plotting_constants.METHODS[2], 'SinusoidsSim_GreyBox_2.pkl'),
     (plotting_constants.METHODS[4], 'SinusoidsSim_BNN_FSVGD_SimPrior_gp_2.pkl'),
     (plotting_constants.METHODS[6], 'SinusoidsSim_BNN_FSVGD_SimPrior_nu-method_2.pkl'),
-    (plotting_constants.METHODS[2], 'SinusoidsSim_GreyBox_2.pkl'),
 ]
 PLOT_DICT_PATHS = map(lambda x: (x[0], os.path.join(PLOT_DICT_DIR, x[1])), PLOT_DICT_PATHS)
 
 PLOT_MODELS = ['BNN_SVGD', 'BNN_FSVGD', 'BNN_FSVGD_SimPrior_gp']
 
 # draw the plot
-fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(20, 10))
+fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(20, 10), sharex=True, sharey=True)
 
 sim = SinusoidsSim(output_size=1)
 
@@ -54,7 +60,7 @@ for i, (model, load_path) in enumerate(PLOT_DICT_PATHS):
                             alpha=plotting_constants.SAMPLES_ALPHA)
         axes[0][0].set_title(plotting_constants.METHODS[8], fontsize=TITLE_FONT_SIZE)
         axes[0][0].set_ylim((-14, 14))
-        axes[0][0].set_ylabel(r'$f(x)$', fontsize=LABEL_FONT_SIZE)
+        axes[0][0].set_ylabel(r'$\vf(\vx)$', fontsize=LABEL_FONT_SIZE)
 
     ax = axes[(i + 1) // 3][(i + 1) % 3]
     if PLOT_POST_SAMPLES:
@@ -92,18 +98,20 @@ for i, (model, load_path) in enumerate(PLOT_DICT_PATHS):
 
     ax.set_title(model, fontsize=TITLE_FONT_SIZE)
     if i == 2:
-        ax.set_ylabel(r'$f(x)$', fontsize=LABEL_FONT_SIZE)
+        ax.set_ylabel(r'$\vf(\vx)$', fontsize=LABEL_FONT_SIZE)
     if i >= 2:
-        ax.set_xlabel(r'$x$', fontsize=LABEL_FONT_SIZE)
+        ax.set_xlabel(r'$\vx$', fontsize=LABEL_FONT_SIZE)
     ax.set_ylim((-14, 14))
-
 
 handles, labels = plt.gca().get_legend_handles_labels()
 by_label = dict(zip(labels, handles))
-fig.legend(by_label.values(), by_label.keys(), ncols=5, loc='lower center',
-           bbox_to_anchor=(0.5, 0), fontsize=LEGEND_FONT_SIZE)
+fig.legend(by_label.values(), by_label.keys(),
+           ncols=5,
+           loc='upper center',
+           # bbox_to_anchor=(0.5, 0),
+           fontsize=LEGEND_FONT_SIZE,
+           frameon=False)
 
-fig.tight_layout(rect=[0, 0.06, 1, 1])
+fig.tight_layout(rect=[0, 0, 1, 0.92])
 fig.savefig(os.path.join(PLOTS_1D_DIR, '1d_visualization.pdf'))
 fig.show()
-
