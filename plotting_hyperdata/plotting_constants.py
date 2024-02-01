@@ -39,28 +39,6 @@ METHODS = ['SVGD',
            'SysID[HF]',
            ]
 
-# METHODS = ['SVGD',
-#            'FSVGD',
-#            'GreyBox + FSVGD',
-#            'Sim Model',
-#            'FSVGD[SimPrior=GP]',
-#            'FSVGD[SimPrior=KDE]',
-#            'FSVGD[SimPrior=Nu-Method]',
-#            'FSVGD[SimPrior=SSGE]',
-#            'Sampled Prior Functions',
-#            'NP',
-#            'PACOH',
-#
-#            'FSVGD[SimPrior[HF + GP]=GP]',
-#            'FSVGD[SimPrior[LF + GP]=GP]',
-#            'FSVGD[SimPrior[LF]=GP]',
-#            'GreyBox[LF] + FSVGD',
-#            'SysID[HF]',
-#            'FSVGD[SimPrior[HF]=GP]',
-#            'SysID[LF]',
-#            'GreyBox[HF] + FSVGD',
-#            ]
-
 LINE_STYLES = {'SVGD': linestyle_tuple['densely dashdotdotted'],
                'FSVGD': linestyle_tuple['dashdot'],
                'Sim Model': linestyle_tuple['densely dashdotted'],
@@ -148,6 +126,11 @@ plot_real_regression_data_metrics_transfer = {
     'nll': 'NLL',
 }
 
+online_rl_name_transfer = {
+    'No sim prior': METHODS[1],
+    'Low fidelity prior': METHODS[11]
+}
+
 TRUE_FUNCTION_COLOR = 'black'
 TRUE_FUNCTION_LINE_STYLE = linestyle_tuple['densely dashed']
 TRUE_FUNCTION_LINE_WIDTH = 4
@@ -164,3 +147,5 @@ SAMPLES_LINE_WIDTH = 3
 
 OBSERVATIONS_COLOR = 'RED'
 OBSERVATIONS_LINE_WIDTH = 4
+
+ONLINE_RL_LINEWIDTH = 4
