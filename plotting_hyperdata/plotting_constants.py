@@ -126,6 +126,13 @@ plot_real_regression_data_metrics_transfer = {
     'nll': 'NLL',
 }
 
+offline_rl_names_transfer = {
+    'No sim prior model': METHODS[1],
+    'Low fidelity model': METHODS[11],
+    'High fidelity model': METHODS[12],
+    'Parameteric model': METHODS[16]
+}
+
 online_rl_name_transfer = {
     'No sim prior': METHODS[1],
     'Low fidelity prior': METHODS[11]

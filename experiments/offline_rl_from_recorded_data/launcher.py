@@ -4,7 +4,7 @@ from experiments.util import generate_run_commands, generate_base_command, dict_
 PROJECT_NAME = 'OfflineRLSim_Jan12'
 
 _applicable_configs = {
-    'horizon_len': [100],
+    'horizon_len': [200],
     'model_seed': list(range(5)),
     'data_seed': list(range(5)),
     'project_name': [PROJECT_NAME],
