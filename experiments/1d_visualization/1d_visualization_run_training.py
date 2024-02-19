@@ -146,10 +146,10 @@ if __name__ == '__main__':
     for num_train_points in [2]: #, 3, 5]:
         for model in [
             'GreyBox',
-            'BNN_SVGD',
-            'BNN_FSVGD',
-            'BNN_FSVGD_SimPrior_gp',
-            'BNN_FSVGD_SimPrior_nu-method',
-            'BNN_FSVGD_SimPrior_kde'
+            # 'BNN_SVGD',
+            # 'BNN_FSVGD',
+            # 'BNN_FSVGD_SimPrior_gp',
+            # 'BNN_FSVGD_SimPrior_nu-method',
+            # 'BNN_FSVGD_SimPrior_kde'
         ]:
             main(model='GreyBox', num_train_points=num_train_points)
