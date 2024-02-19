@@ -425,7 +425,7 @@ class RLFromOfflineData:
         model_name = 'pretrained_model' if bnn_model is None else 'learned_model'
 
         sim = RCCarSimEnv(encode_angle=True, use_tire_model=True)
-        eval_horizon = 200
+        eval_horizon = self.sac_kwargs['episode_length']
         # Now we simulate the policy on the learned model
 
         key_init_obs, key_generate_trajectories = jr.split(key)
