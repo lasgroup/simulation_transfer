@@ -13,7 +13,6 @@ from sim_transfer.sims.car_sim_config import OBS_NOISE_STD_SIM_CAR
 from sim_transfer.sims.simulators import StackedActionSimWrapper
 from sim_transfer.sims.util import encode_angles as encode_angles_fn
 
-
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
 
 DEFAULTS_SINUSOIDS = {
@@ -26,6 +25,15 @@ DEFAULTS_PENDULUM = {
     'obs_noise_std': 0.02,
     'x_support_mode_train': 'full',
     'param_mode': 'random',
+}
+
+DEFAULTS_SERGIO = {
+    'obs_noise_std': 0.02,
+    'x_support_mode_train': 'full',
+    'param_mode': 'random',
+    'num_cells': 10,
+    'num_genes': 10,
+    'sergio_dim': 10 * 10,
 }
 
 DEFAULTS_RACECAR = {
@@ -61,6 +69,15 @@ DATASET_CONFIGS = {
         'likelihood_std': {'value': [0.05, 0.05, 0.5]},
         'num_samples_train': {'value': 20},
     },
+    'Sergio': {
+        'likelihood_std': {'value': [0.05 for _ in range(DEFAULTS_SERGIO['sergio_dim'])]},
+        'num_samples_train': {'value': 20},
+    },
+    'Sergio_hf': {
+        'likelihood_std': {'value': [0.05 for _ in range(DEFAULTS_SERGIO['sergio_dim'])]},
+        'num_samples_train': {'value': 20},
+    },
+
     'pendulum_bimodal': {
         'likelihood_std': {'value': [0.05, 0.05, 0.5]},
         'num_samples_train': {'value': 20},
@@ -190,7 +207,6 @@ def get_rccar_recorded_data_new(encode_angle: bool = True, skip_first_n_points: 
                                 dataset: str = 'all',
                                 action_delay: int = 3, action_stacking: bool = False,
                                 car_id: int = 2):
-
     assert car_id in [1, 2, 3]
     if car_id == 1:
         assert dataset in ['all', 'v1']
@@ -247,6 +263,14 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
         else:
             sim_hf = sim_lf = PendulumSim(encode_angle=True, high_fidelity=True)
         assert {'num_samples_train'} <= set(data_spec.keys()) <= {'num_samples_train'}.union(DEFAULTS_PENDULUM.keys())
+    elif data_source == 'Sergio' or data_source == 'Sergio_hf':
+        defaults = DEFAULTS_SERGIO
+        from sim_transfer.sims.simulators import SergioSim
+        if data_source == 'Sergio_hf':
+            sim_hf = SergioSim(n_genes=defaults['num_genes'], n_cells=defaults['num_cells'], use_hf=True)
+            sim_lf = SergioSim(n_genes=defaults['num_genes'], n_cells=defaults['num_cells'], use_hf=False)
+        else:
+            sim_hf = sim_lf = SergioSim(n_genes=defaults['num_genes'], n_cells=defaults['n_cells'], use_hf=False)
     elif data_source == 'pendulum_bimodal' or data_source == 'pendulum_bimodal_hf':
         from sim_transfer.sims.simulators import PendulumBiModalSim
         defaults = DEFAULTS_PENDULUM

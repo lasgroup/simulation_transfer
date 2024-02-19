@@ -10,7 +10,7 @@ from jax.lax import cond
 from tensorflow_probability.substrates import jax as tfp
 
 from sim_transfer.sims.domain import Domain, HypercubeDomain, HypercubeDomainWithAngles
-from sim_transfer.sims.dynamics_models import Pendulum, PendulumParams, RaceCar, CarParams
+from sim_transfer.sims.dynamics_models import Pendulum, PendulumParams, RaceCar, CarParams, SergioParams, SergioDynamics
 from sim_transfer.sims.util import encode_angles, decode_angles
 
 
@@ -351,7 +351,7 @@ class SinusoidsSim(FunctionSimulator):
         freq_key, amp_key, slope_key, rng_key = jax.random.split(rng_key, 4)
         sim_params = {
             'freq': jax.random.uniform(freq_key, minval=self.freq1_mid - self.freq1_spread,
-                                  maxval=self.freq1_mid + self.freq1_spread),
+                                       maxval=self.freq1_mid + self.freq1_spread),
             'amp': self.amp_mean + self.amp_std * jax.random.normal(amp_key),
             'slope': self.slope_mean + self.slope_std * jax.random.normal(slope_key),
         }
@@ -366,7 +366,7 @@ class SinusoidsSim(FunctionSimulator):
         return sim_params, train_params
 
     def evaluate_sim(self, x: jnp.array, params: NamedTuple) -> jnp.array:
-        f = self._f1(amp=params.amp, freq=params.freq, slope=params.slope,x=x)
+        f = self._f1(amp=params.amp, freq=params.freq, slope=params.slope, x=x)
         if self.output_size == 1:
             return f
         elif self.output_size == 2:
@@ -607,7 +607,7 @@ class PendulumSim(FunctionSimulator):
         return z[..., :self._state_action_spit_idx], z[..., self._state_action_spit_idx:]
 
     def sample_params(self, rng_key: jax.random.PRNGKey):
-        params = self.model.sample_params_uniform(rng_key, sample_shape=(1, ),
+        params = self.model.sample_params_uniform(rng_key, sample_shape=(1,),
                                                   lower_bound=self._lower_bound_params,
                                                   upper_bound=self._upper_bound_params)
 
@@ -986,6 +986,132 @@ class RaceCarSim(FunctionSimulator):
             raise ValueError(f'Car id {self.car_id} not supported.')
 
 
+class SergioSim(FunctionSimulator):
+    _dt: float = 1 / 10
+
+    # domain for generating data
+    state_lb: float = 0.0
+    state_ub: float = 400
+
+    def __init__(self, n_genes: int = 20, n_cells: int = 20, use_hf: bool = False):
+        FunctionSimulator.__init__(self, input_size=n_genes * n_cells, output_size=n_genes * n_cells)
+        self.model = SergioDynamics(self._dt, n_genes, n_cells)
+        self._setup_params()
+        self.use_hf = use_hf
+        if self.use_hf:
+            self._typical_params = self.default_param_hf
+            self._lower_bound_params = self.lower_bound_param_hf
+            self._upper_bound_params = self.upper_bound_param_hf
+        else:
+            self._typical_params = self.default_param_lf
+            self._lower_bound_params = self.lower_bound_param_lf
+            self._upper_bound_params = self.upper_bound_param_lf
+
+        assert jnp.all(jnp.stack(jtu.tree_flatten(
+            jtu.tree_map(lambda l, u: l <= u, self._lower_bound_params, self._upper_bound_params))[0])), \
+            'lower bounds have to be smaller than upper bounds'
+
+        # setup domain
+        self.domain_lower = jnp.ones(shape=(n_genes * n_cells,)) * self.state_lb
+        self.domain_upper = jnp.ones(shape=(n_genes * n_cells,)) * self.state_ub
+        self._domain = HypercubeDomain(lower=self.domain_lower, upper=self.domain_upper)
+
+    @property
+    def domain(self) -> Domain:
+        return self._domain
+
+    def _setup_params(self):
+        self.lower_bound_param_hf = SergioParams(lam=jnp.array(0.1),
+                                                 contribution_rates=jnp.array(-5.0),
+                                                 basal_rates=jnp.array(0.0))
+        self.upper_bound_param_hf = SergioParams(lam=jnp.array(0.9),
+                                                 contribution_rates=jnp.array(5.0),
+                                                 basal_rates=jnp.array(5.0))
+        self.default_param_hf = self.model.sample_single_params(jax.random.PRNGKey(0), self.lower_bound_param_hf,
+                                                                self.upper_bound_param_hf)
+
+        self.lower_bound_param_lf = SergioParams(lam=jnp.array(0.2),
+                                                 contribution_rates=jnp.array(0.0),
+                                                 basal_rates=jnp.array(0.0))
+        self.upper_bound_param_lf = SergioParams(lam=jnp.array(0.9),
+                                                 contribution_rates=jnp.array(0.0),
+                                                 basal_rates=jnp.array(0.0))
+        self.default_param_lf = self.model.sample_single_params(jax.random.PRNGKey(0), self.lower_bound_param_lf,
+                                                                self.upper_bound_param_lf)
+
+    def init_params(self):
+        return self._typical_params
+
+    def sample_params(self, rng_key: jax.random.PRNGKey):
+        params = self.model.sample_params_uniform(rng_key, sample_shape=1,
+                                                  lower_bound=self._lower_bound_params,
+                                                  upper_bound=self._upper_bound_params)
+        params = jtu.tree_map(lambda x: x.item(), params)
+        train_params = jtu.tree_map(lambda x: 1, params)
+        return params, train_params
+
+    def sample_function_vals(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
+        assert x.ndim == 2 and x.shape[-1] == self.input_size
+        params = self.model.sample_params_uniform(rng_key, sample_shape=num_samples,
+                                                  lower_bound=self._lower_bound_params,
+                                                  upper_bound=self._upper_bound_params)
+
+        def batched_fun(z, params):
+            f = vmap(self.model.next_step, in_axes=(0, None))(z, params)
+            return f
+
+        f = vmap(batched_fun, in_axes=(None, 0))(x, params)
+        assert f.shape == (num_samples, x.shape[0], self.output_size)
+        return f
+
+    def sample_functions(self, num_samples: int, rng_key: jax.random.PRNGKey) -> Callable:
+        params = self.model.sample_params_uniform(rng_key, sample_shape=(num_samples,),
+                                                  lower_bound=self._lower_bound_params,
+                                                  upper_bound=self._upper_bound_params)
+
+        def stacked_fun(z):
+            f = vmap(self.model.next_step, in_axes=(0, 0))(x, params)
+            return f
+
+        return stacked_fun
+
+    @property
+    def domain(self) -> Domain:
+        return self._domain
+
+    @property
+    def normalization_stats(self) -> Dict[str, jnp.ndarray]:
+
+        stats = {'x_mean': jnp.ones(self.input_size) * (self.state_ub + self.state_lb) / 2,
+                 'x_std': jnp.ones(self.input_size) * (self.state_ub - self.state_lb) ** 2 / 12,
+                 'y_mean': jnp.ones(self.output_size) * (self.state_ub + self.state_lb) / 2,
+                 'y_std': jnp.ones(self.output_size) * (self.state_ub - self.state_lb) ** 2 / 12}
+        return stats
+
+    def _typical_f(self, x: jnp.array) -> jnp.array:
+        f = jax.vmap(self.model.next_step, in_axes=(0, None))(x, self._typical_params)
+        return f
+
+    def evaluate_sim(self, x: jnp.array, params: NamedTuple) -> jnp.array:
+        f = jax.vmap(self.model.next_step, in_axes=(0, None))(x, params)
+        return f
+
+    def _add_observation_noise(self, f_vals: jnp.ndarray, obs_noise_std: Union[jnp.ndarray, float],
+                               rng_key: jax.random.PRNGKey) -> jnp.ndarray:
+
+        y = f_vals + obs_noise_std * jax.random.normal(rng_key, shape=f_vals.shape)
+        assert f_vals.shape == y.shape
+        return y
+
+    def _sample_x_data(self, rng_key: jax.random.PRNGKey, num_samples_train: int, num_samples_test: int,
+                       support_mode_train: str = 'full') -> Tuple[jnp.ndarray, jnp.ndarray]:
+        """ Sample inputs for training and testing. """
+        dataset_domain = HypercubeDomain(lower=self.domain_lower, upper=self.domain_upper)
+        x_train = dataset_domain.sample_uniformly(rng_key, num_samples_train, support_mode=support_mode_train)
+        x_test = dataset_domain.sample_uniformly(rng_key, num_samples_test, support_mode='full')
+        return x_train, x_test
+
+
 class PredictStateChangeWrapper(FunctionSimulator):
     def __init__(self, function_simulator: FunctionSimulator):
         """
@@ -1122,6 +1248,12 @@ class StackedActionSimWrapper(FunctionSimulator):
 
 if __name__ == '__main__':
     key1, key2 = jax.random.split(jax.random.PRNGKey(435345), 2)
+    function_sim = SergioSim(use_hf=False)
+    x, _ = function_sim._sample_x_data(key1, 1, 1)
+
+    f1 = function_sim.sample_function_vals(x, num_samples=10, rng_key=key2)
+    f2 = function_sim._typical_f(x)
+
     function_sim = RaceCarSim(use_blend=False, no_angular_velocity=True)
     x, _ = function_sim._sample_x_data(key1, 1000, 1000)
 

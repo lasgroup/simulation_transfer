@@ -60,6 +60,12 @@ class CarParams(NamedTuple):
     angle_offset: Union[jax.Array, float] = jnp.array([0.02791893])
 
 
+class SergioParams(NamedTuple):
+    lam: jax.Array = jnp.array(0.8)
+    contribution_rates: jax.Array = jnp.array(2.0)
+    basal_rates: jax.Array = jnp.array(0.0)
+
+
 class DynamicsModel(ABC):
     def __init__(self,
                  dt: float,
@@ -567,7 +573,130 @@ class RaceCar(DynamicsModel):
         return dx
 
 
+class SergioDynamics(ABC):
+    l_b: float = 0
+    u_b: float = 500
+    lam_lb: float = 0.2
+    lam_ub: float = 0.9
+
+    def __init__(self,
+                 dt: float,
+                 n_cells: int,
+                 n_genes: int,
+                 params: SergioParams = SergioParams(),
+                 dt_integration: float = 0.01,
+                 ):
+        super().__init__()
+        self.dt = dt
+        self.n_cells = n_cells
+        self.n_genes = n_genes
+        self.params = params
+        self.x_dim = self.n_cells * self.n_genes
+
+        self.dt_integration = dt_integration
+        assert dt >= dt_integration
+        assert (dt / dt_integration - int(dt / dt_integration)) < 1e-4, 'dt must be multiple of dt_integration'
+        self._num_steps_integrate = int(dt / dt_integration)
+
+    def next_step(self, x: jax.Array, params: PyTree) -> jax.Array:
+        def body(carry, _):
+            q = carry + self.dt_integration * self.ode(carry, params)
+            return q, None
+
+        next_state, _ = jax.lax.scan(body, x, xs=None, length=self._num_steps_integrate)
+        return next_state
+
+    def ode(self, x: jax.Array, params) -> jax.Array:
+        assert x.shape[-1] == self.x_dim
+        return self._ode(x, params)
+
+    def production_rate(self, x: jnp.array, params: SergioParams):
+        assert x.shape == (self.n_cells, self.n_genes)
+
+        def hill_function(x: jnp.array, n: float = 2.0):
+            h = x.mean(0)
+            hill_numerator = jnp.power(x, n)
+            hill_denominator = jnp.power(h, n) + hill_numerator
+            hill = jnp.where(
+                jnp.abs(hill_denominator) < 1e-6, 0, hill_numerator / hill_denominator
+            )
+            return hill
+
+        hills = hill_function(x)
+        masked_contribution = params.contribution_rates
+
+        # [n_cell_types, n_genes, n_genes]
+        # switching mechanism between activation and repression,
+        # which is decided via the sign of the contribution rates
+        intermediate = jnp.where(
+            masked_contribution > 0,
+            jnp.abs(masked_contribution) * hills,
+            jnp.abs(masked_contribution) * (1 - hills),
+        )
+        # [n_cell_types, n_genes]
+        # sum over regulators, i.e. sum over i in [b, i, j]
+        production_rate = params.basal_rates + intermediate.sum(1)
+        return production_rate
+
+    def _ode(self, x: jax.Array, params) -> jax.Array:
+        assert x.shape == (self.n_cells * self.n_genes,)
+        x = x.reshape(self.n_cells, self.n_genes)
+        production_rate = self.production_rate(x, params)
+        x_next = (production_rate - params.lam * x) * self.dt
+        x_next = x_next.reshape(self.n_cells * self.n_genes)
+        x_next = jnp.clip(x_next, self.l_b, self.u_b)
+        return x_next
+
+    def _split_key_like_tree(self, key: jax.random.PRNGKey):
+        treedef = jtu.tree_structure(self.params)
+        keys = jax.random.split(key, treedef.num_leaves)
+        return jtu.tree_unflatten(treedef, keys)
+
+    def sample_single_params(self, key: jax.random.PRNGKey, lower_bound: NamedTuple, upper_bound: NamedTuple):
+        lam_key, contrib_key, basal_key = jax.random.split(key, 3)
+        lam = jax.random.uniform(lam_key, shape=(self.n_cells, self.n_genes), minval=lower_bound.lam,
+                                 maxval=upper_bound.lam)
+
+        contribution_rates = jax.random.uniform(contrib_key, shape=(self.n_cells,
+                                                                    self.n_genes,
+                                                                    self.n_genes),
+                                                minval=lower_bound.contribution_rates,
+                                                maxval=upper_bound.contribution_rates)
+        basal_rates = jax.random.uniform(basal_key, shape=(self.n_cells,
+                                                           self.n_genes),
+                                         minval=lower_bound.basal_rates,
+                                         maxval=upper_bound.basal_rates)
+
+        return SergioParams(
+            lam=lam,
+            contribution_rates=contribution_rates,
+            basal_rates=basal_rates
+        )
+
+    def sample_params_uniform(self, key: jax.random.PRNGKey, sample_shape: Union[int, Tuple[int]],
+                              lower_bound: NamedTuple, upper_bound: NamedTuple):
+        if isinstance(sample_shape, int):
+            keys = jax.random.split(key, sample_shape)
+        else:
+            keys = jax.random.split(key, jnp.prod(sample_shape.shape))
+        sampled_params = jax.vmap(self.sample_single_params,
+                                  in_axes=(0, None, None))(keys, lower_bound, upper_bound)
+        return sampled_params
+
+
 if __name__ == "__main__":
+    sim = SergioDynamics(0.1, 20, 20)
+    x_next = sim.next_step(x=jnp.ones(20 * 20), params=sim.params)
+    lower_bound = SergioParams(lam=jnp.array(0.2),
+                               contribution_rates=jnp.array(1.0),
+                               basal_rates=jnp.array(1.0))
+    upper_bound = SergioParams(lam=jnp.array(0.9),
+                               contribution_rates=jnp.array(5.0),
+                               basal_rates=jnp.array(5.0))
+    key = jax.random.PRNGKey(0)
+    keys = random.split(key, 4)
+    params = vmap(sim.sample_params_uniform, in_axes=(0, None, None, None))(keys, 1, lower_bound, upper_bound)
+    x_next = vmap(vmap(lambda p: sim.next_step(x=jnp.ones(20 * 20), params=p)))(params)
     pendulum = Pendulum(0.1)
     pendulum.next_step(x=jnp.array([0., 0., 0.]), u=jnp.array([1.0]), params=pendulum.params)
 
@@ -577,7 +706,7 @@ if __name__ == "__main__":
                                  c_d=jnp.array(0.1))
     key = jax.random.PRNGKey(0)
     keys = random.split(key, 4)
-    params = vmap(pendulum.sample_params_uniform, in_axes=(0, None, None, None))(keys, 1, upper_bound, lower_bound)
+    params = vmap(pendulum.sample_params_uniform, in_axes=(0, None, None, None))(keys, 1, lower_bound, upper_bound)
 
 
     def simulate_car(init_pos=jnp.zeros(2), horizon=150):

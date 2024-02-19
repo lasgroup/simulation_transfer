@@ -248,10 +248,13 @@ def main(args):
             elif 'only_pose' in exp_params['data_source']:
                 outputscales_racecar = outputscales_racecar[:-3]
             exp_params['added_gp_outputscale'] = outputscales_racecar.tolist()
-            print(f"Setting added_gp_outputscale to data_source default value from DATASET_CONFIGS "
-                  f"which is {exp_params['added_gp_outputscale']}")
+            # print(f"Setting added_gp_outputscale to data_source default value from DATASET_CONFIGS "
+            #      f"which is {exp_params['added_gp_outputscale']}")
         elif 'pendulum' in exp_params['data_source']:
             exp_params['added_gp_outputscale'] = [factor * 0.05, 0.05, 0.5]
+        elif 'Sergio' in exp_params['data_source']:
+            from experiments.data_provider import DEFAULTS_SERGIO
+            exp_params['added_gp_outputscale'] = [factor * 0.05 for _ in range(DEFAULTS_SERGIO['sergio_dim'])]
         else:
             raise AssertionError('passed negative value for added_gp_outputscale')
     # set likelihood_std to default value if not specified
@@ -262,8 +265,8 @@ def main(args):
         elif 'only_pose' in exp_params['data_source']:
             likelihood_std = likelihood_std[:-3]
         exp_params['likelihood_std'] = likelihood_std
-        print(f"Setting likelihood_std to data_source default value from DATASET_CONFIGS "
-              f"which is {exp_params['likelihood_std']}")
+        # print(f"Setting likelihood_std to data_source default value from DATASET_CONFIGS "
+        #      f"which is {exp_params['likelihood_std']}")
 
 
 
@@ -325,7 +328,7 @@ if __name__ == '__main__':
     parser.add_argument('--use_wandb', type=bool, default=False)
 
     # data parameters
-    parser.add_argument('--data_source', type=str, default='real_racecar_v3')
+    parser.add_argument('--data_source', type=str, default='Sergio_hf')
     parser.add_argument('--pred_diff', type=int, default=1)
     parser.add_argument('--num_samples_train', type=int, default=5000)
     parser.add_argument('--data_seed', type=int, default=77698)
