@@ -604,6 +604,7 @@ class SergioDynamics(ABC):
             return q, None
 
         next_state, _ = jax.lax.scan(body, x, xs=None, length=self._num_steps_integrate)
+        next_state = jnp.clip(next_state, self.l_b, self.u_b)
         return next_state
 
     def ode(self, x: jax.Array, params) -> jax.Array:
@@ -642,9 +643,8 @@ class SergioDynamics(ABC):
         assert x.shape == (self.n_cells * self.n_genes,)
         x = x.reshape(self.n_cells, self.n_genes)
         production_rate = self.production_rate(x, params)
-        x_next = (production_rate - params.lam * x) * self.dt
+        x_next = (production_rate - params.lam * x)
         x_next = x_next.reshape(self.n_cells * self.n_genes)
-        x_next = jnp.clip(x_next, self.l_b, self.u_b)
         return x_next
 
     def _split_key_like_tree(self, key: jax.random.PRNGKey):
@@ -685,8 +685,8 @@ class SergioDynamics(ABC):
 
 
 if __name__ == "__main__":
-    sim = SergioDynamics(0.1, 20, 20)
-    x_next = sim.next_step(x=jnp.ones(20 * 20), params=sim.params)
+    sim = SergioDynamics(0.1, 10, 10)
+    x_next = sim.next_step(x=jnp.ones(10 * 10), params=sim.params)
     lower_bound = SergioParams(lam=jnp.array(0.2),
                                contribution_rates=jnp.array(1.0),
                                basal_rates=jnp.array(1.0))
