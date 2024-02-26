@@ -31,9 +31,9 @@ DEFAULTS_SERGIO = {
     'obs_noise_std': 0.02,
     'x_support_mode_train': 'full',
     'param_mode': 'random',
-    'num_cells': 10,
-    'num_genes': 10,
-    'sergio_dim': 10 * 10,
+    'num_cells': 5,
+    'num_genes': 15,
+    'sergio_dim': 5 * 15,
 }
 
 DEFAULTS_RACECAR = {

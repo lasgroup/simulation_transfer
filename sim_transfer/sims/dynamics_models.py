@@ -64,6 +64,8 @@ class SergioParams(NamedTuple):
     lam: jax.Array = jnp.array(0.8)
     contribution_rates: jax.Array = jnp.array(2.0)
     basal_rates: jax.Array = jnp.array(0.0)
+    power: jax.Array = jnp.array(2.0)
+    graph: jax.Array = jnp.array(1.0)
 
 
 class DynamicsModel(ABC):
@@ -575,7 +577,6 @@ class RaceCar(DynamicsModel):
 
 class SergioDynamics(ABC):
     l_b: float = 0
-    u_b: float = 500
     lam_lb: float = 0.2
     lam_ub: float = 0.9
 
@@ -601,10 +602,10 @@ class SergioDynamics(ABC):
     def next_step(self, x: jax.Array, params: PyTree) -> jax.Array:
         def body(carry, _):
             q = carry + self.dt_integration * self.ode(carry, params)
+            q = jnp.clip(q, a_min=self.l_b)
             return q, None
 
         next_state, _ = jax.lax.scan(body, x, xs=None, length=self._num_steps_integrate)
-        next_state = jnp.clip(next_state, self.l_b, self.u_b)
         return next_state
 
     def ode(self, x: jax.Array, params) -> jax.Array:
@@ -614,17 +615,18 @@ class SergioDynamics(ABC):
     def production_rate(self, x: jnp.array, params: SergioParams):
         assert x.shape == (self.n_cells, self.n_genes)
 
-        def hill_function(x: jnp.array, n: float = 2.0):
+        def hill_function(x: jnp.array):
             h = x.mean(0)
-            hill_numerator = jnp.power(x, n)
-            hill_denominator = jnp.power(h, n) + hill_numerator
+            hill_numerator = jnp.power(x, params.power)
+            hill_denominator = jnp.power(h, params.power) + hill_numerator
             hill = jnp.where(
                 jnp.abs(hill_denominator) < 1e-6, 0, hill_numerator / hill_denominator
             )
             return hill
 
         hills = hill_function(x)
-        masked_contribution = params.contribution_rates
+        hills = hills[:, :, None]
+        masked_contribution = params.contribution_rates * params.graph
 
         # [n_cell_types, n_genes, n_genes]
         # switching mechanism between activation and repression,
@@ -652,8 +654,8 @@ class SergioDynamics(ABC):
         keys = jax.random.split(key, treedef.num_leaves)
         return jtu.tree_unflatten(treedef, keys)
 
-    def sample_single_params(self, key: jax.random.PRNGKey, lower_bound: NamedTuple, upper_bound: NamedTuple):
-        lam_key, contrib_key, basal_key = jax.random.split(key, 3)
+    def sample_single_params(self, key: jax.random.PRNGKey, lower_bound: SergioParams, upper_bound: SergioParams):
+        lam_key, contrib_key, basal_key, graph_key, power_key = jax.random.split(key, 5)
         lam = jax.random.uniform(lam_key, shape=(self.n_cells, self.n_genes), minval=lower_bound.lam,
                                  maxval=upper_bound.lam)
 
@@ -667,10 +669,20 @@ class SergioDynamics(ABC):
                                          minval=lower_bound.basal_rates,
                                          maxval=upper_bound.basal_rates)
 
+        lower_bound_graph = jnp.clip(lower_bound.graph, 0, 2)
+        upper_bound_graph = jnp.clip(upper_bound.graph, 0, 2)
+        graph = jax.random.randint(graph_key, shape=(self.n_genes, self.n_genes), minval=lower_bound_graph,
+                                   maxval=upper_bound_graph)
+        diag_elements = jnp.diag_indices_from(graph)
+        graph = graph.at[diag_elements].set(1)
+        power = jax.random.uniform(power_key, shape=(1, ), minval=lower_bound.power, maxval=upper_bound.power)
+
         return SergioParams(
             lam=lam,
             contribution_rates=contribution_rates,
-            basal_rates=basal_rates
+            basal_rates=basal_rates,
+            power=power,
+            graph=graph,
         )
 
     def sample_params_uniform(self, key: jax.random.PRNGKey, sample_shape: Union[int, Tuple[int]],
@@ -678,25 +690,28 @@ class SergioDynamics(ABC):
         if isinstance(sample_shape, int):
             keys = jax.random.split(key, sample_shape)
         else:
-            keys = jax.random.split(key, jnp.prod(sample_shape.shape))
+            keys = jax.random.split(key, np.prod(sample_shape))
         sampled_params = jax.vmap(self.sample_single_params,
                                   in_axes=(0, None, None))(keys, lower_bound, upper_bound)
         return sampled_params
 
 
 if __name__ == "__main__":
-    sim = SergioDynamics(0.1, 10, 10)
-    x_next = sim.next_step(x=jnp.ones(10 * 10), params=sim.params)
+    dim_x, dim_y = 10, 10
+    sim = SergioDynamics(0.1, dim_x, dim_y)
+    x_next = sim.next_step(x=jnp.ones(dim_x * dim_y), params=sim.params)
     lower_bound = SergioParams(lam=jnp.array(0.2),
                                contribution_rates=jnp.array(1.0),
-                               basal_rates=jnp.array(1.0))
+                               basal_rates=jnp.array(1.0),
+                               graph=jnp.array(0))
     upper_bound = SergioParams(lam=jnp.array(0.9),
                                contribution_rates=jnp.array(5.0),
-                               basal_rates=jnp.array(5.0))
+                               basal_rates=jnp.array(5.0),
+                               graph=jnp.array(2))
     key = jax.random.PRNGKey(0)
     keys = random.split(key, 4)
     params = vmap(sim.sample_params_uniform, in_axes=(0, None, None, None))(keys, 1, lower_bound, upper_bound)
-    x_next = vmap(vmap(lambda p: sim.next_step(x=jnp.ones(20 * 20), params=p)))(params)
+    x_next = vmap(vmap(lambda p: sim.next_step(x=jnp.ones(dim_x * dim_y), params=p)))(params)
     pendulum = Pendulum(0.1)
     pendulum.next_step(x=jnp.array([0., 0., 0.]), u=jnp.array([1.0]), params=pendulum.params)
 

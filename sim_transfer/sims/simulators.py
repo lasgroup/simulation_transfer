@@ -991,7 +991,7 @@ class SergioSim(FunctionSimulator):
 
     # domain for generating data
     state_lb: float = 0.0
-    state_ub: float = 400
+    state_ub: float = 500
 
     def __init__(self, n_genes: int = 20, n_cells: int = 20, use_hf: bool = False):
         FunctionSimulator.__init__(self, input_size=n_genes * n_cells, output_size=n_genes * n_cells)
@@ -1021,21 +1021,29 @@ class SergioSim(FunctionSimulator):
         return self._domain
 
     def _setup_params(self):
-        self.lower_bound_param_hf = SergioParams(lam=jnp.array(0.1),
+        self.lower_bound_param_hf = SergioParams(lam=jnp.array(0.7),
                                                  contribution_rates=jnp.array(-5.0),
-                                                 basal_rates=jnp.array(0.0))
-        self.upper_bound_param_hf = SergioParams(lam=jnp.array(0.9),
+                                                 basal_rates=jnp.array(1.0),
+                                                 power=jnp.array(2.0),
+                                                 graph=jnp.array(0))
+        self.upper_bound_param_hf = SergioParams(lam=jnp.array(0.8),
                                                  contribution_rates=jnp.array(5.0),
-                                                 basal_rates=jnp.array(5.0))
+                                                 basal_rates=jnp.array(5.0),
+                                                 power=jnp.array(2.0),
+                                                 graph=jnp.array(2))
         self.default_param_hf = self.model.sample_single_params(jax.random.PRNGKey(0), self.lower_bound_param_hf,
                                                                 self.upper_bound_param_hf)
 
-        self.lower_bound_param_lf = SergioParams(lam=jnp.array(0.2),
-                                                 contribution_rates=jnp.array(0.0),
-                                                 basal_rates=jnp.array(0.0))
-        self.upper_bound_param_lf = SergioParams(lam=jnp.array(0.9),
-                                                 contribution_rates=jnp.array(0.0),
-                                                 basal_rates=jnp.array(0.0))
+        self.lower_bound_param_lf = SergioParams(lam=jnp.array(0.1),
+                                                 contribution_rates=jnp.array(-5.0),
+                                                 basal_rates=jnp.array(1.0),
+                                                 power=jnp.array(0.0),
+                                                 graph=jnp.array(0))
+        self.upper_bound_param_lf = SergioParams(lam=jnp.array(0.8),
+                                                 contribution_rates=jnp.array(5.0),
+                                                 basal_rates=jnp.array(5.0),
+                                                 power=jnp.array(0.0),
+                                                 graph=jnp.array(0))
         self.default_param_lf = self.model.sample_single_params(jax.random.PRNGKey(0), self.lower_bound_param_lf,
                                                                 self.upper_bound_param_lf)
 
@@ -1043,11 +1051,14 @@ class SergioSim(FunctionSimulator):
         return self._typical_params
 
     def sample_params(self, rng_key: jax.random.PRNGKey):
-        params = self.model.sample_params_uniform(rng_key, sample_shape=1,
-                                                  lower_bound=self._lower_bound_params,
-                                                  upper_bound=self._upper_bound_params)
-        params = jtu.tree_map(lambda x: x.item(), params)
+        params = self.model.sample_single_params(rng_key,
+                                                 lower_bound=self._lower_bound_params,
+                                                 upper_bound=self._upper_bound_params)
         train_params = jtu.tree_map(lambda x: 1, params)
+        if self.use_hf:
+            train_params = train_params._replace(power=0)
+        else:
+            train_params = train_params._replace(power=0, graph=0)
         return params, train_params
 
     def sample_function_vals(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
@@ -1248,12 +1259,20 @@ class StackedActionSimWrapper(FunctionSimulator):
 
 if __name__ == '__main__':
     key1, key2 = jax.random.split(jax.random.PRNGKey(435345), 2)
-    function_sim = SergioSim(use_hf=False)
+    function_sim = SergioSim(5, 10, use_hf=False)
+    function_sim.sample_params(key1)
     x, _ = function_sim._sample_x_data(key1, 1, 1)
-
-    f1 = function_sim.sample_function_vals(x, num_samples=10, rng_key=key2)
+    param1 = function_sim._typical_params
+    f1 = function_sim.sample_function_vals(x, num_samples=1000, rng_key=key2)
     f2 = function_sim._typical_f(x)
-
+    function_sim = SergioSim(5, 10, use_hf=True)
+    params = function_sim._typical_params
+    params = params._replace(
+        lam=param1.lam,
+    )
+    f3 = function_sim.evaluate_sim(x, params)
+    print(jnp.isnan(f1).any())
+    print(jnp.isnan(f2).any())
     function_sim = RaceCarSim(use_blend=False, no_angular_velocity=True)
     x, _ = function_sim._sample_x_data(key1, 1000, 1000)
 
