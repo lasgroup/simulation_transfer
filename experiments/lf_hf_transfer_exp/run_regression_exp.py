@@ -215,7 +215,6 @@ def regression_experiment(
 
     # train model
     model.fit_with_scan(x_train, y_train, x_test, y_test, log_to_wandb=use_wandb, log_period=1000)
-
     # eval model
     eval_metrics = model.eval(x_test, y_test, per_dim_metrics=True)
     return eval_metrics
@@ -254,7 +253,7 @@ def main(args):
             exp_params['added_gp_outputscale'] = [factor * 0.05, 0.05, 0.5]
         elif 'Sergio' in exp_params['data_source']:
             from experiments.data_provider import DEFAULTS_SERGIO
-            exp_params['added_gp_outputscale'] = [factor * 0.05 for _ in range(DEFAULTS_SERGIO['sergio_dim'])]
+            exp_params['added_gp_outputscale'] = [factor * 0.1 for _ in range(DEFAULTS_SERGIO['sergio_dim'])]
         else:
             raise AssertionError('passed negative value for added_gp_outputscale')
     # set likelihood_std to default value if not specified
@@ -271,9 +270,10 @@ def main(args):
 
 
     from pprint import pprint
-    print('\nExperiment parameters:')
-    pprint(exp_params)
-    print('')
+    if not 'Sergio' in exp_params['data_source']:
+        print('\nExperiment parameters:')
+        pprint(exp_params)
+        print('')
 
     """ Experiment core """
     t_start = time.time()
@@ -334,7 +334,7 @@ if __name__ == '__main__':
     parser.add_argument('--data_seed', type=int, default=77698)
 
     # standard BNN parameters
-    parser.add_argument('--model', type=str, default='BNN_FSVGD_SimPrior_hf_gp')
+    parser.add_argument('--model', type=str, default='SysID')
     parser.add_argument('--model_seed', type=int, default=892616)
     parser.add_argument('--likelihood_std', type=float, default=None)
     parser.add_argument('--learn_likelihood_std', type=int, default=0)

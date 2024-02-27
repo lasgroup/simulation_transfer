@@ -1021,7 +1021,7 @@ class SergioSim(FunctionSimulator):
         return self._domain
 
     def _setup_params(self):
-        self.lower_bound_param_hf = SergioParams(lam=jnp.array(0.7),
+        self.lower_bound_param_hf = SergioParams(lam=jnp.array(0.79),
                                                  contribution_rates=jnp.array(-5.0),
                                                  basal_rates=jnp.array(1.0),
                                                  power=jnp.array(2.0),
@@ -1034,15 +1034,15 @@ class SergioSim(FunctionSimulator):
         self.default_param_hf = self.model.sample_single_params(jax.random.PRNGKey(0), self.lower_bound_param_hf,
                                                                 self.upper_bound_param_hf)
 
-        self.lower_bound_param_lf = SergioParams(lam=jnp.array(0.1),
+        self.lower_bound_param_lf = SergioParams(lam=jnp.array(0.79),
                                                  contribution_rates=jnp.array(-5.0),
                                                  basal_rates=jnp.array(1.0),
-                                                 power=jnp.array(0.0),
+                                                 power=jnp.array(1.0),
                                                  graph=jnp.array(0))
         self.upper_bound_param_lf = SergioParams(lam=jnp.array(0.8),
                                                  contribution_rates=jnp.array(5.0),
                                                  basal_rates=jnp.array(5.0),
-                                                 power=jnp.array(0.0),
+                                                 power=jnp.array(1.0),
                                                  graph=jnp.array(0))
         self.default_param_lf = self.model.sample_single_params(jax.random.PRNGKey(0), self.lower_bound_param_lf,
                                                                 self.upper_bound_param_lf)

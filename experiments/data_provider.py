@@ -28,7 +28,7 @@ DEFAULTS_PENDULUM = {
 }
 
 DEFAULTS_SERGIO = {
-    'obs_noise_std': 0.02,
+    'obs_noise_std': 0.05,
     'x_support_mode_train': 'full',
     'param_mode': 'random',
     'num_cells': 5,

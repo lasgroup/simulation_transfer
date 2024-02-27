@@ -626,7 +626,7 @@ class SergioDynamics(ABC):
 
         hills = hill_function(x)
         hills = hills[:, :, None]
-        masked_contribution = params.contribution_rates * params.graph
+        masked_contribution = params.graph[None] * params.contribution_rates
 
         # [n_cell_types, n_genes, n_genes]
         # switching mechanism between activation and repression,
@@ -672,11 +672,10 @@ class SergioDynamics(ABC):
         lower_bound_graph = jnp.clip(lower_bound.graph, 0, 2)
         upper_bound_graph = jnp.clip(upper_bound.graph, 0, 2)
         graph = jax.random.randint(graph_key, shape=(self.n_genes, self.n_genes), minval=lower_bound_graph,
-                                   maxval=upper_bound_graph)
+                                   maxval=upper_bound_graph) * 1.0
         diag_elements = jnp.diag_indices_from(graph)
-        graph = graph.at[diag_elements].set(1)
+        graph = graph.at[diag_elements].set(1.0)
         power = jax.random.uniform(power_key, shape=(1, ), minval=lower_bound.power, maxval=upper_bound.power)
-
         return SergioParams(
             lam=lam,
             contribution_rates=contribution_rates,
