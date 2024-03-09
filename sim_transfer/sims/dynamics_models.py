@@ -68,6 +68,93 @@ class SergioParams(NamedTuple):
     graph: jax.Array = jnp.array(1.0)
 
 
+class GreenHouseParams(NamedTuple):
+    beta: Union[jax.Array, float] = jnp.array(0.01)  # Heat absorption efficiency
+    gamma: Union[jax.Array, float] = jnp.array(0.067)  # apparent psychometric constant
+    epsilon: Union[jax.Array, float] = jnp.array(3.0)  # Cover heat resistance ratio
+    zeta: Union[jax.Array, float] = jnp.array(2.7060 * (10 ** (-5)))  # ventilation rate parameter
+    eta: Union[jax.Array, float] = jnp.array(0.7)  # radiation conversion factor
+    theta: Union[jax.Array, float] = jnp.array(4.02 * (10 ** (-5)))  # ventilation rate parameter 1
+    kappa: Union[jax.Array, float] = jnp.array(5.03 * (10 ** (-5)))  # ventilation rate parameter 2
+    lam: Union[jax.Array, float] = jnp.array(0.46153)  # pressure constant
+    mu: Union[jax.Array, float] = jnp.array(1.4667)  # Molar weight fraction C02 CH20
+    nu_2: Union[jax.Array, float] = jnp.array(3.68 * (10 ** (-5)))  # ventilation rate parameter 1
+    xi: Union[jax.Array, float] = jnp.array(6.3233 * (10 ** (-5)))  # ventilation rate parameter 2
+    rho_w: Union[jax.Array, float] = jnp.array(998)  # Density of water
+    rho_a: Union[jax.Array, float] = jnp.array(1.29)  # Density of air
+    sigma: Union[jax.Array, float] = jnp.array(7.1708 * (10 ** (-5)))  # ventilation rate parameter 3
+    tau: Union[jax.Array, float] = jnp.array(3.0)  # pipe heat transfer coefficient 1
+    nu: Union[jax.Array, float] = jnp.array(0.74783)  # pipe heat transfer coefficient 2
+    chi: Union[jax.Array, float] = jnp.array(0.0156)  # ventilation rate parameter 4
+    psi: Union[jax.Array, float] = jnp.array(7.4 * (10 ** (-5)))
+    omega: Union[jax.Array, float] = jnp.array(0.622)  # Humidity ratio
+    a1: Union[jax.Array, float] = jnp.array(0.611)  # Saturated vapour pressure parameter 1
+    a2: Union[jax.Array, float] = jnp.array(17.27)  # Saturated vapour pressure parameter 2
+    a3: Union[jax.Array, float] = jnp.array(239.0)  # Saturated vapour pressure parameter 3
+    ap: Union[jax.Array, float] = jnp.array(314.16)  # Heating pipe outer surface area
+    b1: Union[jax.Array, float] = jnp.array(2.7)  # buffer_coefficient
+    cg: Union[jax.Array, float] = jnp.array(32 * (10 ** 3))  # green_house_heat_capacity
+    cp_w: Union[jax.Array, float] = jnp.array(4180.0)  # specific_heat_water
+    cs: Union[jax.Array, float] = jnp.array(120 * (10 ** 3))  # green_house_soil_heat_capacity
+    cp_a: Union[jax.Array, float] = 1010  # air_specific_heat_water
+    d1: Union[jax.Array, float] = jnp.array(2.1332 * (10 ** (-7)))  # plant development rate 1
+    d2: Union[jax.Array, float] = jnp.array(2.4664 * (10 ** (-1)))  # plant development rate 2
+    d3: Union[jax.Array, float] = jnp.array(20)  # plant development rate 3
+    d4: Union[jax.Array, float] = jnp.array(7.4966 * (10 ** (-11)))  # plant development rate 4
+    f: Union[jax.Array, float] = jnp.array(1.2)  # fruit assimilate requirment
+    f1: Union[jax.Array, float] = jnp.array(8.1019 * (10 ** (-7)))  # fruit growth rate
+    f2: Union[jax.Array, float] = jnp.array(4.6296 * (10 ** (-6)))  # fruit growth rate
+    g1: Union[jax.Array, float] = jnp.array(20.3 * (10 ** (-3)))  # Leaf conductance parameter 1
+    g2: Union[jax.Array, float] = jnp.array(0.44)  # Leaf conductance parameter 2
+    g3: Union[jax.Array, float] = jnp.array(2.5 * (10 ** (-3)))  # Leaf conductance parameter 3
+    g4: Union[jax.Array, float] = jnp.array(3.1 * (10 ** (-4)))  # Leaf conductance parameter 4
+    gb: Union[jax.Array, float] = jnp.array(10 ** (-2))  # Boundary layer conductance
+    kd: Union[jax.Array, float] = jnp.array(2.0)  # Soil to soil heat transfer coefficient
+    kr: Union[jax.Array, float] = jnp.array(7.9)  # Roof heat transfer coefficient
+    ks: Union[jax.Array, float] = jnp.array(5.75)  # Soil to air heat transfer coefficient
+    l1: Union[jax.Array, float] = jnp.array(2.501 * (10 ** 6))  # Vaporisation energy coefficient 1
+    l2: Union[jax.Array, float] = jnp.array(2.381 * (10 ** 3))  # Vaporisation energy coefficient 2
+    m1: Union[jax.Array, float] = jnp.array(1.0183 * (10 ** (-3)))  # mass transfer parameter
+    m2: Union[jax.Array, float] = jnp.array(0.33)  # Mass transfer parameter 2
+    Mco2: Union[jax.Array, float] = jnp.array(0.0044)  # Molar mass CO2
+    MF: Union[jax.Array, float] = jnp.array(1.157 * (10 ** (-7)))  # Fruit maintenance respiration coefficient
+    ML: Union[jax.Array, float] = jnp.array(2.894 * (10 ** (-7)))  # Vegetative maintenance respiration coefficient
+    mp: Union[jax.Array, float] = jnp.array(4.57)  # Watt to micromol conversion constant
+    p1: Union[jax.Array, float] = jnp.array(-2.17 * (10 ** (-4)))  # Net photosynthesis parameter 1 -> check these
+    p2: Union[jax.Array, float] = jnp.array(3.31 * (10 ** (-3)))  # Net photosynthesis parameter 2 -> check these
+    p3: Union[jax.Array, float] = jnp.array(577.0)  # Net photosynthesis parameter 3
+    p4: Union[jax.Array, float] = jnp.array(221.0)  # Net photosynthesis parameter 4
+    p5: Union[jax.Array, float] = jnp.array(5 * (10 ** (-5)))  # Net photosynthesis parameter 5 -> check these
+    patm: Union[jax.Array, float] = jnp.array(101.0)  # atmospheric pressure
+    pm: Union[jax.Array, float] = jnp.array(2.2538 * (10 ** (-3)))  # Maximum photosynthesis rate
+    qg: Union[jax.Array, float] = jnp.array(2.0)  # fruit growth rate parameter
+    qr: Union[jax.Array, float] = jnp.array(2.0)  # maintenance respiration
+    rg: Union[jax.Array, float] = jnp.array(8.3144)  # Gas constant
+    s1: Union[jax.Array, float] = jnp.array(1.8407 ** (-4))  # saturated water vapour pressure curve slope parameter 1
+    s2: Union[jax.Array, float] = jnp.array(
+        9.7838 ** (10 ** (-4)))  # saturated water vapour pressure curve slope parameter 2
+    s3: Union[jax.Array, float] = jnp.array(0.051492)  # saturated water vapour pressure curve slope parameter 3
+    T0: Union[jax.Array, float] = jnp.array(273.15)  # conversion from Celsius to K
+    Tg: Union[jax.Array, float] = jnp.array(20.0)  # growth rate temperature reference
+    Td: Union[jax.Array, float] = jnp.array(10.0)  # Deep soil temperature
+    Tr: Union[jax.Array, float] = jnp.array(25.0)  # Maintenance respiration reference temperature
+    v: Union[jax.Array, float] = jnp.array(1.23)  # Vegetative assimilate requirement coefficient
+    v1: Union[jax.Array, float] = jnp.array(1.3774)  # Vegetative fruit growth ratio parameter 1
+    v2: Union[jax.Array, float] = jnp.array(-0.168)  # Vegetative fruit growth ratio parameter 2
+    v3: Union[jax.Array, float] = jnp.array(19.0)  # Vegetative fruit growth ratio parameter 3
+    vp: Union[jax.Array, float] = jnp.array(7.85)  # Heating pipe volume
+    vg_ag: Union[jax.Array, float] = jnp.array(10.0)  # Average greenhouse height
+    wr: Union[jax.Array, float] = jnp.array(32.23)  # LAI correction function parameter
+    laim: Union[jax.Array, float] = jnp.array(2.511)  # LAI correction function parameter
+    yf: Union[jax.Array, float] = jnp.array(0.5983)  # Fruit harvest coefficient parameter 1
+    yl: Union[jax.Array, float] = jnp.array(0.5983)  # Fruit harvest coefficient parameter 2
+    z: Union[jax.Array, float] = jnp.array(0.6081)  # Leaf fraction of vegetative dry weight
+    phi: Union[jax.Array, float] = jnp.array(4 * (10 ** (-3)))  # heat valve opening
+    rh: Union[jax.Array, float] = jnp.array(0.3)  # relative valve opening
+    pg: Union[jax.Array, float] = jnp.array(0.475)  # PAR to global radiation ratio
+    inj_scale: Union[jax.Array, float] = jnp.array(10 ** (-3))
+
+
 class DynamicsModel(ABC):
     def __init__(self,
                  dt: float,
@@ -675,7 +762,7 @@ class SergioDynamics(ABC):
                                    maxval=upper_bound_graph) * 1.0
         diag_elements = jnp.diag_indices_from(graph)
         graph = graph.at[diag_elements].set(1.0)
-        power = jax.random.uniform(power_key, shape=(1, ), minval=lower_bound.power, maxval=upper_bound.power)
+        power = jax.random.uniform(power_key, shape=(1,), minval=lower_bound.power, maxval=upper_bound.power)
         return SergioParams(
             lam=lam,
             contribution_rates=contribution_rates,
@@ -693,6 +780,298 @@ class SergioDynamics(ABC):
         sampled_params = jax.vmap(self.sample_single_params,
                                   in_axes=(0, None, None))(keys, lower_bound, upper_bound)
         return sampled_params
+
+
+class GreenHouseDynamics(DynamicsModel):
+    state_ub = jnp.array(
+        [
+            # t_g, t_p, t_s, c_i, v_i, mb, mf, ml, d_p, t_o, t_d, c_o, v_o, w, G, t
+            30, 50, 20, 8, 1.0, 10, 150, 15, 1.0, 30.0, 10.0, 0.5, 0.8, 5, 500, 10 ** 6,
+
+        ])
+
+    state_lb = jnp.array(
+        [
+            0, 0, -10, 0, 0, 0, 0, 0, 0, -5, 8.0, 0, 0.01, 0, 0, 0
+        ]
+    )
+
+    constraint_lb = jnp.array(
+        [
+            -273.15, -273.15, -273.15, 0, 0, 0, 0, 0, 0, -273.15, -273.15, 0, 0, 0, 0, 0
+        ]
+    )
+
+    constraint_ub = jnp.array(
+        [
+            200, 200, 200, jnp.inf, jnp.inf, jnp.inf, jnp.inf, jnp.inf, 1, 200, 200, jnp.inf, jnp.inf, 10, jnp.inf,
+            jnp.inf
+        ]
+    )
+
+    input_ub = jnp.array([60, 1.0, 1.0, 5.0])
+    input_lb = jnp.array([0, 0.0, 0.0, 0.0])
+    noise_to = 5
+    noise_td = 0.01
+    noise_co = 0.001
+    noise_vo = 0.1
+    noise_w = 1
+    noise_g = 20
+
+    noise_std = jnp.array(
+        [
+            0.05, 0.1, 0.05, 0.01, 0.05, 0.05, 0.1, 0.1, 0.0, noise_to,
+            noise_td, noise_co, noise_vo, noise_w, noise_g, 0.0,
+        ]
+    )
+
+    def __init__(self, use_hf: bool = False, dt: float = 300):
+
+        self.use_hf = use_hf
+        self.greenhouse_state_dim = 5
+        self.crop_states = 4
+        self.exogenous_states = 6
+        self.state_dim = self.greenhouse_state_dim + self.crop_states \
+                         + self.exogenous_states + 1  # 1 additional state for time
+        self.greenhouse_input_dim = 4
+        self.eps = 1e-8
+        params = GreenHouseParams()
+        super().__init__(
+            dt=dt,
+            x_dim=self.state_dim,
+            u_dim=self.greenhouse_input_dim,
+            params=params,
+            angle_idx=None,
+            dt_integration=60,
+        )
+
+    def next_step(self, x: jnp.array, u: jnp.array, params: GreenHouseParams) -> jnp.array:
+        def body(carry, _):
+            q = carry + self.dt_integration * self.ode(carry, u, params)
+            q = jnp.clip(q, a_min=self.constraint_lb, a_max=self.constraint_ub)
+            return q, None
+
+        x_next, _ = jax.lax.scan(body, x, xs=None, length=self._num_steps_integrate)
+        return x_next
+
+    def _ode(self, x, u, params: GreenHouseParams):
+        """
+        Using kinematic model with blending: https://arxiv.org/pdf/1905.05150.pdf
+        Code based on: https://github.com/alexliniger/gym-racecar/
+
+        Inputs:
+        ------
+        x: jnp.ndarray,
+            shape = (6, ) -> [x, y, theta, vel_r, vel_t, angular_velocity_z]
+        u: jnp.ndarray,
+            shape = (2, ) -> [steering_angle, throttle]
+        params: CarParams,
+
+        Output:
+        -------
+        dx: jnp.ndarray, derivative of x
+        """
+        if self.use_hf:
+            dx = self._greenhouse_dynamics_hf(x, u, params)
+        else:
+            dx = self._greenhouse_dynamics_lf(x, u, params)
+        return dx
+
+    @staticmethod
+    def buffer_switching_func(B, b1):
+        return 1 - jnp.exp(-b1 * B)
+
+    def get_respiration_param(self, x, u, params: GreenHouseParams):
+        ml = x[self.greenhouse_state_dim + 2]
+        l_lai = (ml / params.wr) ** (params.laim) / (1 + (ml / params.wr) ** (params.laim))
+        R = - params.p1 - params.p5 * l_lai
+        return R
+
+    def get_crop_photosynthesis(self, x, u, params: GreenHouseParams):
+        t_g, c_i = x[0], x[3]
+        ml = x[self.greenhouse_state_dim + 2]
+        G = x[-2]
+        i_par = params.eta * G * params.mp * params.pg
+        c_ppm = (10 ** 6) * params.rg / (params.patm * params.Mco2) * (t_g + params.T0) * c_i
+        l_lai = (ml / params.wr) ** (params.laim) / (1 + (ml / params.wr) ** (params.laim))
+        p_g = params.pm * l_lai * i_par / (params.p3 + i_par) * c_ppm / (params.p4 + c_ppm)
+        return p_g
+
+    def get_harvest_coefficient(self, x, u, params: GreenHouseParams):
+        d_p = x[self.greenhouse_state_dim + 3]
+        t = x[-1]
+        t_g = x[0]
+        h = (d_p >= 1) * (params.d1 + params.d2 * jnp.log(t_g / params.d3) - params.d4 * t)
+        return h
+
+    def _greenhouse_dynamics_hf(self, x, u, params: GreenHouseParams):
+        # C, C, C, m, g/m^3, kg/m^-3
+        t_g, t_p, t_s, c_i, v_i = x[0], x[1], x[2], x[3], x[5]
+        # g/m^-2, g/m^-2, g/m^-2, []
+        mb, mf, ml, d_p = x[self.greenhouse_state_dim], x[self.greenhouse_state_dim + 1], \
+            x[self.greenhouse_state_dim + 2], x[self.greenhouse_state_dim + 3]
+        t = x[-1]
+        egs_start_idx = self.greenhouse_state_dim + self.crop_states
+        # C, C, g/m^3, kg/m^-3, m/s, w/m^-2
+        t_o, t_d, c_o, v_o, w, G = x[egs_start_idx], x[egs_start_idx + 1], \
+            x[egs_start_idx + 2], x[egs_start_idx + 3], x[egs_start_idx + 4], x[egs_start_idx + 5]
+        t_h, rwl, rww, phi_c = u[0], u[1], u[2], u[3]
+        phi_v = (params.sigma * rwl / (1 + params.chi * rwl) + params.zeta + params.xi * rww) * w \
+                + params.psi
+        k_v = params.rho_a * params.cp_a * phi_v
+        alpha = params.nu * jnp.sqrt(params.tau + jnp.sqrt(jnp.abs(t_g - t_p)))
+        s = params.s1 * jnp.power(t_g, 2) + params.s2 * t_g + params.s3
+        p_g_star = params.a1 * jnp.exp((params.a2 * t_g) / (params.a3 + t_g + self.eps))
+        # convert temp to Kelvin and then from pascal to kpa. v_i is in g/m^3
+        p_g = (params.lam * (t_g + params.T0) * v_i)
+        Dg = p_g_star - p_g
+        # g1: mm/s, g2: [], g4: m^3/g, g3: s m ^2 /micromol
+        g = params.g1 * (1 - params.g2 * jnp.exp(-params.g3 * G)) * jnp.exp(-params.g4 * c_i)
+        l = params.l1 - params.l2 * t_g
+        # gb: mm/s^-1, rho_a = kg/m^-3, cp_a: J/(C kg), Dg: kPa, E:g/(sm^2)
+        # G: W/m^2, s: KPa/C
+        E = (s * params.eta * G + params.rho_a * params.cp_a * Dg * params.gb) / (l * (s
+                                                                                       + params.gamma * (1
+                                                                                                         + params.gb / g)
+                                                                                       ))
+        Wg = params.omega * p_g / (params.patm - p_g + self.eps)
+        Wc = params.omega * p_g_star / (params.patm - p_g_star + self.eps)
+
+        t_c = params.epsilon / (params.epsilon + 1) * t_o + 1 / params.epsilon * t_g
+        Mc = jax.nn.relu(Wg - Wc) * params.m1 * (jnp.abs(t_g - t_c) ** params.m2)
+        dt_g_dt = (k_v + params.kr) * (t_o - t_g) + alpha * (t_p - t_g) + params.ks * (t_s - t_g) \
+                  + G * params.eta - l * E + l / (1 + params.epsilon) * Mc
+        dt_g_dt = dt_g_dt / params.cg
+        # jax.debug.print('l {x}', x=l)
+        # jax.debug.print('p_g_star{x}', x=p_g_star)
+        # jax.debug.print('t_g {x}', x=t_g)
+
+        phi = params.phi
+        rh = params.rh
+        phi = 2 * phi * rh / (2 - rh)
+        dt_p_dt = params.ap / (params.rho_w * params.cp_w) * (params.beta * G - alpha * (t_p - t_g)) + phi * (
+                t_h - t_p)
+        dt_p_dt = dt_p_dt / params.vp
+
+        dt_s_dt = 1 / params.cs * (params.ks * (t_g - t_s) + params.kd * (params.Td - t_s))
+
+        dc_i_dt = phi_v * (c_o - c_i) + phi_c * params.inj_scale \
+                  + self.get_respiration_param(x, u, params) - params.mu * self.get_crop_photosynthesis(x, u, params)
+        dc_i_dt = dc_i_dt / params.vg_ag
+
+        dv_i_dt = (E / 1000 - phi_v * (v_i - v_o) - Mc / 1000) / params.vg_ag
+
+        # Tomato model
+
+        g_f = (params.f1 - params.f2 * d_p) * (params.qg ** ((t_g - params.Tg) / 10.0))
+        g_l = g_f * params.v1 * jnp.exp(params.v2 * (t_g - params.v3))
+        b = self.buffer_switching_func(mb, params.b1)
+        buff_1 = b * (params.f * g_f * mf + params.v * g_l * ml / params.z)
+        factor = (params.qr ** ((t_g - params.Tg) / 10.0))
+        rf = params.MF * factor
+        rl = params.ML * factor
+        buff_2 = b * (rf * mf + rl * ml / params.z)
+        dmb_dt = self.get_crop_photosynthesis(x, u, params) - buff_1 - buff_2
+        h = self.get_harvest_coefficient(x, u, params)
+        hf, hl = h * params.yf, h * params.yl
+        dmf_dt = (b * g_f - (1 - b) * rf - hf) * mf
+        dml_dt = (b * g_l - (1 - b) * rl - hl) * ml
+        dd_p_dt = params.d1 + params.d2 * jnp.log(t_g / params.d3) - params.d4 * t - h
+
+        # Exogenous effects
+
+        dt_o_dt = jnp.zeros_like(dt_g_dt)
+        dt_d_dt = jnp.zeros_like(dt_g_dt)
+        dc_o_dt = jnp.zeros_like(dt_g_dt)
+        dv_o_dt = jnp.zeros_like(dt_g_dt)
+        dw_dt = jnp.zeros_like(dt_g_dt)
+        dG_dt = jnp.zeros_like(dt_g_dt)
+
+        # Time
+        dt_dt = jnp.ones_like(dt_g_dt)
+
+        dx_dt = jnp.stack([
+            dt_g_dt, dt_p_dt, dt_s_dt, dc_i_dt, dv_i_dt,
+            dmb_dt, dmf_dt, dml_dt, dd_p_dt,
+            dt_o_dt, dt_d_dt, dc_o_dt, dv_o_dt, dw_dt, dG_dt, dt_dt,
+        ])
+        return dx_dt
+
+    def _greenhouse_dynamics_lf(self, x, u, params: GreenHouseParams):
+
+        t_g, t_p, t_s, c_i, v_i = x[0], x[1], x[2], x[3], x[5]
+        # g/m^-2, g/m^-2, g/m^-2, []
+        mb, mf, ml, d_p = x[self.greenhouse_state_dim], x[self.greenhouse_state_dim + 1], \
+            x[self.greenhouse_state_dim + 2], x[self.greenhouse_state_dim + 3]
+        t = x[-1]
+        egs_start_idx = self.greenhouse_state_dim + self.crop_states
+        # C, C, g/m^3, kg/m^-3, m/s, w/m^-2
+        t_o, t_d, c_o, v_o, w, G = x[egs_start_idx], x[egs_start_idx + 1], \
+            x[egs_start_idx + 2], x[egs_start_idx + 3], x[egs_start_idx + 4], x[egs_start_idx + 5]
+        t_h, rwl, rww, phi_c = u[0], u[1], u[2], u[3]
+        phi_v = (params.sigma * rwl / (1 + params.chi * rwl) + params.zeta + params.xi * rww) * w \
+                + params.psi
+        k_v = params.rho_a * params.cp_a * phi_v
+
+        dt_g_dt = (k_v + params.kr) * (t_o - t_g) + params.ks * (t_s - t_g) \
+                  + G * params.eta
+        dt_g_dt = dt_g_dt / params.cg
+        # jax.debug.print('l {x}', x=l)
+        # jax.debug.print('p_g_star{x}', x=p_g_star)
+        # jax.debug.print('t_g {x}', x=t_g)
+
+        dt_p_dt = jnp.zeros_like(dt_g_dt)
+
+        dt_s_dt = 1 / params.cs * (params.ks * (t_g - t_s) + params.kd * (params.Td - t_s))
+
+        dc_i_dt = phi_v * (c_o - c_i) + phi_c * params.inj_scale \
+                  + self.get_respiration_param(x, u, params) - params.mu * self.get_crop_photosynthesis(x, u, params)
+        dc_i_dt = dc_i_dt / params.vg_ag
+
+        dv_i_dt = jnp.zeros_like(dt_g_dt)
+
+        # Tomato model
+
+        g_f = (params.f1 - params.f2 * d_p) * (params.qg ** ((t_g - params.Tg) / 10.0))
+        g_l = g_f * params.v1 * jnp.exp(params.v2 * (t_g - params.v3))
+        b = self.buffer_switching_func(mb, params.b1)
+        buff_1 = b * (params.f * g_f * mf + params.v * g_l * ml / params.z)
+        factor = (params.qr ** ((t_g - params.Tg) / 10.0))
+        rf = params.MF * factor
+        rl = params.ML * factor
+        buff_2 = b * (rf * mf + rl * ml / params.z)
+        dmb_dt = self.get_crop_photosynthesis(x, u, params) - buff_1 - buff_2
+        h = self.get_harvest_coefficient(x, u, params)
+        hf, hl = h * params.yf, h * params.yl
+        dmf_dt = (b * g_f - (1 - b) * rf - hf) * mf
+        dml_dt = (b * g_l - (1 - b) * rl - hl) * ml
+        dd_p_dt = params.d1 + params.d2 * jnp.log(t_g / params.d3) - params.d4 * t - h
+
+        # Exogenous effects
+
+        dt_o_dt = jnp.zeros_like(dt_g_dt)
+        dt_d_dt = jnp.zeros_like(dt_g_dt)
+        dc_o_dt = jnp.zeros_like(dt_g_dt)
+        dv_o_dt = jnp.zeros_like(dt_g_dt)
+        dw_dt = jnp.zeros_like(dt_g_dt)
+        dG_dt = jnp.zeros_like(dt_g_dt)
+
+        # Time
+        dt_dt = jnp.ones_like(dt_g_dt)
+
+        dx_dt = jnp.stack([
+            dt_g_dt, dt_p_dt, dt_s_dt, dc_i_dt, dv_i_dt,
+            dmb_dt, dmf_dt, dml_dt, dd_p_dt,
+            dt_o_dt, dt_d_dt, dc_o_dt, dv_o_dt, dw_dt, dG_dt, dt_dt,
+        ])
+
+        return dx_dt
+
+    def sample_single_params(self, key: jax.random.PRNGKey,
+                             lower_bound: NamedTuple, upper_bound: NamedTuple):
+        keys = self._split_key_like_tree(key)
+        return jtu.tree_map(lambda key, l, u: jax.random.uniform(key, shape=l.shape, minval=l, maxval=u),
+                            keys, lower_bound, upper_bound)
 
 
 if __name__ == "__main__":

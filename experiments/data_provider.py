@@ -27,6 +27,12 @@ DEFAULTS_PENDULUM = {
     'param_mode': 'random',
 }
 
+DEFAULTS_GREENHOUSE = {
+    'obs_noise_std': 0.05,
+    'x_support_mode_train': 'full',
+    'param_mode': 'random',
+}
+
 DEFAULTS_SERGIO = {
     'obs_noise_std': 0.05,
     'x_support_mode_train': 'full',
@@ -69,6 +75,17 @@ DATASET_CONFIGS = {
         'likelihood_std': {'value': [0.05, 0.05, 0.5]},
         'num_samples_train': {'value': 20},
     },
+
+    'Greenhouse': {
+        'likelihood_std': {'value': [0.05 for _ in range(16)]},
+        'num_samples_train': {'value': 20},
+    },
+
+    'Greenhouse_hf': {
+        'likelihood_std': {'value': [0.05 for _ in range(16)]},
+        'num_samples_train': {'value': 20},
+    },
+
     'Sergio': {
         'likelihood_std': {'value': [0.05 for _ in range(DEFAULTS_SERGIO['sergio_dim'])]},
         'num_samples_train': {'value': 20},
@@ -271,6 +288,14 @@ def provide_data_and_sim(data_source: str, data_spec: Dict[str, Any], data_seed:
             sim_lf = SergioSim(n_genes=defaults['num_genes'], n_cells=defaults['num_cells'], use_hf=False)
         else:
             sim_hf = sim_lf = SergioSim(n_genes=defaults['num_genes'], n_cells=defaults['n_cells'], use_hf=False)
+    elif data_source == 'Greenhouse' or data_source == 'Greenhouse_hf':
+        defaults = DEFAULTS_GREENHOUSE
+        from sim_transfer.sims.simulators import GreenHouseSim
+        if data_source == 'Greenhouse_hf':
+            sim_hf = GreenHouseSim(use_hf=True)
+            sim_lf = GreenHouseSim(use_hf=False)
+        else:
+            sim_hf = sim_lf = GreenHouseSim(use_hf=False)
     elif data_source == 'pendulum_bimodal' or data_source == 'pendulum_bimodal_hf':
         from sim_transfer.sims.simulators import PendulumBiModalSim
         defaults = DEFAULTS_PENDULUM

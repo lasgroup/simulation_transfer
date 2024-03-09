@@ -10,7 +10,8 @@ from jax.lax import cond
 from tensorflow_probability.substrates import jax as tfp
 
 from sim_transfer.sims.domain import Domain, HypercubeDomain, HypercubeDomainWithAngles
-from sim_transfer.sims.dynamics_models import Pendulum, PendulumParams, RaceCar, CarParams, SergioParams, SergioDynamics
+from sim_transfer.sims.dynamics_models import Pendulum, PendulumParams, RaceCar, CarParams, \
+    SergioParams, SergioDynamics, GreenHouseParams, GreenHouseDynamics
 from sim_transfer.sims.util import encode_angles, decode_angles
 
 
@@ -1123,6 +1124,168 @@ class SergioSim(FunctionSimulator):
         return x_train, x_test
 
 
+class GreenHouseSim(FunctionSimulator):
+    param_ratio = 0.2
+
+    def __init__(self, use_hf: bool = False):
+        self.model = GreenHouseDynamics(use_hf=use_hf)
+        FunctionSimulator.__init__(self, input_size=self.model.x_dim + self.model.u_dim,
+                                   output_size=self.model.x_dim)
+        self._typical_params, self._lower_bound_params, self._upper_bound_params = None, None, None
+        self._setup_params()
+        self.use_hf = use_hf
+
+        assert jnp.all(jnp.stack(jtu.tree_flatten(
+            jtu.tree_map(lambda l, u: l <= u, self._lower_bound_params, self._upper_bound_params))[0])), \
+            'lower bounds have to be smaller than upper bounds'
+
+        # setup domain
+        self.domain_lower = jnp.concatenate([self.model.state_lb, self.model.input_lb])
+        self.domain_upper = jnp.concatenate([self.model.state_ub, self.model.input_ub])
+        self._domain = HypercubeDomain(lower=self.domain_lower, upper=self.domain_upper)
+
+    @property
+    def domain(self) -> Domain:
+        return self._domain
+
+    def _setup_params(self):
+        self._typical_params = GreenHouseParams()
+        _lower_bound_params = jtu.tree_map(
+            # if x > 0 -> x - r * x, if x < 0 -> x + r * x
+            lambda x: x - jnp.sign(x) * self.param_ratio * x, self._typical_params
+        )
+        self._lower_bound_params = _lower_bound_params._replace(
+            gamma=self._typical_params.gamma,
+            lam=self._typical_params.lam,
+            mu=self._typical_params.mu,
+            rho_w=self._typical_params.rho_w,
+            rho_a=self._typical_params.rho_a,
+            Mco2=self._typical_params.Mco2,
+            patm=self._typical_params.patm,
+            rg=self._typical_params.rg,
+            T0=self._typical_params.T0,
+            pg=self._typical_params.pg,
+            mp=self._typical_params.mp
+        )
+        _upper_bound_params = jtu.tree_map(
+            lambda x: x + jnp.sign(x) * self.param_ratio * x, self._typical_params
+        )
+
+        self._upper_bound_params = _upper_bound_params._replace(
+            gamma=self._typical_params.gamma,
+            lam=self._typical_params.lam,
+            mu=self._typical_params.mu,
+            rho_w=self._typical_params.rho_w,
+            rho_a=self._typical_params.rho_a,
+            Mco2=self._typical_params.Mco2,
+            patm=self._typical_params.patm,
+            rg=self._typical_params.rg,
+            T0=self._typical_params.T0,
+            pg=self._typical_params.pg,
+            mp=self._typical_params.mp
+        )
+
+    def init_params(self):
+        return self._typical_params
+
+    def sample_params(self, rng_key: jax.random.PRNGKey):
+        params = self.model.sample_single_params(rng_key,
+                                                 lower_bound=self._lower_bound_params,
+                                                 upper_bound=self._upper_bound_params)
+        train_params = jtu.tree_map(lambda x: 1, params)
+        train_params = train_params._replace(
+            gamma=0,
+            lam=0,
+            mu=0,
+            rho_w=0,
+            rho_a=0,
+            Mco2=0,
+            patm=0,
+            rg=0,
+            T0=0,
+            pg=0,
+            mp=0
+        )
+        return params, train_params
+
+    def _split_state_action(self, z: jnp.array) -> Tuple[jnp.array, jnp.array]:
+        assert z.shape[-1] == self.domain.num_dims
+        return z[..., :self.model.x_dim], z[..., self.model.x_dim:]
+
+    def sample_function_vals(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
+        assert x.ndim == 2 and x.shape[-1] == self.input_size
+        params = self.model.sample_params_uniform(rng_key, sample_shape=num_samples,
+                                                  lower_bound=self._lower_bound_params,
+                                                  upper_bound=self._upper_bound_params)
+
+        def batched_fun(z, params):
+            x, u = self._split_state_action(z)
+            f = vmap(self.model.next_step, in_axes=(0, 0, None))(x, u, params)
+            return f
+
+        f = vmap(batched_fun, in_axes=(None, 0))(x, params)
+        assert f.shape == (num_samples, x.shape[0], self.output_size)
+        return f
+
+    def sample_functions(self, num_samples: int, rng_key: jax.random.PRNGKey) -> Callable:
+        params = self.model.sample_params_uniform(rng_key, sample_shape=(num_samples,),
+                                                  lower_bound=self._lower_bound_params,
+                                                  upper_bound=self._upper_bound_params)
+
+        def stacked_fun(z):
+            x, u = self._split_state_action(z)
+            f = vmap(self.model.next_step, in_axes=(0, 0, 0))(x, u, params)
+            return f
+
+        return stacked_fun
+
+    @property
+    def domain(self) -> Domain:
+        return self._domain
+
+    @property
+    def normalization_stats(self) -> Dict[str, jnp.ndarray]:
+        x_u_b = jnp.concatenate([self.model.state_ub, self.model.input_ub], axis=0)
+        x_l_b = jnp.concatenate([self.model.state_lb, self.model.input_lb], axis=0)
+        stats = {'x_mean': (x_u_b + x_l_b) / 2,
+                 'x_std': (x_u_b - x_l_b) ** 2 / 12,
+                 'y_mean': (self.model.state_ub + self.model.state_lb) / 2,
+                 'y_std': (self.model.state_ub - self.model.state_lb) ** 2 / 12}
+        return stats
+
+    def _typical_f(self, x: jnp.array) -> jnp.array:
+        x, u = self._split_state_action(x)
+        f = jax.vmap(self.model.next_step, in_axes=(0, 0, None))(x, u, self._typical_params)
+        return f
+
+    def evaluate_sim(self, x: jnp.array, params: NamedTuple) -> jnp.array:
+        x, u = self._split_state_action(x)
+        params = self.get_eval_params(params)
+        f = jax.vmap(self.model.next_step, in_axes=(0, 0, None))(x, u, params)
+        return f
+
+    def get_eval_params(self, params: NamedTuple):
+        eval_params = jtu.tree_map(lambda x, l, u: jnp.clip(x, l, u), params, self._lower_bound_params,
+                                   self._upper_bound_params)
+        return eval_params
+
+    def _add_observation_noise(self, f_vals: jnp.ndarray, obs_noise_std: Union[jnp.ndarray, float],
+                               rng_key: jax.random.PRNGKey) -> jnp.ndarray:
+        obs_noise_std = jnp.clip(obs_noise_std, a_max=self.model.noise_std)
+        y = f_vals + obs_noise_std * jax.random.normal(rng_key, shape=f_vals.shape)
+        y = jnp.clip(y, a_min=self.model.constraint_lb)
+        assert f_vals.shape == y.shape
+        return y
+
+    def _sample_x_data(self, rng_key: jax.random.PRNGKey, num_samples_train: int, num_samples_test: int,
+                       support_mode_train: str = 'full') -> Tuple[jnp.ndarray, jnp.ndarray]:
+        """ Sample inputs for training and testing. """
+        dataset_domain = HypercubeDomain(lower=self.domain_lower, upper=self.domain_upper)
+        x_train = dataset_domain.sample_uniformly(rng_key, num_samples_train, support_mode=support_mode_train)
+        x_test = dataset_domain.sample_uniformly(rng_key, num_samples_test, support_mode='full')
+        return x_train, x_test
+
+
 class PredictStateChangeWrapper(FunctionSimulator):
     def __init__(self, function_simulator: FunctionSimulator):
         """
@@ -1168,11 +1331,11 @@ class PredictStateChangeWrapper(FunctionSimulator):
         x = self.domain.sample_uniformly(jax.random.PRNGKey(0), 1000)
         fs = self.sample_function_vals(x, num_samples=10, rng_key=jax.random.PRNGKey(0))
         fs = fs.reshape(-1, self.output_size)
-
+        y_std = jnp.clip(1.5 * jnp.std(fs, axis=0), a_min=1e-6)
         new_stats = {'x_mean': old_stats['x_mean'],
                      'x_std': old_stats['x_std'],
                      'y_mean': jnp.mean(fs, axis=0),
-                     'y_std': 1.5 * jnp.std(fs, axis=0)}
+                     'y_std': y_std}
         return new_stats
 
     def _add_observation_noise(self, *args, **kwargs) -> jnp.ndarray:
@@ -1258,7 +1421,17 @@ class StackedActionSimWrapper(FunctionSimulator):
 
 
 if __name__ == '__main__':
-    key1, key2 = jax.random.split(jax.random.PRNGKey(435345), 2)
+    key1, key2 = jax.random.split(jax.random.PRNGKey(435349), 2)
+    function_sim = GreenHouseSim(use_hf=False)
+    test_p, test_p_train = function_sim.sample_params(key1)
+    x, _ = function_sim._sample_x_data(key1, 1, 1)
+    param1 = function_sim._typical_params
+    f1 = function_sim.sample_function_vals(x, num_samples=1000, rng_key=key2)
+    import numpy as np
+    check = np.asarray(f1 - x[..., :16])
+    f2 = function_sim._typical_f(x)
+    print(jnp.isnan(f1).any())
+    print(jnp.isnan(f2).any())
     function_sim = SergioSim(5, 10, use_hf=False)
     function_sim.sample_params(key1)
     x, _ = function_sim._sample_x_data(key1, 1, 1)

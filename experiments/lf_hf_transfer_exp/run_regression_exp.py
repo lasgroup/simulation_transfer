@@ -254,6 +254,8 @@ def main(args):
         elif 'Sergio' in exp_params['data_source']:
             from experiments.data_provider import DEFAULTS_SERGIO
             exp_params['added_gp_outputscale'] = [factor * 0.1 for _ in range(DEFAULTS_SERGIO['sergio_dim'])]
+        elif 'Greenhouse' in exp_params['data_source']:
+            exp_params['added_gp_outputscale'] = [factor * 0.1 for _ in range(16)]
         else:
             raise AssertionError('passed negative value for added_gp_outputscale')
     # set likelihood_std to default value if not specified
@@ -328,13 +330,13 @@ if __name__ == '__main__':
     parser.add_argument('--use_wandb', type=bool, default=False)
 
     # data parameters
-    parser.add_argument('--data_source', type=str, default='Sergio_hf')
+    parser.add_argument('--data_source', type=str, default='Greenhouse_hf')
     parser.add_argument('--pred_diff', type=int, default=1)
     parser.add_argument('--num_samples_train', type=int, default=5000)
     parser.add_argument('--data_seed', type=int, default=77698)
 
     # standard BNN parameters
-    parser.add_argument('--model', type=str, default='SysID')
+    parser.add_argument('--model', type=str, default='BNN_FSVGD')
     parser.add_argument('--model_seed', type=int, default=892616)
     parser.add_argument('--likelihood_std', type=float, default=None)
     parser.add_argument('--learn_likelihood_std', type=int, default=0)
