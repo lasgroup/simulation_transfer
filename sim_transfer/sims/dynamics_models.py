@@ -786,13 +786,13 @@ class GreenHouseDynamics(DynamicsModel):
     state_ub = jnp.array(
         [
             # t_g, t_p, t_s, c_i, v_i, mb, mf, ml, d_p, t_o, t_d, c_o, v_o, w, G, t
-            30, 50, 20, 8, 1.0, 10, 150, 15, 1.0, 30.0, 10.0, 0.5, 0.8, 5, 500, 10 ** 6,
+            30, 50, 20, 8, 2.5 * 10 ** (-2), 10, 150, 15, 1.0, 30.0, 10.0, 0.5, 1.2 * 10 ** (-2), 5, 500, 10 ** 6,
 
         ])
 
     state_lb = jnp.array(
         [
-            0, 0, -10, 0, 0, 0, 0, 0, 0, -5, 8.0, 0, 0.01, 0, 0, 0
+            0, 0, -10, 0, 0, 0, 0, 0, 0, -5, 8.0, 0, 10 ** (-4), 0, 0, 0
         ]
     )
 
@@ -809,23 +809,23 @@ class GreenHouseDynamics(DynamicsModel):
         ]
     )
 
-    input_ub = jnp.array([60, 1.0, 1.0, 5.0])
+    input_ub = jnp.array([60, 1.0, 1.0, 2.0])
     input_lb = jnp.array([0, 0.0, 0.0, 0.0])
     noise_to = 5
     noise_td = 0.01
     noise_co = 0.001
-    noise_vo = 0.1
+    noise_vo = 10 ** (-4)
     noise_w = 1
-    noise_g = 20
+    noise_g = 150
 
     noise_std = jnp.array(
         [
-            0.05, 0.1, 0.05, 0.01, 0.05, 0.05, 0.1, 0.1, 0.0, noise_to,
-            noise_td, noise_co, noise_vo, noise_w, noise_g, 0.0,
+            0.05, 0.1, 0.05, 0.01, 0.05, 0.05, 0.1, 0.1, 0.01, noise_to,
+            noise_td, noise_co, noise_vo, noise_w, noise_g, 2,
         ]
     )
 
-    def __init__(self, use_hf: bool = False, dt: float = 300):
+    def __init__(self, use_hf: bool = False, dt: float = 60):
 
         self.use_hf = use_hf
         self.greenhouse_state_dim = 5
@@ -846,13 +846,14 @@ class GreenHouseDynamics(DynamicsModel):
         )
 
     def next_step(self, x: jnp.array, u: jnp.array, params: GreenHouseParams) -> jnp.array:
+        x, u = self.transform_state(x), self.transform_action(u)
         def body(carry, _):
             q = carry + self.dt_integration * self.ode(carry, u, params)
             q = jnp.clip(q, a_min=self.constraint_lb, a_max=self.constraint_ub)
             return q, None
 
         x_next, _ = jax.lax.scan(body, x, xs=None, length=self._num_steps_integrate)
-        return x_next
+        return self.inv_transform_state(x_next)
 
     def _ode(self, x, u, params: GreenHouseParams):
         """
@@ -904,6 +905,19 @@ class GreenHouseDynamics(DynamicsModel):
         h = (d_p >= 1) * (params.d1 + params.d2 * jnp.log(t_g / params.d3) - params.d4 * t)
         return h
 
+    def transform_state(self, x):
+        # x is between [0, 1] -> [state_lb, state_ub]
+        x = self.state_lb + x * (self.state_ub - self.state_lb)
+        return x
+
+    def transform_action(self, u):
+        u = self.input_lb + u * (self.input_ub - self.input_lb)
+        return u
+
+    def inv_transform_state(self, x):
+        x = (x - self.state_lb)/(self.state_ub - self.state_lb)
+        return x
+
     def _greenhouse_dynamics_hf(self, x, u, params: GreenHouseParams):
         # C, C, C, m, g/m^3, kg/m^-3
         t_g, t_p, t_s, c_i, v_i = x[0], x[1], x[2], x[3], x[5]
@@ -942,9 +956,10 @@ class GreenHouseDynamics(DynamicsModel):
         dt_g_dt = (k_v + params.kr) * (t_o - t_g) + alpha * (t_p - t_g) + params.ks * (t_s - t_g) \
                   + G * params.eta - l * E + l / (1 + params.epsilon) * Mc
         dt_g_dt = dt_g_dt / params.cg
-        # jax.debug.print('l {x}', x=l)
-        # jax.debug.print('p_g_star{x}', x=p_g_star)
+        # jax.debug.print('G {x}', x=G/params.cg)
+        # jax.debug.print('Mc{x}', x=Mc)
         # jax.debug.print('t_g {x}', x=t_g)
+        # jax.debug.print('dt_g {x}', x=dt_g_dt)
 
         phi = params.phi
         rh = params.rh

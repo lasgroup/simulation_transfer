@@ -1125,7 +1125,7 @@ class SergioSim(FunctionSimulator):
 
 
 class GreenHouseSim(FunctionSimulator):
-    param_ratio = 0.2
+    param_ratio = 0.1
 
     def __init__(self, use_hf: bool = False):
         self.model = GreenHouseDynamics(use_hf=use_hf)
@@ -1140,8 +1140,11 @@ class GreenHouseSim(FunctionSimulator):
             'lower bounds have to be smaller than upper bounds'
 
         # setup domain
-        self.domain_lower = jnp.concatenate([self.model.state_lb, self.model.input_lb])
-        self.domain_upper = jnp.concatenate([self.model.state_ub, self.model.input_ub])
+
+        # self.domain_lower = jnp.concatenate([self.model.state_lb, self.model.input_lb])
+        # self.domain_upper = jnp.concatenate([self.model.state_ub, self.model.input_ub])
+        self.domain_lower = jnp.zeros(self.input_size)
+        self.domain_upper = jnp.ones(self.input_size)
         self._domain = HypercubeDomain(lower=self.domain_lower, upper=self.domain_upper)
 
     @property
@@ -1152,7 +1155,7 @@ class GreenHouseSim(FunctionSimulator):
         self._typical_params = GreenHouseParams()
         _lower_bound_params = jtu.tree_map(
             # if x > 0 -> x - r * x, if x < 0 -> x + r * x
-            lambda x: x - jnp.sign(x) * self.param_ratio * x, self._typical_params
+            lambda x: x - jnp.abs(x) * self.param_ratio, self._typical_params
         )
         self._lower_bound_params = _lower_bound_params._replace(
             gamma=self._typical_params.gamma,
@@ -1168,7 +1171,7 @@ class GreenHouseSim(FunctionSimulator):
             mp=self._typical_params.mp
         )
         _upper_bound_params = jtu.tree_map(
-            lambda x: x + jnp.sign(x) * self.param_ratio * x, self._typical_params
+            lambda x: x + jnp.abs(x) * self.param_ratio, self._typical_params
         )
 
         self._upper_bound_params = _upper_bound_params._replace(
@@ -1245,12 +1248,19 @@ class GreenHouseSim(FunctionSimulator):
 
     @property
     def normalization_stats(self) -> Dict[str, jnp.ndarray]:
-        x_u_b = jnp.concatenate([self.model.state_ub, self.model.input_ub], axis=0)
-        x_l_b = jnp.concatenate([self.model.state_lb, self.model.input_lb], axis=0)
+        # x_u_b = jnp.concatenate([self.model.state_ub, self.model.input_ub], axis=0)
+        # x_l_b = jnp.concatenate([self.model.state_lb, self.model.input_lb], axis=0)
+        x_u_b = jnp.ones(self.input_size)
+        x_l_b = jnp.zeros(self.input_size)
+        y_u_b = jnp.ones(self.output_size)
+        y_l_b = jnp.zeros(self.output_size)
         stats = {'x_mean': (x_u_b + x_l_b) / 2,
                  'x_std': (x_u_b - x_l_b) ** 2 / 12,
-                 'y_mean': (self.model.state_ub + self.model.state_lb) / 2,
-                 'y_std': (self.model.state_ub - self.model.state_lb) ** 2 / 12}
+                 'y_mean': (y_u_b + y_l_b) / 2,
+                 'y_std': (y_u_b - y_l_b) ** 2 / 12,
+                 }
+                 # 'y_mean': (self.model.state_ub + self.model.state_lb) / 2,
+                 # 'y_std': (self.model.state_ub - self.model.state_lb) ** 2 / 12}
         return stats
 
     def _typical_f(self, x: jnp.array) -> jnp.array:
@@ -1422,16 +1432,31 @@ class StackedActionSimWrapper(FunctionSimulator):
 
 if __name__ == '__main__':
     key1, key2 = jax.random.split(jax.random.PRNGKey(435349), 2)
-    function_sim = GreenHouseSim(use_hf=False)
+    key_hf, key_lf = jax.random.split(key1, 2)
+
+    function_sim = PredictStateChangeWrapper(GreenHouseSim(use_hf=True))
     test_p, test_p_train = function_sim.sample_params(key1)
-    x, _ = function_sim._sample_x_data(key1, 1, 1)
-    param1 = function_sim._typical_params
-    f1 = function_sim.sample_function_vals(x, num_samples=1000, rng_key=key2)
+    x, _ = function_sim._sample_x_data(key_hf, 64, 1)
+    param1 = function_sim._function_simulator._typical_params
+    f1 = function_sim.sample_function_vals(x, num_samples=4000, rng_key=key2)
+    f1 = function_sim._function_simulator.model.transform_state(f1)
     import numpy as np
-    check = np.asarray(f1 - x[..., :16])
     f2 = function_sim._typical_f(x)
     print(jnp.isnan(f1).any())
     print(jnp.isnan(f2).any())
+
+    function_sim = PredictStateChangeWrapper(GreenHouseSim(use_hf=False))
+    test_p, test_p_train = function_sim.sample_params(key1)
+    x, _ = function_sim._sample_x_data(key_lf, 64, 1)
+    param1 = function_sim._function_simulator._typical_params
+    f1 = function_sim.sample_function_vals(x, num_samples=4000, rng_key=key2)
+    import numpy as np
+
+    f2 = function_sim._typical_f(x)
+    print(jnp.isnan(f1).any())
+    print(jnp.isnan(f2).any())
+
+
     function_sim = SergioSim(5, 10, use_hf=False)
     function_sim.sample_params(key1)
     x, _ = function_sim._sample_x_data(key1, 1, 1)
