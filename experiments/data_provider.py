@@ -37,8 +37,8 @@ DEFAULTS_SERGIO = {
     'obs_noise_std': 0.05,
     'x_support_mode_train': 'full',
     'param_mode': 'random',
-    'num_cells': 10,
-    'num_genes': 200,
+    'num_cells': 200,
+    'num_genes': 10,
 }
 
 DEFAULTS_RACECAR = {
@@ -86,11 +86,11 @@ DATASET_CONFIGS = {
     },
 
     'Sergio': {
-        'likelihood_std': {'value': [0.05 for _ in range(2 * DEFAULTS_SERGIO['num_cells'])]},
+        'likelihood_std': {'value': [0.05 for _ in range(2 * DEFAULTS_SERGIO['num_genes'])]},
         'num_samples_train': {'value': 20},
     },
     'Sergio_hf': {
-        'likelihood_std': {'value': [0.05 for _ in range(2 * DEFAULTS_SERGIO['num_cells'])]},
+        'likelihood_std': {'value': [0.05 for _ in range(2 * DEFAULTS_SERGIO['num_genes'])]},
         'num_samples_train': {'value': 20},
     },
 

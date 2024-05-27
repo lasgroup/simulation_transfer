@@ -253,7 +253,7 @@ def main(args):
             exp_params['added_gp_outputscale'] = [factor * 0.05, factor * 0.05, factor * 0.5]
         elif 'Sergio' in exp_params['data_source']:
             from experiments.data_provider import DEFAULTS_SERGIO
-            exp_params['added_gp_outputscale'] = [factor * 0.1 for _ in range(2 * DEFAULTS_SERGIO['num_cells'])]
+            exp_params['added_gp_outputscale'] = [factor * 0.1 for _ in range(2 * DEFAULTS_SERGIO['num_genes'])]
         elif 'Greenhouse' in exp_params['data_source']:
             exp_params['added_gp_outputscale'] = [factor * 0.05 for _ in range(16)]
             # We are quite confident about exogenous effects
