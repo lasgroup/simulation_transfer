@@ -37,9 +37,8 @@ DEFAULTS_SERGIO = {
     'obs_noise_std': 0.05,
     'x_support_mode_train': 'full',
     'param_mode': 'random',
-    'num_cells': 5,
-    'num_genes': 15,
-    'sergio_dim': 5 * 15,
+    'num_cells': 10,
+    'num_genes': 200,
 }
 
 DEFAULTS_RACECAR = {
@@ -77,21 +76,21 @@ DATASET_CONFIGS = {
     },
 
     'Greenhouse': {
-        'likelihood_std': {'value': [0.05 for _ in range(16)]},
+        'likelihood_std': {'value': [0.01 for _ in range(16)]},
         'num_samples_train': {'value': 20},
     },
 
     'Greenhouse_hf': {
-        'likelihood_std': {'value': [0.05 for _ in range(16)]},
+        'likelihood_std': {'value': [0.01 for _ in range(16)]},
         'num_samples_train': {'value': 20},
     },
 
     'Sergio': {
-        'likelihood_std': {'value': [0.05 for _ in range(DEFAULTS_SERGIO['sergio_dim'])]},
+        'likelihood_std': {'value': [0.05 for _ in range(2 * DEFAULTS_SERGIO['num_cells'])]},
         'num_samples_train': {'value': 20},
     },
     'Sergio_hf': {
-        'likelihood_std': {'value': [0.05 for _ in range(DEFAULTS_SERGIO['sergio_dim'])]},
+        'likelihood_std': {'value': [0.05 for _ in range(2 * DEFAULTS_SERGIO['num_cells'])]},
         'num_samples_train': {'value': 20},
     },
 

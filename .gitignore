@@ -5,7 +5,9 @@ old_results/
 log/
 tf_summaries/
 time_lines/
-
+lenart_internal/
+*.pdf
+*.csv
 mars/
 
 # Byte-compiled / optimized / DLL files

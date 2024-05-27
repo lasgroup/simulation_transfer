@@ -991,12 +991,15 @@ class SergioSim(FunctionSimulator):
     _dt: float = 1 / 10
 
     # domain for generating data
-    state_lb: float = 0.0
-    state_ub: float = 500
+    # state_lb: float = 0.0
+    state_ub: float = 500.0
+    sample_x_max: float = 3
 
     def __init__(self, n_genes: int = 20, n_cells: int = 20, use_hf: bool = False):
-        FunctionSimulator.__init__(self, input_size=n_genes * n_cells, output_size=n_genes * n_cells)
-        self.model = SergioDynamics(self._dt, n_genes, n_cells)
+        FunctionSimulator.__init__(self, input_size=2 * n_cells, output_size=2 * n_cells)
+        self.model = SergioDynamics(self._dt, n_genes, n_cells, state_ub=self.state_ub)
+        self.n_cells = n_cells
+        self.n_genes = n_genes
         self._setup_params()
         self.use_hf = use_hf
         if self.use_hf:
@@ -1013,8 +1016,8 @@ class SergioSim(FunctionSimulator):
             'lower bounds have to be smaller than upper bounds'
 
         # setup domain
-        self.domain_lower = jnp.ones(shape=(n_genes * n_cells,)) * self.state_lb
-        self.domain_upper = jnp.ones(shape=(n_genes * n_cells,)) * self.state_ub
+        self.domain_lower = -self.sample_x_max * jnp.ones(shape=(2 * self.n_cells,))
+        self.domain_upper = self.sample_x_max * jnp.ones(shape=(2 * self.n_cells,))
         self._domain = HypercubeDomain(lower=self.domain_lower, upper=self.domain_upper)
 
     @property
@@ -1022,7 +1025,7 @@ class SergioSim(FunctionSimulator):
         return self._domain
 
     def _setup_params(self):
-        self.lower_bound_param_hf = SergioParams(lam=jnp.array(0.79),
+        self.lower_bound_param_hf = SergioParams(lam=jnp.array(0.75),
                                                  contribution_rates=jnp.array(-5.0),
                                                  basal_rates=jnp.array(1.0),
                                                  power=jnp.array(2.0),
@@ -1035,7 +1038,7 @@ class SergioSim(FunctionSimulator):
         self.default_param_hf = self.model.sample_single_params(jax.random.PRNGKey(0), self.lower_bound_param_hf,
                                                                 self.upper_bound_param_hf)
 
-        self.lower_bound_param_lf = SergioParams(lam=jnp.array(0.79),
+        self.lower_bound_param_lf = SergioParams(lam=jnp.array(0.4),
                                                  contribution_rates=jnp.array(-5.0),
                                                  basal_rates=jnp.array(1.0),
                                                  power=jnp.array(1.0),
@@ -1062,27 +1065,55 @@ class SergioSim(FunctionSimulator):
             train_params = train_params._replace(power=0, graph=0)
         return params, train_params
 
+    def predict_next_state(self, x: jnp.array, params: NamedTuple,
+                           key: jax.random.PRNGKey = jax.random.PRNGKey(0)) -> jnp.array:
+        assert x.ndim == 1
+        mu, log_std = jnp.split(x, 2, axis=-1)
+        x = mu + jax.random.normal(key=key, shape=(self.n_genes, self.n_cells)) * jax.nn.softplus(log_std)
+        x = x.reshape(self.n_genes * self.n_cells)
+        # clip state to be between -3, 3
+        x = jnp.clip(x, -self.sample_x_max, self.sample_x_max)
+        # scale it to be between [0, 1]
+        x = x / (2 * self.sample_x_max) + 0.5
+        # sample next cells and genes from the sim
+        f = self.model.next_step(x, params)
+        # rescale it back to be between [-3, 3]
+        f = (f - 0.5) * (2 * self.sample_x_max)
+        # take the mean and std over genes
+        f = f.reshape(self.n_genes, self.n_cells)
+        mu_f, std_f = jnp.mean(f, axis=0), jnp.std(f, axis=0)
+        # clip std so that its positive and take log std
+        std_f = jnp.clip(std_f, 1e-6)
+        log_std_f = jnp.log(jnp.exp(std_f) - 1)
+        f = jnp.concatenate([mu_f, log_std_f], axis=-1)
+        return f
+
     def sample_function_vals(self, x: jnp.ndarray, num_samples: int, rng_key: jax.random.PRNGKey) -> jnp.ndarray:
         assert x.ndim == 2 and x.shape[-1] == self.input_size
+        rng_key, gene_key = jax.random.split(rng_key, 2)
         params = self.model.sample_params_uniform(rng_key, sample_shape=num_samples,
                                                   lower_bound=self._lower_bound_params,
                                                   upper_bound=self._upper_bound_params)
+        gene_key = jax.random.split(gene_key, num_samples)
 
-        def batched_fun(z, params):
-            f = vmap(self.model.next_step, in_axes=(0, None))(z, params)
+        def batched_fun(z, params, key):
+            f = vmap(self.predict_next_state, in_axes=(0, None, None))(z, params, key)
             return f
 
-        f = vmap(batched_fun, in_axes=(None, 0))(x, params)
+        f = vmap(batched_fun, in_axes=(None, 0, 0))(x, params, gene_key)
         assert f.shape == (num_samples, x.shape[0], self.output_size)
         return f
 
     def sample_functions(self, num_samples: int, rng_key: jax.random.PRNGKey) -> Callable:
+        gene_key, rng_key = jax.random.split(rng_key, 2)
         params = self.model.sample_params_uniform(rng_key, sample_shape=(num_samples,),
                                                   lower_bound=self._lower_bound_params,
                                                   upper_bound=self._upper_bound_params)
 
-        def stacked_fun(z):
-            f = vmap(self.model.next_step, in_axes=(0, 0))(x, params)
+        gene_key = jax.random.split(gene_key, num_samples)
+
+        def stacked_fun(x):
+            f = vmap(self.predict_next_state, in_axes=(0, 0, 0))(x, params, gene_key)
             return f
 
         return stacked_fun
@@ -1094,18 +1125,18 @@ class SergioSim(FunctionSimulator):
     @property
     def normalization_stats(self) -> Dict[str, jnp.ndarray]:
 
-        stats = {'x_mean': jnp.ones(self.input_size) * (self.state_ub + self.state_lb) / 2,
-                 'x_std': jnp.ones(self.input_size) * (self.state_ub - self.state_lb) ** 2 / 12,
-                 'y_mean': jnp.ones(self.output_size) * (self.state_ub + self.state_lb) / 2,
-                 'y_std': jnp.ones(self.output_size) * (self.state_ub - self.state_lb) ** 2 / 12}
+        stats = {'x_mean': jnp.zeros(self.input_size),
+                 'x_std': (self.sample_x_max ** 2) * jnp.ones(self.input_size) / 3.0,
+                 'y_mean': jnp.zeros(self.output_size),
+                 'y_std': (self.sample_x_max ** 2) * jnp.ones(self.input_size) / 3.0}
         return stats
 
     def _typical_f(self, x: jnp.array) -> jnp.array:
-        f = jax.vmap(self.model.next_step, in_axes=(0, None))(x, self._typical_params)
+        f = jax.vmap(self.predict_next_state, in_axes=(0, None))(x, self._typical_params)
         return f
 
     def evaluate_sim(self, x: jnp.array, params: NamedTuple) -> jnp.array:
-        f = jax.vmap(self.model.next_step, in_axes=(0, None))(x, params)
+        f = jax.vmap(self.predict_next_state, in_axes=(0, None))(x, params)
         return f
 
     def _add_observation_noise(self, f_vals: jnp.ndarray, obs_noise_std: Union[jnp.ndarray, float],
@@ -1125,7 +1156,7 @@ class SergioSim(FunctionSimulator):
 
 
 class GreenHouseSim(FunctionSimulator):
-    param_ratio = 0.1
+    param_ratio = 0.4
 
     def __init__(self, use_hf: bool = False):
         self.model = GreenHouseDynamics(use_hf=use_hf)
@@ -1243,10 +1274,6 @@ class GreenHouseSim(FunctionSimulator):
         return stacked_fun
 
     @property
-    def domain(self) -> Domain:
-        return self._domain
-
-    @property
     def normalization_stats(self) -> Dict[str, jnp.ndarray]:
         # x_u_b = jnp.concatenate([self.model.state_ub, self.model.input_ub], axis=0)
         # x_l_b = jnp.concatenate([self.model.state_lb, self.model.input_lb], axis=0)
@@ -1259,8 +1286,8 @@ class GreenHouseSim(FunctionSimulator):
                  'y_mean': (y_u_b + y_l_b) / 2,
                  'y_std': (y_u_b - y_l_b) ** 2 / 12,
                  }
-                 # 'y_mean': (self.model.state_ub + self.model.state_lb) / 2,
-                 # 'y_std': (self.model.state_ub - self.model.state_lb) ** 2 / 12}
+        # 'y_mean': (self.model.state_ub + self.model.state_lb) / 2,
+        # 'y_std': (self.model.state_ub - self.model.state_lb) ** 2 / 12}
         return stats
 
     def _typical_f(self, x: jnp.array) -> jnp.array:
@@ -1281,6 +1308,8 @@ class GreenHouseSim(FunctionSimulator):
 
     def _add_observation_noise(self, f_vals: jnp.ndarray, obs_noise_std: Union[jnp.ndarray, float],
                                rng_key: jax.random.PRNGKey) -> jnp.ndarray:
+        if isinstance(obs_noise_std, float):
+            obs_noise_std = jnp.ones_like(self.model.noise_std) * obs_noise_std
         obs_noise_std = jnp.clip(obs_noise_std, a_max=self.model.noise_std)
         y = f_vals + obs_noise_std * jax.random.normal(rng_key, shape=f_vals.shape)
         y = jnp.clip(y, a_min=self.model.constraint_lb)
@@ -1434,28 +1463,30 @@ if __name__ == '__main__':
     key1, key2 = jax.random.split(jax.random.PRNGKey(435349), 2)
     key_hf, key_lf = jax.random.split(key1, 2)
 
-    function_sim = PredictStateChangeWrapper(GreenHouseSim(use_hf=True))
-    test_p, test_p_train = function_sim.sample_params(key1)
-    x, _ = function_sim._sample_x_data(key_hf, 64, 1)
-    param1 = function_sim._function_simulator._typical_params
-    f1 = function_sim.sample_function_vals(x, num_samples=4000, rng_key=key2)
-    f1 = function_sim._function_simulator.model.transform_state(f1)
-    import numpy as np
-    f2 = function_sim._typical_f(x)
-    print(jnp.isnan(f1).any())
-    print(jnp.isnan(f2).any())
-
-    function_sim = PredictStateChangeWrapper(GreenHouseSim(use_hf=False))
-    test_p, test_p_train = function_sim.sample_params(key1)
-    x, _ = function_sim._sample_x_data(key_lf, 64, 1)
-    param1 = function_sim._function_simulator._typical_params
-    f1 = function_sim.sample_function_vals(x, num_samples=4000, rng_key=key2)
-    import numpy as np
-
-    f2 = function_sim._typical_f(x)
-    print(jnp.isnan(f1).any())
-    print(jnp.isnan(f2).any())
-
+    # function_sim = GreenHouseSim(use_hf=True)
+    # test_p, test_p_train = function_sim.sample_params(key1)
+    # x, _ = function_sim._sample_x_data(key_hf, 64, 1)
+    # param1 = function_sim._typical_params
+    # f1 = function_sim.sample_function_vals(x, num_samples=4000, rng_key=key2)
+    # f1 = function_sim.model.transform_state(f1)
+    # import numpy as np
+    #
+    # f2 = function_sim._typical_f(x)
+    # f2 = function_sim.model.transform_state(f2)
+    # print(jnp.isnan(f1).any())
+    # print(jnp.isnan(f2).any())
+    # check = np.max(np.abs(np.asarray(f1 - function_sim.model.transform_state(x[..., : 16]))), axis=0)
+    # function_sim = GreenHouseSim(use_hf=False)
+    # test_p, test_p_train = function_sim.sample_params(key1)
+    # x, _ = function_sim._sample_x_data(key_lf, 64, 1)
+    # param1 = function_sim._typical_params
+    # f1 = function_sim.sample_function_vals(x, num_samples=4000, rng_key=key2)
+    # import numpy as np
+    #
+    # f2 = function_sim._typical_f(x)
+    # check = np.max(np.abs(np.asarray(f1 - function_sim.model.transform_state(x[..., : 16]))), axis=0)
+    # print(jnp.isnan(f1).any())
+    # print(jnp.isnan(f2).any())
 
     function_sim = SergioSim(5, 10, use_hf=False)
     function_sim.sample_params(key1)
