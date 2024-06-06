@@ -14,16 +14,18 @@ MODEL_SPECIFIC_CONFIG = {
     'BNN_SVGD': {
         'bandwidth_svgd': {'values': [10.]},
         'min_train_steps': {'values': [5_000]},
-        'num_epochs': {'values': [200]},
+        'num_epochs': {'values': [60]},
         'lr': {'values': [1e-3]},
         # 'likelihood_reg': {'values': [10.0]},
     },
     'BNN_FSVGD': {
         'bandwidth_svgd': {'values': [2.0]},
-        'bandwidth_gp_prior': {'values': [0.4]},
         'min_train_steps': {'values': [5_000]},
-        'num_epochs': {'values': [200]},
-        'num_measurement_points': {'values': [128]},
+        'num_epochs': {'values': [60]},
+        'num_measurement_points': {'values': [32]},
+        'num_f_samples': {'values': [1028]},
+        'added_gp_lengthscale': {'values': [10.]},
+        'added_gp_outputscale': {'values': [0.5]},
         'lr': {'values': [1e-3]},
         'likelihood_reg': {'values': [10.0]},
     },
@@ -31,23 +33,23 @@ MODEL_SPECIFIC_CONFIG = {
     'BNN_FSVGD_SimPrior_gp': {
         'bandwidth_svgd': {'values': [2.0]},
         'min_train_steps': {'values': [5_000]},
-        'num_epochs': {'values': [200]},
-        'num_measurement_points': {'values': [128]},
+        'num_epochs': {'values': [60]},
+        'num_measurement_points': {'values': [32]},
         'num_f_samples': {'values': [1028]},
-        'added_gp_lengthscale': {'values': [2.]},
-        'added_gp_outputscale': {'values': [2.0]},
+        'added_gp_lengthscale': {'values': [10.]},
+        'added_gp_outputscale': {'values': [0.5]},
         'lr': {'values': [1e-3]},
         'likelihood_reg': {'values': [10.0]},
     },
 
     'BNN_FSVGD_SimPrior_no_add_gp': {
-        'bandwidth_svgd': {'values': [2.0]},
+        'bandwidth_svgd': {'values': [10.0]},
         'min_train_steps': {'values': [5_000]},
         'num_epochs': {'values': [200]},
-        'num_measurement_points': {'values': [128]},
+        'num_measurement_points': {'values': [64]},
         'num_f_samples': {'values': [1028]},
-        'added_gp_lengthscale': {'values': [2.]},
-        'added_gp_outputscale': {'values': [2.0]},
+        'added_gp_lengthscale': {'values': [1.0]},
+        'added_gp_outputscale': {'values': [0.5]},
         'lr': {'values': [1e-3]},
         'likelihood_reg': {'values': [10.0]},
     },
@@ -58,8 +60,8 @@ MODEL_SPECIFIC_CONFIG = {
         'bandwidth_svgd': {'values': [2.0]},
         'bandwidth_gp_prior': {'values': [0.4]},
         'min_train_steps': {'values': [5_000]},
-        'num_epochs': {'values': [200]},
-        'num_measurement_points': {'values': [128]},
+        'num_epochs': {'values': [60]},
+        'num_measurement_points': {'values': [32]},
         'lr': {'values': [1e-3]},
         'likelihood_reg': {'values': [10.0]},
     },
@@ -101,7 +103,7 @@ def main(args):
     elif args.data_source == 'real_racecar_v3':
         N_SAMPLES_LIST = [50, 100, 200, 400, 800, 1600, 3200, 6400]
     elif args.data_source == 'Sergio_hf':
-        N_SAMPLES_LIST = [200, 400, 800, 1600, 3200, 4800, 6400, 12800]
+        N_SAMPLES_LIST = [50, 100, 200, 400, 800, 1600, 3200, 4800, 6400]
     else:
         raise NotImplementedError(f'Unknown data source {args.data_source}.')
 
@@ -124,14 +126,14 @@ def main(args):
                 output_file_list.append(os.path.join(exp_result_folder, f'{model_seed}_{data_seed}.out'))
 
     generate_run_commands(command_list, output_file_list, num_cpus=args.num_cpus,
-                          num_gpus=1 if args.gpu else 0, mode=args.run_mode, prompt=not args.yes)
+                          num_gpus=1 if args.gpu else 0, mode=args.run_mode, prompt=not args.yes, duration='23:59:00')
 
 
 if __name__ == '__main__':
     current_date = datetime.datetime.now().strftime("%b%d").lower()
     parser = argparse.ArgumentParser(description='Meta-BO run')
 
-    # sweep args
+    # sweep argsx
     parser.add_argument('--num_hparam_samples', type=int, default=1)
     parser.add_argument('--num_model_seeds', type=int, default=5, help='number of model seeds per hparam')
     parser.add_argument('--num_data_seeds', type=int, default=5, help='number of model seeds per hparam')
