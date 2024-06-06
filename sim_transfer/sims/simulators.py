@@ -1158,8 +1158,8 @@ class SergioSim(FunctionSimulator):
 class GreenHouseSim(FunctionSimulator):
     param_ratio = 0.4
 
-    def __init__(self, use_hf: bool = False):
-        self.model = GreenHouseDynamics(use_hf=use_hf)
+    def __init__(self, use_hf: bool = False, dt: float = 300):
+        self.model = GreenHouseDynamics(use_hf=use_hf, dt=dt)
         FunctionSimulator.__init__(self, input_size=self.model.x_dim + self.model.u_dim,
                                    output_size=self.model.x_dim)
         self._typical_params, self._lower_bound_params, self._upper_bound_params = None, None, None
@@ -1463,30 +1463,30 @@ if __name__ == '__main__':
     key1, key2 = jax.random.split(jax.random.PRNGKey(435349), 2)
     key_hf, key_lf = jax.random.split(key1, 2)
 
-    # function_sim = GreenHouseSim(use_hf=True)
-    # test_p, test_p_train = function_sim.sample_params(key1)
-    # x, _ = function_sim._sample_x_data(key_hf, 64, 1)
-    # param1 = function_sim._typical_params
-    # f1 = function_sim.sample_function_vals(x, num_samples=4000, rng_key=key2)
-    # f1 = function_sim.model.transform_state(f1)
-    # import numpy as np
+    function_sim = GreenHouseSim(use_hf=True)
+    test_p, test_p_train = function_sim.sample_params(key1)
+    x, _ = function_sim._sample_x_data(key_hf, 64, 1)
+    param1 = function_sim._typical_params
+    f1 = function_sim.sample_function_vals(x, num_samples=4000, rng_key=key2)
+    f1 = function_sim.model.transform_state(f1)
+    import numpy as np
     #
-    # f2 = function_sim._typical_f(x)
-    # f2 = function_sim.model.transform_state(f2)
-    # print(jnp.isnan(f1).any())
-    # print(jnp.isnan(f2).any())
-    # check = np.max(np.abs(np.asarray(f1 - function_sim.model.transform_state(x[..., : 16]))), axis=0)
-    # function_sim = GreenHouseSim(use_hf=False)
-    # test_p, test_p_train = function_sim.sample_params(key1)
-    # x, _ = function_sim._sample_x_data(key_lf, 64, 1)
-    # param1 = function_sim._typical_params
-    # f1 = function_sim.sample_function_vals(x, num_samples=4000, rng_key=key2)
-    # import numpy as np
-    #
-    # f2 = function_sim._typical_f(x)
-    # check = np.max(np.abs(np.asarray(f1 - function_sim.model.transform_state(x[..., : 16]))), axis=0)
-    # print(jnp.isnan(f1).any())
-    # print(jnp.isnan(f2).any())
+    f2 = function_sim._typical_f(x)
+    f2 = function_sim.model.transform_state(f2)
+    print(jnp.isnan(f1).any())
+    print(jnp.isnan(f2).any())
+    check = np.max(np.abs(np.asarray(f1 - function_sim.model.transform_state(x[..., : 16]))), axis=0)
+    function_sim = GreenHouseSim(use_hf=False)
+    test_p, test_p_train = function_sim.sample_params(key1)
+    x, _ = function_sim._sample_x_data(key_lf, 64, 1)
+    param1 = function_sim._typical_params
+    f1 = function_sim.sample_function_vals(x, num_samples=4000, rng_key=key2)
+    f1 = function_sim.model.transform_state(f1)
+    f2 = function_sim._typical_f(x)
+    f2 = function_sim.model.transform_state(f2)
+    print(jnp.isnan(f1).any())
+    print(jnp.isnan(f2).any())
+    check = np.max(np.abs(np.asarray(f1 - function_sim.model.transform_state(x[..., : 16]))), axis=0)
 
     function_sim = SergioSim(5, 10, use_hf=False)
     function_sim.sample_params(key1)

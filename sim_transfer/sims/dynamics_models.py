@@ -997,11 +997,13 @@ class GreenHouseDynamics(DynamicsModel):
         g_f = (params.f1 - params.f2 * d_p) * (params.qg ** ((t_g - params.Tg) / 10.0))
         g_l = g_f * params.v1 * jnp.exp(params.v2 * (t_g - params.v3))
         b = self.buffer_switching_func(mb, params.b1)
-        buff_1 = b * (params.f * g_f * mf + params.v * g_l * ml / params.z)
+        buff_1 = self.buffer_switching_func(params.f * g_f * mf + params.v * g_l * ml / params.z, params.b1)
+        # buff_1 = b * (params.f * g_f * mf + params.v * g_l * ml / params.z)
         factor = (params.qr ** ((t_g - params.Tg) / 10.0))
         rf = params.MF * factor
         rl = params.ML * factor
-        buff_2 = b * (rf * mf + rl * ml / params.z)
+        buff_2 = self.buffer_switching_func(rf * mf + rl * ml / params.z, params.b1)
+        # buff_2 = b * (rf * mf + rl * ml / params.z)
         dmb_dt = self.get_crop_photosynthesis(x, u, params) - buff_1 - buff_2
         h = self.get_harvest_coefficient(x, u, params)
         hf, hl = h * params.yf, h * params.yl
@@ -1029,6 +1031,7 @@ class GreenHouseDynamics(DynamicsModel):
         return dx_dt
 
     def _greenhouse_dynamics_lf(self, x, u, params: GreenHouseParams):
+        # C, C, C, m, g/m^3, kg/m^-3
         t_g, t_p, t_s, c_i, v_i = x[0], x[1], x[2], x[3], x[4]
         # g/m^-2, g/m^-2, g/m^-2, []
         mb, mf, ml, d_p = x[self.greenhouse_state_dim], x[self.greenhouse_state_dim + 1], \
@@ -1043,8 +1046,9 @@ class GreenHouseDynamics(DynamicsModel):
                 + params.psi
         k_v = params.rho_a * params.cp_a * phi_v
 
+        alpha = params.nu * jnp.sqrt(params.tau)
         dt_g_dt = (k_v + params.kr) * (t_o - t_g) + params.ks * (t_s - t_g) \
-                  + G * params.eta
+                  + G * params.eta + alpha * (t_h - t_g)
         dt_g_dt = dt_g_dt / params.cg
 
         dt_p_dt = jnp.zeros_like(dt_g_dt)
@@ -1062,11 +1066,13 @@ class GreenHouseDynamics(DynamicsModel):
         g_f = (params.f1 - params.f2 * d_p) * (params.qg ** ((t_g - params.Tg) / 10.0))
         g_l = g_f * params.v1 * jnp.exp(params.v2 * (t_g - params.v3))
         b = self.buffer_switching_func(mb, params.b1)
-        buff_1 = b * (params.f * g_f * mf + params.v * g_l * ml / params.z)
+        buff_1 = self.buffer_switching_func(params.f * g_f * mf + params.v * g_l * ml / params.z, params.b1)
+        # buff_1 = b * (params.f * g_f * mf + params.v * g_l * ml / params.z)
         factor = (params.qr ** ((t_g - params.Tg) / 10.0))
         rf = params.MF * factor
         rl = params.ML * factor
-        buff_2 = b * (rf * mf + rl * ml / params.z)
+        buff_2 = self.buffer_switching_func(rf * mf + rl * ml / params.z, params.b1)
+        # buff_2 = b * (rf * mf + rl * ml / params.z)
         dmb_dt = self.get_crop_photosynthesis(x, u, params) - buff_1 - buff_2
         h = self.get_harvest_coefficient(x, u, params)
         hf, hl = h * params.yf, h * params.yl
