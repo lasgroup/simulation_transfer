@@ -12,6 +12,7 @@ import numpy as np
 import optax
 import tensorflow as tf
 import tensorflow_datasets as tfds
+from sim_transfer.modules.distribution import ParticleDistribution
 import tensorflow_probability.substrates.jax.distributions as tfd
 import wandb
 from jaxtyping import PyTree
@@ -138,17 +139,27 @@ class AbstractRegressionModel(RngKeyMixin):
                 y = jnp.expand_dims(y, -1)
             return jnp.array(x).astype(dtype=dtype), jnp.array(y).astype(dtype=dtype)
 
-    def _to_pred_dist(self, y_pred_raw: jnp.ndarray, likelihood_std: jnp.ndarray, include_noise: bool = False):
+    def _to_pred_dist(self, y_pred_raw: jnp.ndarray, likelihood_std: jnp.ndarray, include_noise: bool = False,
+                      use_particle_dist: bool = False,
+                      calibration_alpha: Optional[Union[jnp.ndarray, float]] = None,
+                      ):
         """ Forms the predictive distribution p(y|x, D) given the batched NNs raw outputs and the likelihood_std."""
         assert y_pred_raw.ndim == 3 and y_pred_raw.shape[-1] == self.output_size
-        num_post_samples = y_pred_raw.shape[0]
-        if include_noise:
-            independent_normals = tfd.MultivariateNormalDiag(jnp.moveaxis(y_pred_raw, 0, 1), likelihood_std)
-            mixture_distribution = tfd.Categorical(probs=jnp.ones(num_post_samples) / num_post_samples)
-            pred_dist_raw = tfd.MixtureSameFamily(mixture_distribution, independent_normals)
+        if use_particle_dist:
+            pred_dist_raw = ParticleDistribution(
+                particle_means=y_pred_raw,
+                aleatoric_stds=likelihood_std,
+                calibration_alpha=calibration_alpha,
+            )
         else:
-            pred_dist_raw = tfd.MultivariateNormalDiag(jnp.mean(y_pred_raw, axis=0),
-                                                       jnp.std(y_pred_raw, axis=0))
+            num_post_samples = y_pred_raw.shape[0]
+            if include_noise:
+                independent_normals = tfd.MultivariateNormalDiag(jnp.moveaxis(y_pred_raw, 0, 1), likelihood_std)
+                mixture_distribution = tfd.Categorical(probs=jnp.ones(num_post_samples) / num_post_samples)
+                pred_dist_raw = tfd.MixtureSameFamily(mixture_distribution, independent_normals)
+            else:
+                pred_dist_raw = tfd.MultivariateNormalDiag(jnp.mean(y_pred_raw, axis=0),
+                                                           jnp.std(y_pred_raw, axis=0))
         pred_dist = self.affine_transform_y(pred_dist_raw)
         return pred_dist
 
@@ -184,7 +195,9 @@ class AbstractRegressionModel(RngKeyMixin):
                   num_train_points: Union[float, int]) -> [optax.OptState, PyTree, Dict]:
         raise NotImplementedError
 
-    def predict_dist(self, x: jnp.ndarray, include_noise: bool = False) -> tfp.distributions.Distribution:
+    def predict_dist(self, x: jnp.ndarray, include_noise: bool = False,
+                     use_particle_dist: bool = False,
+                     calibration_alpha: Optional[Union[jnp.ndarray, float]] = None,) -> tfp.distributions.Distribution:
         return False
 
     def predict(self, x: jnp.ndarray, include_noise: bool = False) -> Tuple[jnp.ndarray, jnp.ndarray]:

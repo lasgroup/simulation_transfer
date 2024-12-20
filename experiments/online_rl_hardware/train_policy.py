@@ -83,7 +83,9 @@ def train_model_based_policy(train_data: Dict,
     key, key_sac_training, key_sac_trainer_init = jr.split(key, 3)
     sac_trainer = set_up_model_based_sac_trainer(
         bnn_model=bnn_model, data_buffer=true_data_buffer, data_buffer_state=sac_buffer_state,
-        key=key_sac_trainer_init, config=config, sac_kwargs=_sac_kwargs, eval_buffer_state=eval_buffer_state)
+        key=key_sac_trainer_init, config=config, sac_kwargs=_sac_kwargs, eval_buffer_state=eval_buffer_state,
+        episode_idx=episode_idx,
+    )
 
     policy_params, metrics = sac_trainer.run_training(key=key_sac_training)
 

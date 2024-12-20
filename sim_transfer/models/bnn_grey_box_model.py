@@ -16,6 +16,7 @@ from sim_transfer.modules.util import aggregate_stats
 import wandb
 import numpy as np
 from tensorflow_probability.substrates import jax as tfp
+from sim_transfer.modules.distribution import ParticleDistribution
 
 
 class BNNGreyBox(AbstractRegressionModel):
@@ -290,24 +291,39 @@ class BNNGreyBox(AbstractRegressionModel):
         assert y_pred.ndim == 3 and y_pred.shape[-2:] == (x.shape[0], self.output_size)
         return y_pred
 
-    def _to_pred_dist(self, y_pred_raw: jnp.ndarray, likelihood_std: jnp.ndarray, include_noise: bool = False):
+    def _to_pred_dist(self, y_pred_raw: jnp.ndarray, likelihood_std: jnp.ndarray, include_noise: bool = False,
+                      use_particle_dist: bool = False,
+                      calibration_alpha: Optional[Union[jnp.ndarray, float]] = None,
+                      ):
         """ Forms the predictive distribution p(y|x, D) given the models unnormalized outputs and the likelihood_std."""
         assert y_pred_raw.ndim == 3 and y_pred_raw.shape[-1] == self.output_size
-        num_post_samples = y_pred_raw.shape[0]
-        if include_noise:
-            independent_normals = tfd.MultivariateNormalDiag(jnp.moveaxis(y_pred_raw, 0, 1), likelihood_std)
-            mixture_distribution = tfd.Categorical(probs=jnp.ones(num_post_samples) / num_post_samples)
-            pred_dist = tfd.MixtureSameFamily(mixture_distribution, independent_normals)
+        if use_particle_dist:
+            pred_dist = ParticleDistribution(
+                particle_means=y_pred_raw,
+                aleatoric_stds=likelihood_std,
+                calibration_alpha=calibration_alpha,
+
+            )
         else:
-            pred_dist = tfd.MultivariateNormalDiag(jnp.mean(y_pred_raw, axis=0),
-                                                   jnp.std(y_pred_raw, axis=0))
+            num_post_samples = y_pred_raw.shape[0]
+            if include_noise:
+                independent_normals = tfd.MultivariateNormalDiag(jnp.moveaxis(y_pred_raw, 0, 1), likelihood_std)
+                mixture_distribution = tfd.Categorical(probs=jnp.ones(num_post_samples) / num_post_samples)
+                pred_dist = tfd.MixtureSameFamily(mixture_distribution, independent_normals)
+            else:
+                pred_dist = tfd.MultivariateNormalDiag(jnp.mean(y_pred_raw, axis=0),
+                                                       jnp.std(y_pred_raw, axis=0))
         return pred_dist
 
-    def predict_dist(self, x: jnp.ndarray, include_noise: bool = True) -> tfp.distributions.Distribution:
+    def predict_dist(self, x: jnp.ndarray, include_noise: bool = True,
+                     use_particle_dist: bool = False,
+                     calibration_alpha: Optional[Union[jnp.ndarray, float]] = None) -> tfp.distributions.Distribution:
         self.batched_model.param_vectors_stacked = self.params['nn_params_stacked']
         y_pred = self.predict_post_samples(x)
         pred_dist = self._to_pred_dist(y_pred, likelihood_std=self.likelihood_std_unnormalized,
-                                       include_noise=include_noise)
+                                       include_noise=include_noise, use_particle_dist=use_particle_dist,
+                                       calibration_alpha=calibration_alpha,
+                                       )
         assert pred_dist.batch_shape == x.shape[:-1]
         assert pred_dist.event_shape == (self.output_size,)
         if callable(pred_dist.mean):
