@@ -463,8 +463,8 @@ if __name__ == '__main__':
     parser.add_argument('--sim', type=int, default=0)
     parser.add_argument('--control_time_ms', type=float, default=26.5)
 
-    parser.add_argument('--prior', type=str, default='none_FSVGD')
-    parser.add_argument('--num_env_steps', type=int, default=200)
+    parser.add_argument('--prior', type=str, default='low_fidelity')
+    parser.add_argument('--num_env_steps', type=int, default=100)
     parser.add_argument('--bnn_train_steps', type=int, default=40_000)
     parser.add_argument('--sac_num_env_steps', type=int, default=500_000)
     parser.add_argument('--num_sac_envs', type=int, default=128)
