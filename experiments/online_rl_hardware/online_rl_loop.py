@@ -169,6 +169,7 @@ class MainConfig(NamedTuple):
     num_sac_envs: int = 64
     eval_only_on_init_states: int = 1
     use_optimism: bool = False
+    sample_with_eps_std: bool = True
     init_intrinsic_reward_weight: float = 1.0
     final_intrinsic_reward_weight: float = 0.0
     episodes_to_final_intrinsic_reward_weight: int = 10
@@ -299,6 +300,7 @@ def main(config: MainConfig = MainConfig(), encode_angle: bool = True,
         init_intrinsic_reward_weight=config.init_intrinsic_reward_weight,
         final_intrinsic_reward_weight=config.final_intrinsic_reward_weight,
         episodes_to_final_intrinsic_reward_weight=config.episodes_to_final_intrinsic_reward_weight,
+        sample_with_eps_std=config.sample_with_eps_std
     )
 
     if mbrl_config.bnn_training_test_ratio > 0:
@@ -462,16 +464,18 @@ if __name__ == '__main__':
     parser.add_argument('--control_time_ms', type=float, default=26.5)
 
     parser.add_argument('--prior', type=str, default='none_FSVGD')
-    parser.add_argument('--num_env_steps', type=int, default=100)
+    parser.add_argument('--num_env_steps', type=int, default=200)
     parser.add_argument('--bnn_train_steps', type=int, default=40_000)
     parser.add_argument('--sac_num_env_steps', type=int, default=500_000)
     parser.add_argument('--num_sac_envs', type=int, default=128)
     parser.add_argument('--reset_bnn', type=int, default=1)
     parser.add_argument('--deterministic_policy', type=int, default=1)
     parser.add_argument('--num_f_samples', type=int, default=512)
+    parser.add_argument('--margin_factor', type=float, default=5.0)
     parser.add_argument('--initial_state_fraction', type=float, default=0.5)
     parser.add_argument('--use_optimism', type=int, default=1)
-    parser.add_argument('--init_intrinsic_reward_weight', type=float, default=1.0)
+    parser.add_argument('--sample_with_eps_std', type=int, default=1)
+    parser.add_argument('--init_intrinsic_reward_weight', type=float, default=0.5)
     parser.add_argument('--final_intrinsic_reward_weight', type=float, default=0.0)
     parser.add_argument('--episodes_to_final_intrinsic_reward_weight', type=int, default=10)
 
@@ -495,10 +499,12 @@ if __name__ == '__main__':
                            sac_num_env_steps=args.sac_num_env_steps,
                            num_sac_envs=args.num_sac_envs,
                            num_f_samples=args.num_f_samples,
+                           margin_factor=args.margin_factor,
                            use_optimism=bool(args.use_optimism),
                            init_intrinsic_reward_weight=args.init_intrinsic_reward_weight,
                            final_intrinsic_reward_weight=args.final_intrinsic_reward_weight,
                            episodes_to_final_intrinsic_reward_weight=args.episodes_to_final_intrinsic_reward_weight,
+                           sample_with_eps_std=bool(args.sample_with_eps_std),
                            ),
          machine=args.machine,
          device=args.device)
