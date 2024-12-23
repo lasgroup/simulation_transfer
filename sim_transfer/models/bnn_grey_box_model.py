@@ -16,6 +16,7 @@ from sim_transfer.modules.util import aggregate_stats
 import wandb
 import numpy as np
 from tensorflow_probability.substrates import jax as tfp
+from sim_transfer.modules.distribution import ParticleDistribution
 
 
 class BNNGreyBox(AbstractRegressionModel):
@@ -53,8 +54,9 @@ class BNNGreyBox(AbstractRegressionModel):
         param_key = self._next_rng_key()
         self.num_sim_model_train_steps = num_sim_model_train_steps
         sim_params, train_params = self.sim.sample_params(param_key)
-        likelihood_std = -1. * jnp.ones(self.output_size)
-        self.params_sim = {'sim_params': sim_params, 'likelihood_std': likelihood_std}
+        likelihood_std_raw = -1. * jnp.ones(self.output_size)
+        self.init_likelihood_std_raw = likelihood_std_raw
+        self.params_sim = {'sim_params': sim_params, 'likelihood_std_raw': likelihood_std_raw}
         self.init_sim_params = sim_params
         self.train_params = train_params
         self.optim_sim = None
@@ -96,10 +98,10 @@ class BNNGreyBox(AbstractRegressionModel):
         self.base_bnn.reinit(key_model)
         self._rng_key = key_rng  # reinitialize rng_key
         sim_params, train_params = self.sim.sample_params(param_key)
-        likelihood_std = -1. * jnp.ones(self.output_size)
+        likelihood_std_raw = -1. * jnp.ones(self.output_size)
         self.init_sim_params = sim_params
         self.train_params = train_params
-        self.params_sim = {'sim_params': sim_params, 'likelihood_std': likelihood_std}
+        self.params_sim = {'sim_params': sim_params, 'likelihood_std_raw': likelihood_std_raw}
         self._init_optim()  # reinitialize optimizer
 
     @property
@@ -112,11 +114,34 @@ class BNNGreyBox(AbstractRegressionModel):
 
     @property
     def likelihood_std(self):
-        return self.base_bnn.likelihood_std
+        if self.use_base_bnn:
+            return self.base_bnn.likelihood_std
+        else:
+            return self.sim_likelihood_std
 
     @property
     def likelihood_std_unnormalized(self):
-        return self.base_bnn.likelihood_std_unnormalized
+        if self.use_base_bnn:
+            return self.base_bnn.likelihood_std_unnormalized
+        else:
+            return self.sim_likelihood_std_unnormalized
+
+    @property
+    def sim_likelihood_std(self):
+        if self.learn_likelihood_std:
+            likelihood_std = jax.nn.softplus(self.params_sim['likelihood_std_raw'])
+        else:
+            likelihood_std = jax.nn.softplus(self.init_likelihood_std_raw)
+        return likelihood_std
+
+    @property
+    def sim_likelihood_std_unnormalized(self):
+        likelihood_std = self.sim_likelihood_std
+        assert hasattr(self, '_y_std_sim') and self._y_std_sim is not None and self.normalize_data, \
+            'normalize_likelihood_std requires normalization'
+        assert self._y_std_sim.shape == (self.output_size,)
+        likelihood_std = likelihood_std * self._y_std_sim
+        return likelihood_std
 
     @property
     def learn_likelihood_std(self):
@@ -220,14 +245,11 @@ class BNNGreyBox(AbstractRegressionModel):
         normalized_sim_model_prediction = self._normalize_y_sim(sim_model_prediction)
         assert normalized_sim_model_prediction.shape == sim_model_prediction.shape
         # get likelihood std
-        likelihood_std = jnp.exp(params_sim['likelihood_std']) if self.learn_likelihood_std else self.likelihood_std
+        likelihood_std = jax.nn.softplus(params_sim['likelihood_std_raw']) if self.learn_likelihood_std \
+            else jax.nn.softplus(self.init_likelihood_std_raw)
 
-        def _ll(pred, y):
-            return tfd.MultivariateNormalDiag(pred, likelihood_std).log_prob(y)
-
-        ll = jax.vmap(_ll)
-        nll = - num_train_points * self.likelihood_exponent * jnp.mean(
-            ll(normalized_sim_model_prediction, y_batch), axis=0)
+        ll = tfd.MultivariateNormalDiag(sim_model_prediction, likelihood_std).log_prob(y_batch)
+        nll = - num_train_points * self.likelihood_exponent * jnp.mean(ll, axis=0)
         return nll
 
     def _sim_step(self, opt_state_sim: optax.OptState, params_sim: Dict,
@@ -269,24 +291,39 @@ class BNNGreyBox(AbstractRegressionModel):
         assert y_pred.ndim == 3 and y_pred.shape[-2:] == (x.shape[0], self.output_size)
         return y_pred
 
-    def _to_pred_dist(self, y_pred_raw: jnp.ndarray, likelihood_std: jnp.ndarray, include_noise: bool = False):
+    def _to_pred_dist(self, y_pred_raw: jnp.ndarray, likelihood_std: jnp.ndarray, include_noise: bool = False,
+                      use_particle_dist: bool = False,
+                      calibration_alpha: Optional[Union[jnp.ndarray, float]] = None,
+                      ):
         """ Forms the predictive distribution p(y|x, D) given the models unnormalized outputs and the likelihood_std."""
         assert y_pred_raw.ndim == 3 and y_pred_raw.shape[-1] == self.output_size
-        num_post_samples = y_pred_raw.shape[0]
-        if include_noise:
-            independent_normals = tfd.MultivariateNormalDiag(jnp.moveaxis(y_pred_raw, 0, 1), likelihood_std)
-            mixture_distribution = tfd.Categorical(probs=jnp.ones(num_post_samples) / num_post_samples)
-            pred_dist = tfd.MixtureSameFamily(mixture_distribution, independent_normals)
+        if use_particle_dist:
+            pred_dist = ParticleDistribution(
+                particle_means=y_pred_raw,
+                aleatoric_stds=likelihood_std,
+                calibration_alpha=calibration_alpha,
+
+            )
         else:
-            pred_dist = tfd.MultivariateNormalDiag(jnp.mean(y_pred_raw, axis=0),
-                                                   jnp.std(y_pred_raw, axis=0))
+            num_post_samples = y_pred_raw.shape[0]
+            if include_noise:
+                independent_normals = tfd.MultivariateNormalDiag(jnp.moveaxis(y_pred_raw, 0, 1), likelihood_std)
+                mixture_distribution = tfd.Categorical(probs=jnp.ones(num_post_samples) / num_post_samples)
+                pred_dist = tfd.MixtureSameFamily(mixture_distribution, independent_normals)
+            else:
+                pred_dist = tfd.MultivariateNormalDiag(jnp.mean(y_pred_raw, axis=0),
+                                                       jnp.std(y_pred_raw, axis=0))
         return pred_dist
 
-    def predict_dist(self, x: jnp.ndarray, include_noise: bool = True) -> tfp.distributions.Distribution:
+    def predict_dist(self, x: jnp.ndarray, include_noise: bool = True,
+                     use_particle_dist: bool = False,
+                     calibration_alpha: Optional[Union[jnp.ndarray, float]] = None) -> tfp.distributions.Distribution:
         self.batched_model.param_vectors_stacked = self.params['nn_params_stacked']
         y_pred = self.predict_post_samples(x)
         pred_dist = self._to_pred_dist(y_pred, likelihood_std=self.likelihood_std_unnormalized,
-                                       include_noise=include_noise)
+                                       include_noise=include_noise, use_particle_dist=use_particle_dist,
+                                       calibration_alpha=calibration_alpha,
+                                       )
         assert pred_dist.batch_shape == x.shape[:-1]
         assert pred_dist.event_shape == (self.output_size,)
         if callable(pred_dist.mean):
@@ -313,10 +350,19 @@ class BNNGreyBox(AbstractRegressionModel):
         """
         # make predictions
         x, y = self._ensure_atleast_2d_float(x, y)
-        pred_y = self.sim_model_step(x, self.params_sim['sim_params'])
 
-        rmse = jnp.sqrt(jnp.mean(jnp.sum((pred_y - y) ** 2, axis=-1)))
-        eval_stats = {'rmse': rmse}
+        if self.use_base_bnn:
+            pred_y = self.sim_model_step(x, self.params_sim['sim_params'])
+            rmse = jnp.sqrt(jnp.mean(jnp.sum((pred_y - y) ** 2, axis=-1)))
+            eval_stats = {'rmse': rmse}
+        else:
+            pred_dist = self.predict_dist(x, include_noise=True)
+            nll = - jnp.mean(pred_dist.log_prob(y))
+            rmse = jnp.sqrt(jnp.mean(jnp.sum((pred_dist.mean - y) ** 2, axis=-1)))
+            avg_likelihood_std = jnp.mean(self.likelihood_std_unnormalized)
+            eval_stats = {'rmse': rmse, 'nll': nll, 'likelihood_std': avg_likelihood_std}
+
+            print('likelihood_stds', self.likelihood_std_unnormalized)
 
         # compute per-dimension MAE
         if per_dim_metrics:

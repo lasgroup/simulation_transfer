@@ -64,7 +64,7 @@ class RCCarSimEnv:
     def __init__(self, ctrl_cost_weight: float = 0.005, encode_angle: bool = False, use_obs_noise: bool = True,
                  use_tire_model: bool = False, action_delay: float = 0.0, car_model_params: dict = None,
                  margin_factor: float = 10.0, max_throttle: float = 1.0, car_id: int = 2, ctrl_diff_weight: float = 0.0,
-                 seed: int = 230492394):
+                 seed: int = 230492394, max_steps: int = 200):
         """
         Race car simulator environment
 
@@ -81,6 +81,7 @@ class RCCarSimEnv:
         self.encode_angle: bool = encode_angle
         self._rds_key = jax.random.PRNGKey(seed)
         self.max_throttle = jnp.clip(max_throttle, 0.0, 1.0)
+        self.max_steps = max_steps
 
         # set car id and corresponding parameters
         assert car_id in [1, 2]

@@ -63,7 +63,6 @@ def main(args, drop_nan=False):
             series[is_nan] = max_value + noise
             df_full[col] = series
 
-
     # group over everything except seeds and aggregate over the seeds
     groupby_names = list(set(param_names) - {'model_seed', 'data_seed'})
 
@@ -96,25 +95,40 @@ def main(args, drop_nan=False):
     different_method_plot(df_agg, metric='nll', filter_std_higher_than=20.)
     different_method_plot(df_agg, metric='rmse', filter_std_higher_than=0.2)
 
-    df_method = df_agg[(df_agg['model'] == 'PACOH')]
+    df_method = df_agg[(df_agg['model'] == 'NP')]
     #df_method = df_method[(df_method['num_train_steps'] == 80000)]
 
     #df_method = df_method[df_method['bandwidth_score_estim'] > 1.0]
 
-    metric = 'nll'
-    for param in ['bandwidth_score_estim', 'bandwidth_svgd', 'num_measurement_points']:
+    metric = 'rmse'
+    for param in [#'bandwidth_score_estim',
+                  #'bandwidth_svgd',
+                  #'num_train_steps',
+                  #'bandwidth_gp_prior'
+                  # 'num_measurement_points',
+                  # 'num_f_samples'
+        # 'prior_weight',
+        # 'hyper_prior_weight',
+        'num_iter_meta_train',
+        # 'meta_batch_size',
+        # 'bandwidth',
+        'latent_dim',
+        'hidden_dim',
+         'lr'
+
+    ]:
         plt.scatter(df_method[param], df_method[(metric, 'mean')])
         plt.xlabel(param)
-        #plt.xscale('log')
+        plt.xscale('log')
         plt.ylabel(metric)
-        plt.ylim(-15, 20)
+        #plt.ylim(-15, 40)
         plt.show()
 
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Inspect results of a regression experiment.')
-    parser.add_argument('--exp_name', type=str, default='sep11_std')
+    parser.add_argument('--exp_name', type=str, default='jan10')
     parser.add_argument('--data_source', type=str, default='racecar')
     args = parser.parse_args()
     main(args)

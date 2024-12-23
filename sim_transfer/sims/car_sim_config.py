@@ -174,3 +174,91 @@ BOUNDS_PARAMS_BLEND_CAR2 = {
     'i_com': (0.03, 0.18),
     'steering_limit': (0.4, 0.75),
 }
+
+""" PARAMS FOR CAR 3 (Just for sim with restricted range for HF) """
+
+
+DEFAULT_PARAMS_BICYCLE_CAR3: Dict = {
+    'use_blend': 0.0,
+    'm': 1.65,
+    'l_f': 0.13,
+    'l_r': 0.17,
+    'angle_offset': 0.00,
+    'b_f': 2.58,
+    'b_r': 5.0,
+    'blend_ratio_lb': 0.01,
+    'blend_ratio_ub': 0.01,
+    'c_d': 0.0,
+    'c_f': 1.2,
+    'c_m_1': 8.0,
+    'c_m_2': 1.5,
+    'c_r': 1.27,
+    'd_f': 0.02,
+    'd_r': 0.017,
+    'i_com': 0.01,
+    'steering_limit': 0.3
+}
+
+BOUNDS_PARAMS_BICYCLE_CAR3: Dict = {
+    'use_blend': (0.0, 0.0),
+    'm': (1.6, 1.7),
+    'l_f': (0.125, 0.135),
+    'l_r': (0.165, 0.175),
+    'angle_offset': (-0.5, 0.5),
+    'b_f': (2.7, 2.8),
+    'b_r': (4.5, 5.5),
+    'blend_ratio_lb': (0.0001, 0.0005),
+    'blend_ratio_ub': (0.015, 0.02),
+    'c_d': (0.0, 0.2),
+    'c_f': (1.2, 1.5),
+    'c_m_1': (5.0, 10.0),
+    'c_m_2': (1.0, 2.0),
+    'c_r': (1.0, 1.5),
+    'd_f': (0.02, 0.5),
+    'd_r': (0.01, 0.9),
+    'i_com': (0.01, 0.1),
+    'steering_limit': (0.1, 0.75),
+}
+
+DEFAULT_PARAMS_BLEND_CAR3: Dict = {
+    'use_blend': 1.0,
+    'm': 1.65,
+    'l_f': 0.13,
+    'l_r': 0.17,
+    'angle_offset': 0.0,
+    'b_f': 2.75,
+    'b_r': 5.0,
+    'blend_ratio_lb': 0.001,
+    'blend_ratio_ub': 0.017,
+    'c_d': 0.0,
+    'c_f': 1.45,
+    'c_m_1': 8.2,
+    'c_m_2': 1.25,
+    'c_r': 1.3,
+    'd_f': 0.4,
+    'd_r': 0.3,
+    'i_com': 0.06,
+    'steering_limit': 0.6,
+}
+
+BOUNDS_PARAMS_BLEND_CAR3 = {
+    'use_blend': (1.0, 1.0),
+    'm': (1.6, 1.7),
+    'l_f': (0.125, 0.135),
+    'l_r': (0.165, 0.175),
+    'angle_offset': (0, 0),
+    'b_f': (2.7, 2.8),
+    'b_r': (4.5, 5.5),
+    'blend_ratio_lb': (0.0001, 0.0005),
+    'blend_ratio_ub': (0.015, 0.02),
+    'c_d': (0.0, 0.0),
+    'c_f': (1.4, 1.5),
+    'c_m_1': (8.0, 8.5),
+    'c_m_2': (1.2, 1.3),
+    'c_r': (1.0, 1.5),
+    'd_f': (0.3, 0.5),
+    'd_r': (0.2, 0.4),
+    'i_com': (0.04, 0.08),
+    'steering_limit': (0.5, 0.75),
+}
+

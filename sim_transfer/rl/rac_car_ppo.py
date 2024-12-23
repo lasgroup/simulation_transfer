@@ -43,7 +43,6 @@ env = BraxWrapper(system=system,
                   sample_buffer=sampling_buffer,
                   system_params=system.init_params(jr.PRNGKey(0)), )
 
-
 sac_trainer = PPO(
     environment=env,
     num_timesteps=10_000_000,
@@ -90,10 +89,10 @@ def progress(num_steps, metrics):
     plt.plot(xdata, ydata)
     plt.show()
 
+
 wandb.init(
     project='car_ppo_test',
 )
-
 
 params, metrics = sac_trainer.run_training(key=jr.PRNGKey(0), progress_fn=progress)
 

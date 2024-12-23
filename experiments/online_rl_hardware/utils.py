@@ -1,6 +1,7 @@
 import random
 from typing import Any, NamedTuple, Dict
 
+import optax
 from brax.training.replay_buffers import UniformSamplingQueue
 from brax.training.types import Transition
 from brax.training.replay_buffers import ReplayBuffer, ReplayBufferState
@@ -36,6 +37,11 @@ class ModelBasedRLConfig(NamedTuple):
     bnn_training_test_ratio: float = 0.2
     num_stacked_actions: int = 3
     max_num_episodes: int = 100
+    use_optimism: bool = False
+    sample_with_eps_std: bool = False
+    init_intrinsic_reward_weight: float = 1.0
+    final_intrinsic_reward_weight: float = 0.0
+    episodes_to_final_intrinsic_reward_weight: int = 10
 
 
 def execute(cmd: str, verbosity: int = 0) -> None:
@@ -102,14 +108,24 @@ def add_data_to_buffer(buffer: ReplayBuffer, buffer_state: ReplayBufferState, x_
 
 def set_up_model_based_sac_trainer(bnn_model, data_buffer, data_buffer_state, key: jax.random.PRNGKey,
                                    config: ModelBasedRLConfig, sac_kwargs: dict = None,
-                                   eval_buffer_state: ReplayBufferState | None = None):
+                                   eval_buffer_state: ReplayBufferState | None = None,
+                                   episode_idx: int = 0,
+                                   ):
     if sac_kwargs is None:
         sac_kwargs = config.sac_kwargs
 
+    intrinsic_reward_weight = optax.linear_schedule(
+        init_value=config.init_intrinsic_reward_weight, end_value=config.final_intrinsic_reward_weight,
+        transition_steps=config.episodes_to_final_intrinsic_reward_weight,
+    )(episode_idx)
+    print(f'At episode {episode_idx} intrinsic_reward_weight {intrinsic_reward_weight}')
     system = LearnedCarSystem(model=bnn_model,
                               include_noise=config.include_aleatoric_noise,
                               predict_difference=config.predict_difference,
                               num_frame_stack=config.num_stacked_actions,
+                              use_optimism=config.use_optimism,
+                              sample_with_eps_std=config.sample_with_eps_std,
+                              intrinsic_reward_weight=intrinsic_reward_weight,
                               **config.car_reward_kwargs)
 
     if eval_buffer_state is None:

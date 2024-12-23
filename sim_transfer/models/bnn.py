@@ -149,11 +149,17 @@ class AbstractParticleBNN(BatchedNeuralNetworkModel, LikelihoodMixin):
                                                             key=self.rng_key, num_train_points=num_train_points)
         return stats
 
-    def predict_dist(self, x: jnp.ndarray, include_noise: bool = True) -> tfd.Distribution:
+    def predict_dist(self, x: jnp.ndarray, include_noise: bool = True,
+                     use_particle_dist: bool = False,
+                     calibration_alpha: Optional[Union[jnp.ndarray, float]] = None,) -> tfd.Distribution:
         self.batched_model.param_vectors_stacked = self.params['nn_params_stacked']
         x = self._normalize_data(x)
         y_pred_raw = self.batched_model(x)
-        pred_dist = self._to_pred_dist(y_pred_raw, likelihood_std=self.likelihood_std, include_noise=include_noise)
+        pred_dist = self._to_pred_dist(y_pred_raw,
+                                       likelihood_std=self.likelihood_std,
+                                       include_noise=include_noise,
+                                       use_particle_dist=use_particle_dist,
+                                       calibration_alpha=calibration_alpha)
         assert pred_dist.batch_shape == x.shape[:-1]
         assert pred_dist.event_shape == (self.output_size,)
         return pred_dist
@@ -421,7 +427,7 @@ class AbstractSVGD_BNN(AbstractParticleBNN):
             log_prior /= self.prior_dist.event_shape[0]
             if self.likelihood_reg > 0:
                 likelihood_penalty = self.likelihood_reg * self._likelihood_prior_logprob(params['likelihood_std_raw'])
-                log_prior += (num_train_points * self.likelihood_exponent) * likelihood_penalty
+                log_prior += likelihood_penalty
             stats = OrderedDict(train_nll_loss=nll, neg_log_prior=-log_prior)
             neg_log_post = nll - log_prior
         else:
@@ -429,6 +435,7 @@ class AbstractSVGD_BNN(AbstractParticleBNN):
             stats = OrderedDict(train_nll_loss=nll)
         if self.learn_likelihood_std:
             stats['likelihood_std'] = jnp.mean(self._likelihood_std_transform(params['likelihood_std_raw']))
+            stats['likelihood_std_min'] = jnp.min(self._likelihood_std_transform(params['likelihood_std_raw']))
         if self.likelihood_reg > 0:
             stats['likelihood_penalty'] = likelihood_penalty
         return neg_log_post, stats

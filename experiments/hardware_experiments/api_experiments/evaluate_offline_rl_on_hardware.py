@@ -20,6 +20,9 @@ class RunSpec(NamedTuple):
     group_name: str
     run_id: str
     reward_config: dict | None = None
+    model_seed: int | None = None
+    data_seed: int | None = None
+    horizon_len: int | None = None
 
 
 def run_all_hardware_experiments(project_name_load: str,
@@ -27,7 +30,8 @@ def run_all_hardware_experiments(project_name_load: str,
                                  desired_config: dict | None = None,
                                  control_time_ms: float = 32,
                                  download_data: bool = True,
-                                 use_grey_box: bool = False
+                                 use_grey_box: bool = False,
+                                 horizon: int = 100,
                                  ):
     api = wandb.Api()
     project_name = ENTITY + '/' + project_name_load
@@ -75,6 +79,9 @@ def run_all_hardware_experiments(project_name_load: str,
             runs_spec.append(RunSpec(group_name=run.group,
                                      run_id=run.id,
                                      reward_config=reward_config,
+                                     data_seed=config['data_seed'],
+                                     model_seed=config['model_seed'],
+                                     horizon_len=config['horizon_len']
                                      ))
 
         with open(os.path.join(local_dir, 'runs_spec.pkl'), 'wb') as handle:
@@ -91,17 +98,22 @@ def run_all_hardware_experiments(project_name_load: str,
         import cloudpickle
         #  with open(os.path.join(pre_path, bnn_name), 'rb') as handle:
         #    bnn_model = cloudpickle.load(handle)
+        try:
+            with open(os.path.join(pre_path, policy_name), 'rb') as handle:
+                policy_params = cloudpickle.load(handle)
 
-        with open(os.path.join(pre_path, policy_name), 'rb') as handle:
-            policy_params = cloudpickle.load(handle)
-
-        run_with_learned_policy(policy_params=policy_params,
-                                bnn_model=None,
-                                project_name=project_name_save,
-                                group_name=run_spec.group_name,
-                                run_id=run_spec.run_id,
-                                reward_config=run_spec.reward_config,
-                                control_time_ms=control_time_ms)
+            run_with_learned_policy(policy_params=policy_params,
+                                    bnn_model=None,
+                                    project_name=project_name_save,
+                                    group_name=run_spec.group_name,
+                                    run_id=run_spec.run_id,
+                                    reward_config=run_spec.reward_config,
+                                    control_time_ms=control_time_ms,
+                                    horizon=run_spec.horizon_len,
+                                    data_seed=run_spec.data_seed,
+                                    model_seed=run_spec.model_seed)
+        except:
+            print('######################## run not found #######################################')
 
 
 def run_with_learned_policy(policy_params,
@@ -112,6 +124,9 @@ def run_with_learned_policy(policy_params,
                             reward_config: dict,
                             encode_angle: bool = True,
                             control_time_ms: float = 32,
+                            horizon: int = 100,
+                            data_seed: int | None = None,
+                            model_seed: int | None = None
                             ):
     """
     Num stacked frames: 3
@@ -130,11 +145,17 @@ def run_with_learned_policy(policy_params,
         y_test=jnp.zeros((10, state_dim)),
         car_reward_kwargs=car_reward_kwargs,
         load_pretrained_bnn_model=False)
+
+    config = dict(horizon_len=horizon,
+                  data_seed=data_seed,
+                  model_seed=model_seed, )
+
     wandb.init(
         project=project_name,
         group=group_name,
+        config=config,
         entity=ENTITY,
-        id=run_id + 'f',
+        id=run_id,
         resume="allow",
     )
     policy = rl_from_offline_data.prepare_policy(params=policy_params)
@@ -143,8 +164,8 @@ def run_with_learned_policy(policy_params,
     # env = CarEnv(encode_angle=True, num_frame_stacks=0, max_throttle=0.4,
     #             control_time_ms=27.9)
     env = CarEnv(car_id=2, encode_angle=encode_angle, max_throttle=0.4, control_time_ms=control_time_ms,
-                 num_frame_stacks=3, car_reward_kwargs=car_reward_kwargs)
-    obs, _ = env.reset()
+                 num_frame_stacks=3, car_reward_kwargs=car_reward_kwargs, wait_for_user=True, max_steps=horizon)
+    obs = env.reset()
     print(obs)
     observations = []
     env.step(np.zeros(2))
@@ -169,7 +190,7 @@ def run_with_learned_policy(policy_params,
 
     rewards = []
 
-    for i in range(200):
+    for i in range(horizon):
         action = np.array(policy(obs))
         actions.append(action)
         obs, reward, terminate, info = env.step(action)
@@ -309,7 +330,7 @@ def evaluate_runs_for_video(num_data_points: int = 50, control_time_ms: float = 
     if num_data_points == 50:
         policy_filenames = [
             'saved_data/use_sim_prior=0_use_grey_box=0_high_fidelity=0_num_offline_data'
-            '=50_share_of_x0s=0.5_sac_only_from_is=0_use_sim_model=0_0.5'\
+            '=50_share_of_x0s=0.5_sac_only_from_is=0_use_sim_model=0_0.5' \
             '/z4rlsbwj/models/parameters.pkl',
 
             'saved_data/use_sim_prior=1_use_grey_box=0_high_fidelity=0_num_offline_data=50_share_of_x0s='
@@ -371,35 +392,38 @@ def evaluate_runs_for_video(num_data_points: int = 50, control_time_ms: float = 
                                 control_time_ms=control_time_ms)
 
 
-
 if __name__ == '__main__':
     import pickle
 
-    filename_policy = 'saved_data/use_sim_prior=1_use_grey_box=0_high_fidelity=0_num_offline_data' \
-                      '=2500_share_of_x0s=0.5_train_sac_only_from_init_states=0_0.5/tshlnhs0/models/parameters.pkl'
-    filename_bnn_model = 'saved_data/use_sim_prior=1_use_grey_box=0_high_fidelity=0_num_offline_data' \
-                         '=2500_share_of_x0s=0.5_train_sac_only_from_inyit_states=0_0.5/tshlnhs0/models/bnn_model.pkl'
+    filename_policy = 'policies/policies/low_fidelity/policy_20.pkl'
+    # filename_bnn_model = 'saved_data/use_sim_prior=1_use_grey_box=0_high_fidelity=0_num_offline_data' \
+    #                     '=2500_share_of_x0s=0.5_train_sac_only_from_inyit_states=0_0.5/tshlnhs0/models/bnn_model.pkl'
 
-    # with open(filename_policy, 'rb') as handle:
-    #    policy_params = pickle.load(handle)
+    with open(filename_policy, 'rb') as handle:
+        policy_params = pickle.load(handle)
 
-    #  with open(filename_bnn_model, 'rb') as handle:
-    #    bnn_model = pickle.load(handle)
-
-    # observations_for_plotting, actions_for_plotting = run_with_learned_policy(bnn_model=bnn_model,
+    # dummy_reward_kwargs = {
+    #     'ctrl_cost_weight': 0.005,
+    #     'margin_factor': 20.0,
+    #    'ctrl_diff_weight': 0.0,
+    #    'encode_angle': True,
+    # }
+    # observations_for_plotting, actions_for_plotting = run_with_learned_policy(bnn_model=None,
     #                                                                          policy_params=policy_params,
     #                                                                          project_name='Test',
     #                                                                          group_name='MyGroup',
     #                                                                          run_id='Butterfly',
-    #                                                                          control_time_ms=32,
+    #                                                                          control_time_ms=27.5,
+    #                                                                          horizon=100,
+    #                                                                          reward_config=dummy_reward_kwargs
     #                                                                          )
-    evaluate_runs_for_video(num_data_points=2500, control_time_ms=28.5)
-    # run_all_hardware_experiments(
-    #    project_name_load='OfflineRLRunsGreyBoxHW2',
-    #    project_name_save='HWEvaluationGb2',
-    #    desired_config={'bandwidth_svgd': 0.2, 'data_from_simulation': 0, 'num_offline_collected_transitions': 5000,
-    #                    'use_sim_model': 0},
-    #    control_time_ms=28.5,
-    #    download_data=True,
-    #    use_grey_box=True,
-    #)
+    # evaluate_runs_for_video(num_data_points=2500, control_time_ms=28.5)
+    run_all_hardware_experiments(
+        project_name_load='OfflineRLHW_Feb16_BW_high',
+        project_name_save='OfflineRLHW_eval_Feb16_9',
+        desired_config={'bandwidth_svgd': 2.0, 'data_from_simulation': 0, 'num_offline_collected_transitions': 200,
+                        'use_grey_box': 0, 'high_fidelity': 0},
+        control_time_ms=27.5,
+        download_data=False,
+        use_grey_box=False,
+    )

@@ -86,7 +86,7 @@ class CarEnv(gym.Env):
                  max_wait_time: float = 1,
                  window_size: int = 6,
                  num_frame_stacks: int = 3,
-                 port_number: int = 8,  # leftmost usb port in the display has port number 8
+                 port_number: int = 4,  # leftmost usb port in the display has port number 8
                  encode_angle: bool = True,
                  max_throttle: float = 0.4,
                  car_reward_kwargs: dict = None,

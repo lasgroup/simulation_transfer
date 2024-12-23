@@ -5,7 +5,9 @@ old_results/
 log/
 tf_summaries/
 time_lines/
-
+lenart_internal/
+*.pdf
+*.csv
 mars/
 
 # Byte-compiled / optimized / DLL files
@@ -168,3 +170,4 @@ Temporary Items
 
 # exlcluded files
 plotting_scripts/plots
+/experiments/1d_visualization/plot_dicts/
