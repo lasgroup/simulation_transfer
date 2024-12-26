@@ -456,7 +456,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Meta-BO run')
     parser.add_argument('--seed', type=int, default=914)
-    parser.add_argument('--project_name', type=str, default='OnlineRL_RCCarOMBRL')
+    parser.add_argument('--project_name', type=str, default='OnlineRL_RCCarOMBRL26Dec')
     parser.add_argument('--machine', type=str, default='minimax')
     parser.add_argument('--device', type=int, default=0)
     parser.add_argument('--gpu', type=int, default=1)

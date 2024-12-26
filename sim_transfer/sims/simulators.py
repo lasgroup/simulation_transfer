@@ -208,7 +208,7 @@ class GaussianProcessSim(FunctionSimulator):
     def init_params(self):
         return None
 
-    def _gp_marginal_dist(self, x: jnp.ndarray, lengthscale: float, output_scale: float, jitter: float = 1e-5) \
+    def _gp_marginal_dist(self, x: jnp.ndarray, lengthscale: float, output_scale: float, jitter: float = 1e-3) \
             -> tfd.MultivariateNormalFullCovariance:
         """ Returns the marginal distribution of a GP with SE kernel """
         assert x.ndim == 2
